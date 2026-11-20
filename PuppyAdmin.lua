@@ -12354,6 +12354,121 @@ local function novoLoadApi()
     return api
 end
 
+-- Import from the Roblox catalog --------------------------------------------
+-- Takes an animation or emote asset ID (catalog items give an Animation whose
+-- AnimationId is followed), loads its KeyframeSequence, converts the poses to
+-- the engine's keyframe table and saves it in PuppyAdmin/custom, where the
+-- Library's "Your animations" list (and keybinds/states) can use it.
+-- Poses are interpolated linearly (Roblox easing styles are not reproduced).
+local function findKeyframeSequence(id)
+    local function search(objs)
+        local animId
+        for _, o in ipairs(objs or {}) do
+            if o:IsA("KeyframeSequence") then return o end
+            local ks = o:FindFirstChildWhichIsA("KeyframeSequence", true)
+            if ks then return ks end
+            local anim = o:IsA("Animation") and o or o:FindFirstChildWhichIsA("Animation", true)
+            if anim and not animId then animId = tostring(anim.AnimationId):match("%d+") end
+        end
+        return nil, animId
+    end
+    local ok, objs = pcall(function() return game:GetObjects("rbxassetid://" .. id) end)
+    local seq, animId = search(ok and objs or nil)
+    if seq then return seq end
+    if animId and animId ~= id then
+        local ok2, objs2 = pcall(function() return game:GetObjects("rbxassetid://" .. animId) end)
+        seq = search(ok2 and objs2 or nil)
+        if seq then return seq end
+    end
+    local okK, ks = pcall(function()
+        return game:GetService("KeyframeSequenceProvider"):GetKeyframeSequenceAsync("rbxassetid://" .. (animId or id))
+    end)
+    if okK and typeof(ks) == "Instance" and ks:IsA("KeyframeSequence") then return ks end
+    return nil
+end
+
+-- KeyframeSequence -> { { Time, Data = { [Part1 name] = pose CFrame } } }, every
+-- frame holding every part (a part missing from a keyframe keeps its last pose).
+local function sequenceFrames(seq)
+    local kfs = seq:GetKeyframes()
+    table.sort(kfs, function(a, b) return a.Time < b.Time end)
+    local frames, last = {}, {}
+    local function collect(pose, out)
+        for _, sub in ipairs(pose:GetSubPoses()) do
+            if sub:IsA("Pose") then
+                if sub.Weight > 0 then out[sub.Name] = sub.CFrame end
+                collect(sub, out)
+            end
+        end
+    end
+    for _, kf in ipairs(kfs) do
+        local data = {}
+        for k, v in pairs(last) do data[k] = v end
+        for _, top in ipairs(kf:GetPoses()) do
+            if top:IsA("Pose") then
+                if top.Weight > 0 then data[top.Name] = top.CFrame end
+                collect(top, data)
+            end
+        end
+        last = data
+        table.insert(frames, { Time = kf.Time, Data = data })
+    end
+    if #frames == 1 then table.insert(frames, { Time = 1, Data = frames[1].Data }) end
+    return frames
+end
+
+local function encodeFrames(name, frames)
+    local out = { "local C=CFrame.new return{[" .. string.format("%q", name) .. "]={\n" }
+    for _, f in ipairs(frames) do
+        local parts = {}
+        for part, cf in pairs(f.Data) do
+            local c = { cf:GetComponents() }
+            for i = 1, 12 do c[i] = string.format("%.5f", c[i]) end
+            parts[#parts + 1] = "[" .. string.format("%q", part) .. "]=C(" .. table.concat(c, ",") .. ")"
+        end
+        table.sort(parts)
+        out[#out + 1] = "{Time=" .. string.format("%.4f", f.Time) .. ",Data={" .. table.concat(parts, ",") .. "}},\n"
+    end
+    out[#out + 1] = "}}"
+    return table.concat(out)
+end
+
+-- Yields. Returns ok, display name or reason, file path.
+function Novo.importCatalog(raw)
+    local id = tostring(raw or ""):match("%d+")
+    if not id then return false, "Give an animation or emote ID" end
+    if not (writefile and readfile) then return false, "Needs writefile/readfile" end
+    local seq = findKeyframeSequence(id)
+    if not seq then return false, "Could not load an animation from " .. id .. " (bundles and private animations do not work)" end
+    local frames = sequenceFrames(seq)
+    local okFrames = #frames >= 2 and frames[#frames].Time > 0
+    pcall(function() seq:Destroy() end)
+    if not okFrames then return false, "That animation has no usable keyframes" end
+    local title = seq.Name
+    pcall(function()
+        local info = game:GetService("MarketplaceService"):GetProductInfo(tonumber(id))
+        if type(info) == "table" and type(info.Name) == "string" and info.Name ~= "" then title = info.Name end
+    end)
+    title = tostring(title or "Animation"):gsub("[^%w%s%-_%.]", ""):gsub("%s+", " "):sub(1, 40)
+    if title == "" or title == "KeyframeSequence" then title = "Animation" end
+    local display = title .. " (" .. id .. ")"
+    pcall(function()
+        if not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
+        if not isfolder("PuppyAdmin/custom") then makefolder("PuppyAdmin/custom") end
+    end)
+    local path = "PuppyAdmin/custom/" .. display .. ".lua"
+    local okWrite = pcall(writefile, path, encodeFrames(display, frames))
+    if not okWrite then return false, "Could not write " .. path end
+    local rs = _G._nv_reanimState
+    if type(rs) == "table" and type(rs.reanimAddItem) == "function" and type(rs.customItems) == "table" then
+        local have = false
+        for _, it in ipairs(rs.customItems) do if it.url == path then have = true end end
+        if not have then pcall(rs.reanimAddItem, display, path, rs.customItems, "Imported") end
+        if rs.localAnimCache then rs.localAnimCache[path] = nil end
+    end
+    return true, display, path
+end
+
 -- open: true / false, or nil to toggle. Shows the script's Reanimation window;
 -- the engine's own panel is built (it hosts the logic) but kept hidden.
 function Novo.setOpen(open)
@@ -13276,7 +13391,7 @@ local cmdDocs = {
     aura = "aura [name] [players] [color] - Give an aura everyone using the script sees (tag managers only)",
     unaura = "unaura [name|all] [players] - Take auras away (tag managers only)",
     auras = "auras - List auras and who has them",
-    reanim = "reanim [on|off] - Reanimation panel (power, library, idle/walk/jump, recording, tricks, copy, speed); on/off toggles reanimation. Also: anim, reanimui",
+    reanim = "reanim [on|off | import <animation or emote ID>] - Reanimation panel; on/off toggles reanimation; import loads a Roblox catalog animation. Also: anim, reanimui",
     prefix = "prefix [add|remove|set] [chars] - Chat command prefixes",
     uikey = "uikey [key] - Key that shows/hides the script UI",
     settings = "settings - Toggles the settings window",
@@ -13563,6 +13678,17 @@ function H.reanim(a)
     local l = a[1] and a[1]:lower()
     if l == "on" or l == "off" then
         Novo.setActive(l == "on")
+    elseif l == "import" then
+        if not Novo.ensure() then return end
+        task.spawn(function()
+            note("Reanim", "Importing " .. tostring(a[2]) .. "...")
+            local ok, name, path = Novo.importCatalog(a[2])
+            if not ok then note("Reanim", name, RED); return end
+            note("Reanim", "Imported " .. name .. " - in Library > Your animations", LIGHT)
+            local rs = _G._nv_reanimState
+            if Reanim.active and type(rs) == "table" and type(rs.playAnim) == "function" then pcall(rs.playAnim, name, path) end
+            if UIAPI.syncFns.reanim then pcall(UIAPI.syncFns.reanim) end
+        end)
     else
         Novo.setOpen()
     end
@@ -15240,10 +15366,21 @@ local function buildReanimPanel(screenGui)
             refreshLibrary()
         end)
         srcBtn.TextSize = 11
-        local hint = label(page, { Position = UDim2.fromOffset(16, 32), Size = UDim2.new(1, -32, 0, 14), TextSize = 10, TextColor3 = PAL.DIM,
+        local importBox = uiBox(page, UDim2.fromOffset(16, 34), UDim2.fromOffset(IW - 78, 28), "Import: Roblox animation or emote ID")
+        uiButton(page, "Import", UDim2.fromOffset(70, 28), UDim2.fromOffset(16 + IW - 70, 34), function()
+            local id = importBox.Text
+            importBox.Text = ""
+            H.reanim({ "import", id })
+            task.delay(1, function()
+                source = 3
+                srcBtn.Text = SOURCES[source][2]
+                if refreshLibrary then refreshLibrary(true) end
+            end)
+        end)
+        local hint = label(page, { Position = UDim2.fromOffset(16, 66), Size = UDim2.new(1, -32, 0, 14), TextSize = 10, TextColor3 = PAL.DIM,
             Text = "Click to play.  I / W / J use it for idle, walk or jump." })
         local list = make("ScrollingFrame", {
-            Position = UDim2.fromOffset(16, 50), Size = UDim2.new(1, -32, 1, -58), BackgroundColor3 = PAL.CARD,
+            Position = UDim2.fromOffset(16, 84), Size = UDim2.new(1, -32, 1, -92), BackgroundColor3 = PAL.CARD,
             BackgroundTransparency = 0.4, BorderSizePixel = 0, ScrollBarThickness = 2, ScrollBarImageColor3 = PAL.DIM,
             CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
         }, page)
