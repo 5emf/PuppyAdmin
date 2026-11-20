@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-4" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-5" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -9020,6 +9020,17 @@ local function showBrandIntro()
     local subFont = safeFont("SourceSansItalic", Enum.Font.SourceSansItalic)
     local GOLD = Color3.fromRGB(255, 221, 150)
 
+    -- backdrop behind the title (assets/intro/heart_moon.png); skipped while the file is not in the repository
+    local heart
+    local heartAsset = urlImageAsset(SETTINGS.Auras.assetBase .. "assets/intro/heart_moon.png", "intro")
+    if heartAsset then
+        heart = make("ImageLabel", {
+            AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.42, 6),
+            Size = UDim2.fromOffset(300, 300), BackgroundTransparency = 1, Image = heartAsset,
+            ImageTransparency = 1, ScaleType = Enum.ScaleType.Fit, ZIndex = 0,
+        }, holder)
+    end
+
     local function titleLabel(size, color)
         return make("TextLabel", {
             AnchorPoint = Vector2.new(0.5, 0.5),
@@ -9068,12 +9079,14 @@ local function showBrandIntro()
     TweenService:Create(glowInner, fadeIn, { TextTransparency = 0.6 }):Play()
     TweenService:Create(main, fadeIn, { TextTransparency = 0 }):Play()
     TweenService:Create(sub, fadeIn, { TextTransparency = 0.3 }):Play()
+    if heart then TweenService:Create(heart, fadeIn, { ImageTransparency = 0.1 }):Play() end
 
     task.delay(5, function()
         if not g.Parent then return end
         for _, lbl in ipairs({ glowOuter, glowInner, main, sub }) do
             TweenService:Create(lbl, fadeOut, { TextTransparency = 1 }):Play()
         end
+        if heart then TweenService:Create(heart, fadeOut, { ImageTransparency = 1 }):Play() end
         task.delay(1.3, function() if g.Parent then g:Destroy() end end)
     end)
 end
