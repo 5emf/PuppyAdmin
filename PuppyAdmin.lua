@@ -99,6 +99,58 @@ local function parentGui(gui)
     end
 end
 
+-- Downloads an image URL to PuppyAdmin/<tag>_<hash>.<ext> and loads it as a
+-- custom asset (needs getcustomasset/getsynasset and writefile). Cached by URL.
+local function urlImageAsset(url, tag)
+    local getAsset = (type(getcustomasset) == "function" and getcustomasset) or (type(getsynasset) == "function" and getsynasset)
+    if not getAsset then return nil end
+    local h = 0
+    for i = 1, #url do h = (h * 33 + string.byte(url, i)) % 2147483647 end
+    local ext = (url:gsub("[?#].*$", ""):match("%.(%w+)$") or "png"):lower()
+    if not ({ png = true, jpg = true, jpeg = true, webp = true, gif = true, bmp = true })[ext] then ext = "png" end
+    local file = "PuppyAdmin/" .. tag .. "_" .. tostring(h) .. "." .. ext
+    pcall(function()
+        if isfolder and makefolder and not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
+    end)
+    if isfile then
+        local ok, exists = pcall(isfile, file)
+        if ok and exists then
+            local ok2, out = pcall(getAsset, file)
+            if ok2 and type(out) == "string" and out ~= "" then return out end
+        end
+    end
+    local ok, body = pcall(function() return game:HttpGet(url) end)
+    if ok and type(body) == "string" and #body > 64 and writefile then
+        pcall(writefile, file, body)
+        local ok2, out = pcall(getAsset, file)
+        if ok2 and type(out) == "string" and out ~= "" then return out end
+    end
+    return nil
+end
+
+-- Accepts rbxasset(s) / rbxthumb, rbxassetid://, a bare id, a roblox.com link,
+-- a GitHub blob link or an image URL. Returns a content id, or nil and a reason.
+-- Image URLs are downloaded, so call this off the input thread.
+local function resolveImageSource(raw, tag)
+    local s = tostring(raw or ""):match("^%s*(.-)%s*$") or ""
+    if s == "" then return nil, "Enter an image id or URL" end
+    local user, repo, rest = s:match("^https://github%.com/([^/]+)/([^/]+)/blob/(.+)$")
+    if user then s = "https://raw.githubusercontent.com/" .. user .. "/" .. repo .. "/" .. rest end
+    if s:find("^rbxasset") or s:find("^rbxthumb") then return s end
+    if s:match("^%d+$") then return "rbxassetid://" .. s end
+    if s:find("roblox%.com") then
+        local id = s:match("(%d+)")
+        if id then return "rbxassetid://" .. id end
+        return nil, "No asset id in that link"
+    end
+    if s:find("^https?://") then
+        local tex = urlImageAsset(s, tag)
+        if tex then return tex end
+        return nil, "Download failed (needs getcustomasset + writefile)"
+    end
+    return nil, "Not an image id, asset or image URL"
+end
+
 ------------------------------------------------------------------------
 -- Pure helpers (no Roblox types; checked outside the game)
 ------------------------------------------------------------------------
@@ -10485,53 +10537,10 @@ function Baseplate.usePreset(i)
     bpApplyAll()
 end
 
--- Downloads an image URL to the workspace folder and loads it as a custom asset.
-local function bpUrlAsset(url)
-    local getAsset = (type(getcustomasset) == "function" and getcustomasset) or (type(getsynasset) == "function" and getsynasset)
-    if not getAsset then return nil end
-    local h = 0
-    for i = 1, #url do h = (h * 33 + string.byte(url, i)) % 2147483647 end
-    local ext = (url:gsub("[?#].*$", ""):match("%.(%w+)$") or "png"):lower()
-    if not ({ png = true, jpg = true, jpeg = true, webp = true, gif = true, bmp = true })[ext] then ext = "png" end
-    local file = "PuppyAdmin/floor_" .. tostring(h) .. "." .. ext
-    pcall(function()
-        if isfolder and makefolder and not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
-    end)
-    if isfile then
-        local ok, exists = pcall(isfile, file)
-        if ok and exists then
-            local ok2, out = pcall(getAsset, file)
-            if ok2 and type(out) == "string" and out ~= "" then return out end
-        end
-    end
-    local ok, body = pcall(function() return game:HttpGet(url) end)
-    if ok and type(body) == "string" and #body > 64 and writefile then
-        pcall(writefile, file, body)
-        local ok2, out = pcall(getAsset, file)
-        if ok2 and type(out) == "string" and out ~= "" then return out end
-    end
-    return nil
-end
-
 -- Accepts rbxasset(s), rbxassetid://, a bare id, a roblox.com link, or an image URL.
 function Baseplate.useCustom(raw)
-    local s = tostring(raw or ""):match("^%s*(.-)%s*$") or ""
-    if s == "" then return false, "Enter a texture" end
-    local tex
-    local user, repo, rest = s:match("^https://github%.com/([^/]+)/([^/]+)/blob/(.+)$")
-    if user then s = "https://raw.githubusercontent.com/" .. user .. "/" .. repo .. "/" .. rest end
-    if s:find("^rbxasset") or s:find("^rbxthumb") then
-        tex = s
-    elseif s:match("^%d+$") then
-        tex = "rbxassetid://" .. s
-    elseif s:find("roblox%.com") then
-        local id = s:match("(%d+)")
-        tex = id and ("rbxassetid://" .. id)
-    elseif s:find("^https?://") then
-        tex = bpUrlAsset(s)
-        if not tex then return false, "Download failed (needs getcustomasset + writefile)" end
-    end
-    if not tex then return false, "Not a texture id, asset or image URL" end
+    local tex, err = resolveImageSource(raw, "floor")
+    if not tex then return false, err end
     Baseplate.kind, Baseplate.textureId = "texture", tex
     bpApplyAll()
     return true
@@ -12220,7 +12229,7 @@ local cmdDocs = {
     prefix = "prefix [add|remove|set] [chars] - Chat command prefixes",
     uikey = "uikey [key] - Key that shows/hides the script UI",
     settings = "settings - Toggles the settings window",
-    theme = "theme [preset | role color | reset] - Script UI colours (also in Settings)",
+    theme = "theme [preset | role color | reset | image <id|url|off> [0-100]] - Script UI colours and background image (also in Settings)",
     kill = "kill - Terminates the script and removes everything",
     stop = "stop - Terminates the script (also resets your character)",
     help = "help - Toggles the command list menu",
@@ -12640,7 +12649,16 @@ function H.theme(a)
         note("Theme", "Presets: " .. table.concat(names, ", "))
         return
     end
-    if first:lower() == "reset" then first = "Default" end
+    local firstL = first:lower()
+    if firstL == "image" or firstL == "wallpaper" then
+        local rest = { table.unpack(a, 2) }
+        task.spawn(function()
+            local ok, msg = Theme.applyImageArgs(rest)
+            note("Theme", msg, ok and LIGHT or RED)
+        end)
+        return
+    end
+    if firstL == "reset" then first = "Default" end
     if Theme.usePreset(first) then note("Theme", first, LIGHT); return end
     local role = Theme.resolveRole(first)
     if not role then
@@ -13055,6 +13073,7 @@ do
     local function save(presetName)
         local out = { preset = presetName }
         for _, role in ipairs(ROLES) do out[role] = { rgb(Theme.current[role]) } end
+        if type(Cfg.theme) == "table" and type(Cfg.theme.image) == "table" then out.image = Cfg.theme.image end
         Cfg.theme = out
         cfgSave()
     end
@@ -13120,9 +13139,122 @@ do
         if any then Theme.current = derive(t) end
     end
 
+    -- Background image: every window gets a backdrop layer under its contents.
+    -- The layer carries the window's own background colour and transparency
+    -- (so theme colours and presets still apply), with the image drawn on top
+    -- at `visibility` (0 = hidden, 1 = fully opaque image).
+    Theme.backdrops = setmetatable({}, { __mode = "k" }) -- window frame -> record
+    Theme.image = nil                                     -- { src, tex, visibility }
+    local DEFAULT_VISIBILITY = 0.35
+
+    local function paintBackdrop(frame, rec)
+        local img = Theme.image
+        if img and img.tex and frame.Parent then
+            if not (rec.layer and rec.layer.Parent == frame) then
+                local layer = Instance.new("ImageLabel")
+                layer.Name = "PuppyAdminBackdrop"
+                layer.Size = UDim2.fromScale(1, 1)
+                layer.BorderSizePixel = 0
+                layer.ScaleType = Enum.ScaleType.Crop
+                layer.Active = false
+                pcall(function() layer.ZIndex = 0 end)
+                pcall(function() layer.Interactable = false end)
+                make("UICorner", { CornerRadius = UDim.new(0, rec.radius) }, layer)
+                layer.Parent = frame
+                rec.layer = layer
+            end
+            rec.layer.Image = img.tex
+            rec.layer.ImageTransparency = 1 - img.visibility
+            rec.layer.BackgroundColor3 = frame.BackgroundColor3
+            rec.layer.BackgroundTransparency = rec.transparency
+            frame.BackgroundTransparency = 1
+        else
+            if rec.layer then pcall(function() rec.layer:Destroy() end); rec.layer = nil end
+            if frame.Parent then frame.BackgroundTransparency = rec.transparency end
+        end
+    end
+
+    local function paintAllBackdrops()
+        for frame, rec in pairs(Theme.backdrops) do pcall(paintBackdrop, frame, rec) end
+    end
+
+    -- radius: the window's UICorner radius, so the image keeps its rounded corners.
+    function Theme.addBackdrop(frame, radius)
+        local rec = { radius = radius or 8, transparency = frame.BackgroundTransparency, layer = nil }
+        Theme.backdrops[frame] = rec
+        pcall(paintBackdrop, frame, rec)
+    end
+
+    local function saveImage()
+        if type(Cfg.theme) ~= "table" then Cfg.theme = {} end
+        Cfg.theme.image = Theme.image and { src = Theme.image.src, visibility = Theme.image.visibility } or nil
+        cfgSave()
+    end
+
+    -- raw: anything resolveImageSource accepts. visibility: 0..1, nil keeps the
+    -- current value. Downloads image URLs, so it yields. Returns ok, message.
+    function Theme.setImage(raw, visibility)
+        local tex, err = resolveImageSource(raw, "theme")
+        if not tex then return false, err end
+        local keep = Theme.image and Theme.image.visibility or DEFAULT_VISIBILITY
+        local v = tonumber(visibility)
+        Theme.image = { src = tostring(raw), tex = tex, visibility = math.clamp(v or keep, 0, 1) }
+        paintAllBackdrops()
+        saveImage()
+        return true, "Background image set"
+    end
+
+    function Theme.setImageVisibility(visibility)
+        if not Theme.image then return false, "No background image set" end
+        Theme.image.visibility = math.clamp(tonumber(visibility) or Theme.image.visibility, 0, 1)
+        paintAllBackdrops()
+        saveImage()
+        return true, "Image visibility " .. math.floor(Theme.image.visibility * 100 + 0.5) .. "%"
+    end
+
+    function Theme.clearImage()
+        Theme.image = nil
+        paintAllBackdrops()
+        saveImage()
+    end
+
+    -- Saved image: resolved in the background (URLs download), then painted.
+    function Theme.loadImage()
+        local saved = type(Cfg.theme) == "table" and Cfg.theme.image
+        if type(saved) ~= "table" or type(saved.src) ~= "string" or saved.src == "" then return end
+        task.spawn(function()
+            local tex = resolveImageSource(saved.src, "theme")
+            if not tex or genv.PuppyAdminActive ~= true then return end
+            local v = tonumber(saved.visibility) or DEFAULT_VISIBILITY
+            Theme.image = { src = saved.src, tex = tex, visibility = math.clamp(v, 0, 1) }
+            paintAllBackdrops()
+        end)
+    end
+
+    -- Shared by `theme image ...` and the Settings field. args: { "off" } |
+    -- { percent } | { source, [percent] } with percent 0-100. Yields on URLs.
+    function Theme.applyImageArgs(args)
+        local first = args[1]
+        if not first or first == "" then
+            return false, "theme image <id | rbxassetid | image URL | off> [visibility 0-100]"
+        end
+        local l = first:lower()
+        if l == "off" or l == "none" or l == "clear" then
+            Theme.clearImage()
+            return true, "Background image removed"
+        end
+        local pct = tonumber(args[2])
+        if tonumber(first) and #first <= 3 and not args[2] then
+            return Theme.setImageVisibility(tonumber(first) / 100)
+        end
+        if args[2] and not pct then return false, "Visibility must be a number 0-100" end
+        return Theme.setImage(first, pct and pct / 100 or nil)
+    end
+
     Theme.load()
     Theme.applyPAL()
     Theme.attach(notifGui)
+    Theme.loadImage()
 end
 
 UIAPI.panels = {}
@@ -13185,6 +13317,7 @@ local function uiWindow(screenGui, key, title, size, pos)
     }, screenGui)
     corner(f, 12)
     stroke(f, PAL.STROKE, 1, 0)
+    Theme.addBackdrop(f, 12)
     local shine = make("Frame", {
         Size = UDim2.fromScale(1, 1), BackgroundColor3 = PAL.SHINE, BackgroundTransparency = 0.88,
         BorderSizePixel = 0, Active = false,
@@ -13780,6 +13913,7 @@ local function createUI()
     make("UICorner", { CornerRadius = UDim.new(0, 8) }, frame)
     make("UIStroke", { Color = Color3.fromRGB(80, 80, 80), Transparency = 0.6, Thickness = 1 }, frame)
     make("UISizeConstraint", { MaxSize = Vector2.new(350, 80), MinSize = Vector2.new(220, 80) }, frame)
+    Theme.addBackdrop(frame, 8)
 
     make("TextLabel", {
         Size = UDim2.new(1, -15, 0, 25),
@@ -13856,6 +13990,7 @@ local function createUI()
     make("UICorner", { CornerRadius = UDim.new(0, 8) }, helpFrame)
     make("UIStroke", { Color = Color3.fromRGB(80, 80, 80), Transparency = 0.5, Thickness = 1 }, helpFrame)
     make("UISizeConstraint", { MaxSize = Vector2.new(450, 500), MinSize = Vector2.new(300, 300) }, helpFrame)
+    Theme.addBackdrop(helpFrame, 8)
 
     make("TextLabel", {
         Size = UDim2.new(1, -20, 0, 35),
@@ -13958,6 +14093,7 @@ local function createUI()
         }, screenGui)
         make("UICorner", { CornerRadius = UDim.new(0, 8) }, f)
         make("UIStroke", { Color = Color3.fromRGB(80, 80, 80), Transparency = 0.5, Thickness = 1 }, f)
+        Theme.addBackdrop(f, 8)
         make("TextLabel", {
             Size = UDim2.new(1, -50, 0, 30),
             Position = UDim2.new(0, 15, 0, 5),
@@ -14033,7 +14169,7 @@ local function createUI()
         return b
     end
 
-    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 556), "SETTINGS")
+    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 616), "SETTINGS")
 
     fieldLabel(settingsFrame, "Chat command prefixes (comma separated, 1-3 symbols)", 45)
     local prefixBox = fieldBox(settingsFrame, 65, table.concat(Cfg.prefixes, ", "))
@@ -14117,6 +14253,19 @@ local function createUI()
             row.swatch.BackgroundColor3 = Theme.current[role]
             if not row.box:IsFocused() then row.box.Text = Theme.hex(Theme.current[role]) end
         end
+    end)
+
+    fieldLabel(settingsFrame, "Background image: id, rbxassetid, image URL or off [visibility 0-100]", 500)
+    local imageBox = fieldBox(settingsFrame, 520, Theme.image and Theme.image.src or ((type(Cfg.theme) == "table" and type(Cfg.theme.image) == "table" and Cfg.theme.image.src) or ""))
+    imageBox.PlaceholderText = "e.g. 1234567890 60"
+    local imageApply = actionButton(settingsFrame, "Apply", UDim2.new(1, -85, 0, 520), UDim2.new(0, 70, 0, 28))
+    imageApply.MouseButton1Click:Connect(function()
+        local args = splitArgs(imageBox.Text)
+        task.spawn(function()
+            local ok, msg = Theme.applyImageArgs(args)
+            note("Theme", msg, ok and LIGHT or RED)
+            if Theme.image then imageBox.Text = Theme.image.src elseif ok then imageBox.Text = "" end
+        end)
     end)
 
     local killBtn = actionButton(settingsFrame, "KILL SCRIPT", UDim2.new(0, 15, 1, -45), UDim2.new(1, -30, 0, 32), Color3.fromRGB(130, 35, 35))
