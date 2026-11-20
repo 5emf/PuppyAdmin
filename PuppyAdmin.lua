@@ -28,6 +28,11 @@ if genv.PuppyAdminActive == true then
 end
 genv.PuppyAdminActive = true
 
+-- Timing report (`perf`): how long each start-up stage and first-time action took.
+local Perf = { t0 = os.clock(), marks = {} }
+function Perf.mark(name, seconds) table.insert(Perf.marks, { name = name, ms = seconds * 1000, at = os.clock() - Perf.t0 }) end
+function Perf.since(name, start) Perf.mark(name, os.clock() - start) end
+
 local plr = Players.LocalPlayer
 local chr = plr.Character or plr.CharacterAdded:Wait()
 local hrp = chr:WaitForChild("HumanoidRootPart")
@@ -2156,7 +2161,9 @@ do
         task.spawn(function()
             -- an editor without a token keeps their local tags (they could not share edits anyway)
             local readOnlyEditor = canEditTags() and not TagSync.token()
+            local fetchStart = os.clock()
             if not readOnlyEditor or #Cfg.tagDefs == 0 then TagSync.pull(true) end
+            Perf.since("First tags read (background)", fetchStart)
             -- every execution draws every tag again once the repository copy is in
             Tags.refreshAll()
             while genv.PuppyAdminActive == true do
@@ -2442,7 +2449,9 @@ do
     end
 
     task.spawn(function()
+        local fetchStart = os.clock()
         pcall(AuraSync.pull, true)
+        Perf.since("First auras read (background)", fetchStart)
         while genv.PuppyAdminActive == true do
             task.wait(SETTINGS.TagSync.pollSeconds)
             if genv.PuppyAdminActive ~= true then break end
@@ -2656,7 +2665,9 @@ do
     end
 
     task.spawn(function()
+        local fetchStart = os.clock()
         pcall(Moderation.pull, true)
+        Perf.since("First moderation read (background)", fetchStart)
         while genv.PuppyAdminActive == true do
             task.wait(SETTINGS.TagSync.pollSeconds)
             if genv.PuppyAdminActive ~= true then break end
@@ -12442,6 +12453,7 @@ function Novo.boot()
         return false
     end
     pcall(migrateLegacyData)
+    local loadStart = os.clock()
     local ok, res = pcall(Novo.load, {
         notify = function(title, text) note(tostring(title or "Puppy Admin"), tostring(text or "")) end,
         parentGui = parentGui,
@@ -12451,12 +12463,24 @@ function Novo.boot()
         note("Puppy Admin", "Engine failed: " .. Novo.failed:sub(1, 60), RED)
         return false
     end
+    Perf.since("Engine start (first reanim / movement command)", loadStart)
     Novo.booted, Novo.gui, Novo.cmds, Novo.nvL, Novo.init = true, res.gui, res.cmds, res.nvL, res.init
     if Novo.gui then
         Novo.gui.Enabled = not Hide.uiHidden
         -- the engine's palette is the default theme's, so theme presets and
-        -- colour roles recolour its panels like every other window
-        pcall(Theme.attach, Novo.gui)
+        -- colour roles recolour its windows like every other window. Only the
+        -- windows you can see (Fly panel, lists); the hidden reanimation panel
+        -- that hosts the logic is skipped - recolouring it was most of the
+        -- first-open hitch.
+        local function themeWindow(child)
+            task.defer(function()
+                if not child.Parent or child.Name == "ReanimPanel" then return end
+                pcall(Theme.attach, child)
+                if child:FindFirstChild("UtilitySurface") then pcall(Novo.stylePanel, child) end
+            end)
+        end
+        for _, c in ipairs(Novo.gui:GetChildren()) do themeWindow(c) end
+        table.insert(conns, Novo.gui.ChildAdded:Connect(themeWindow))
     end
     return true
 end
@@ -12516,10 +12540,11 @@ function Novo.ensure()
             end
         end)
     end)
+    local initStart = os.clock()
     local okInit, err = pcall(Novo.init)
+    Perf.since("Reanimation logic start (first reanim)", initStart)
     task.wait() -- MessageOut can arrive a frame late
     if logConn then logConn:Disconnect() end
-    if typeof(_G._reanimPanel) == "Instance" then Novo.stylePanel(_G._reanimPanel) end
     task.delay(2, function() pcall(Novo.purgeBuiltins) end)
     pcall(Novo.hookRecordings)
     task.delay(8, function() pcall(Novo.purgeBuiltins) end)
@@ -12676,8 +12701,37 @@ end
 -- Recorded) and only lower-case .lua/.txt/.json. This re-runs that scan and
 -- then adds anything it missed: files in any subfolder, any letter case.
 Novo.legacyCopy = migrateLegacyData
-function Novo.reloadCustom()
+
+-- Every path under PuppyAdmin/custom, sorted: equal means nothing changed.
+local function customFolderSignature()
+    if not (listfiles and isfolder) then return nil end
+    local parts = {}
+    local function walk(dir, depth)
+        if depth > 4 then return end
+        local ok, items = pcall(listfiles, dir)
+        if not ok or type(items) ~= "table" then return end
+        for _, p in ipairs(items) do
+            p = tostring(p):gsub("\\", "/")
+            parts[#parts + 1] = p
+            local okF, isDir = pcall(isfolder, p)
+            if okF and isDir then walk(p, depth + 1) end
+        end
+    end
+    walk("PuppyAdmin/custom", 0)
+    table.sort(parts)
+    return table.concat(parts, "|")
+end
+
+-- force: always rebuild (Reload files). Otherwise only when the folder changed.
+function Novo.reloadCustom(force)
     pcall(migrateLegacyData)
+    local rsNow = _G._nv_reanimState
+    local sig = customFolderSignature()
+    if not force and sig and sig == Novo.customSig and type(rsNow) == "table" and type(rsNow.customItems) == "table" then
+        return #rsNow.customItems, 0
+    end
+    Novo.customSig = sig
+    local scanStart = os.clock()
     local nvL = Novo.nvL
     if type(nvL) == "table" and type(nvL.reloadCustom) == "function" then pcall(nvL.reloadCustom) end
     local rs = _G._nv_reanimState
@@ -12710,6 +12764,7 @@ function Novo.reloadCustom()
         end
     end
     scan("PuppyAdmin/custom", 0, nil)
+    Perf.since("Animation folder read (" .. #rs.customItems .. " files)", scanStart)
     return #rs.customItems, added
 end
 
@@ -13792,7 +13847,7 @@ local cmds = {
     "hide", "unhide", "mute", "unmute",
     "tp",
     "aura", "unaura", "auras",
-    "tagui", "taglist", "tagsync", "tagrefresh", "owner", "kick", "ban", "unban", "bans", "antikick", "unantikick", "antivcban",
+    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "owner", "kick", "ban", "unban", "bans", "antikick", "unantikick", "antivcban",
     "reanim",
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
@@ -13821,6 +13876,7 @@ local cmdDocs = {
     ban = "ban <players> [reason] - Ban players from using the script; they are kicked when they run it (owners only)",
     unban = "unban <players or UserIds> - Lift a script ban (owners only)",
     bans = "bans - List players banned from the script (owners only)",
+    perf = "perf - How long start-up and first-time actions took (for tuning the script)",
     tagrefresh = "tagrefresh - Load tags, auras and bans from the repository again and redraw every tag (running the script again does the same)",
     tagsync = "tagsync [pull|push] - Shared tags in the repository (token goes in Settings, never in chat)",
     taglist = "taglist [add|remove <tag> <users...>] [new|delete <name>] - All tags and their members; add many players at once",
@@ -14224,6 +14280,18 @@ function H.antivcban(a)
     if not p then return end
     p.Visible = sub ~= "close"
     if UIAPI.sync then UIAPI.sync() end
+end
+
+function H.perf()
+    local lines = { "Times in milliseconds (ms). Background reads do not hold up the UI.", "" }
+    for _, m in ipairs(Perf.marks) do
+        table.insert(lines, string.format("%7.1f ms   %s   (at %.1f s)", m.ms, m.name, m.at))
+    end
+    if #Perf.marks == 0 then lines[#lines + 1] = "Nothing measured yet" end
+    table.insert(lines, "")
+    table.insert(lines, "Not measurable from inside: downloading + compiling the script. To see it, run:")
+    table.insert(lines, "local t=os.clock() local f=loadstring(game:HttpGet(URL)) print(os.clock()-t) f()")
+    UIAPI.showOutput("PERFORMANCE", lines)
 end
 
 function H.tagrefresh()
@@ -14907,7 +14975,20 @@ do
     Theme.loadImage()
 end
 
+-- Panels are built the first time anything asks for them (opening one,
+-- a command, a button that shows it) instead of all at start-up.
 UIAPI.panels = {}
+UIAPI.builders = {}
+setmetatable(UIAPI.panels, { __index = function(t, key)
+    local build = UIAPI.builders[key]
+    if not build then return nil end
+    UIAPI.builders[key] = nil
+    local start = os.clock()
+    local ok, err = pcall(build)
+    if not ok then warn("[PuppyAdmin] panel " .. tostring(key) .. ": " .. tostring(err)) end
+    Perf.since("Panel '" .. tostring(key) .. "' built on first open", start)
+    return rawget(t, key)
+end })
 UIAPI.syncFns = {}
 
 function UIAPI.sync()
@@ -15537,8 +15618,8 @@ local function buildTagPanel(screenGui)
         note("Tags", "Saved '" .. def.name .. "'" .. ((not def.isDefault and #def.members == 0) and " - add players in taglist" or ""), LIGHT)
     end)
     uiButton(body, "Members...", UDim2.fromOffset((IW - 8) / 2, 32), UDim2.fromOffset(12 + (IW + 8) / 2, y), function()
+        local p = UIAPI.panels.taglist -- builds it if needed (sets tagListSelect)
         if UIAPI.tagListSelect then UIAPI.tagListSelect(Tags.ui.current) end
-        local p = UIAPI.panels.taglist
         if p then p.Visible = true end
     end)
     y = add(40)
@@ -15700,15 +15781,15 @@ local function buildTagListPanel(screenGui)
         if #uids > 0 then picked = {}; refresh() end
     end)
     uiButton(f, "Edit look...", UDim2.fromOffset(half, 30), UDim2.fromOffset(16 + half + 8, 514), function()
+        local p = UIAPI.panels.tags -- builds it if needed (sets tagEditorLoad)
         if UIAPI.tagEditorLoad then UIAPI.tagEditorLoad(Tags.ui.current) end
-        local p = UIAPI.panels.tags
         if p then p.Visible = true end
     end)
     uiButton(f, "New tag", UDim2.fromOffset(half, 30), UDim2.fromOffset(16, 552), function()
         if not tagGuard() then return end
         select(Tags.newDef("New tag"))
+        local p = UIAPI.panels.tags -- builds it if needed (sets tagEditorLoad)
         if UIAPI.tagEditorLoad then UIAPI.tagEditorLoad(Tags.ui.current) end
-        local p = UIAPI.panels.tags
         if p then p.Visible = true end
     end)
     uiButton(f, "Delete tag", UDim2.fromOffset(half, 30), UDim2.fromOffset(16 + half + 8, 552), function()
@@ -15874,7 +15955,7 @@ local function buildReanimPanel(screenGui)
         local search = uiBox(page, UDim2.fromOffset(16, 0), UDim2.fromOffset(IW - 188, 28), "Search")
         uiButton(page, "Reload files", UDim2.fromOffset(64, 28), UDim2.fromOffset(16 + IW - 180, 0), function()
             task.spawn(function()
-                local total, added = Novo.reloadCustom()
+                local total, added = Novo.reloadCustom(true)
                 note("Reanim", tostring(total or 0) .. " animations in PuppyAdmin/custom" .. ((added or 0) > 0 and (" (" .. added .. " from subfolders)") or ""), LIGHT)
                 if refreshLibrary then refreshLibrary(true) end
             end)
@@ -16441,15 +16522,16 @@ local function buildOwnerPanel(screenGui)
 end
 
 local function buildPanels(screenGui)
-    buildToolsPanel(screenGui)
-    buildMovementPanel(screenGui)
-    buildEspPanel(screenGui)
-    buildFloorPanel(screenGui)
-    buildTagPanel(screenGui)
-    buildTagListPanel(screenGui)
-    buildVcbPanel(screenGui)
-    buildReanimPanel(screenGui)
-    buildOwnerPanel(screenGui)
+    local B = UIAPI.builders
+    B.tools = function() buildToolsPanel(screenGui) end
+    B.move = function() buildMovementPanel(screenGui) end
+    B.esp = function() buildEspPanel(screenGui) end
+    B.floor = function() buildFloorPanel(screenGui) end
+    B.tags = function() buildTagPanel(screenGui) end
+    B.taglist = function() buildTagListPanel(screenGui) end
+    B.vcb = function() buildVcbPanel(screenGui) end
+    B.reanim = function() buildReanimPanel(screenGui) end
+    B.owner = function() buildOwnerPanel(screenGui) end
 end
 
 ------------------------------------------------------------------------
@@ -17101,8 +17183,13 @@ end
 -- Runtime
 ------------------------------------------------------------------------
 
+Perf.since("Setup (everything before the UI)", Perf.t0)
 showBrandIntro()
-createUI()
+do
+    local uiStart = os.clock()
+    createUI()
+    Perf.since("Main UI (terminal, help, settings, panel registry)", uiStart)
+end
 Watch.start()
 Chat.start()
 
@@ -17306,4 +17393,5 @@ table.insert(conns, plr.CharacterAdded:Connect(function(newChar)
     if UIAPI.sync then UIAPI.sync() end
 end))
 
+Perf.since("Start-up total (until ready)", Perf.t0)
 sendFlatNotification("System", "Puppy Admin ready - " .. firstPrefix() .. "help in chat", LIGHT)
