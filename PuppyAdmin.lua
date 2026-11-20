@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-18" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-19" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -8986,38 +8986,70 @@ function UIAPI.buildGameBoyPanel(screenGui)
         local name = c.short and "noise7" or "noise"
         return name, math.clamp(c.freq / (c.short and 22050 or 44100), 0.1, 4)
     end
-    local function loadSounds()
-        if SND.ready or SND.loading then return end
+    -- Downloads the tones and makes the Sounds. Tries .ogg, then .mp3 (the
+    -- start-up sound is an mp3, so that format is known to play); a format
+    -- counts only once Roblox reports every Sound loaded. SND.state says why
+    -- there is no sound.
+    local function loadSounds(onReady)
+        if SND.ready then if onReady then onReady() end return end
+        if SND.loading then return end
         SND.loading = true
+        SND.state = "sound: loading"
         task.spawn(function()
             local files = { "noise", "noise7", "saw_hi", "saw_lo", "tri_hi", "tri_lo" }
             for d = 0, 3 do files[#files + 1] = "sq" .. d .. "_lo"; files[#files + 1] = "sq" .. d .. "_hi" end
-            local ids = {}
-            for _, name in ipairs(files) do
-                ids[name] = urlImageAsset(SETTINGS.Auras.assetBase .. "assets/gb/" .. name .. ".ogg", "gbsnd")
-                if not ids[name] then SND.loading = false; return end
-            end
-            local service = game:GetService("SoundService")
             local sets = {
                 { "sq0_lo", "sq1_lo", "sq2_lo", "sq3_lo", "sq0_hi", "sq1_hi", "sq2_hi", "sq3_hi" },
                 { "sq0_lo", "sq1_lo", "sq2_lo", "sq3_lo", "sq0_hi", "sq1_hi", "sq2_hi", "sq3_hi" },
                 { "tri_lo", "saw_lo", "sq2_lo", "tri_hi", "saw_hi", "sq2_hi" },
                 { "noise", "noise7" },
             }
-            for n, list in ipairs(sets) do
-                SND.sounds[n] = {}
-                for _, name in ipairs(list) do
-                    local snd = Instance.new("Sound")
-                    snd.Name = "PuppyAdminGB" .. n .. name
-                    snd.SoundId = ids[name]
-                    snd.Looped = true
-                    snd.Volume = 0
-                    snd.Parent = service
-                    snd:Play()
-                    SND.sounds[n][name] = snd
+            local service = game:GetService("SoundService")
+            local why = "unknown"
+            for _, ext in ipairs({ "ogg", "mp3" }) do
+                local ids, ok = {}, true
+                for _, name in ipairs(files) do
+                    ids[name] = urlImageAsset(SETTINGS.Auras.assetBase .. "assets/gb/" .. name .. "." .. ext, "gbsnd")
+                    if not ids[name] then ok = false; why = name .. "." .. ext .. " did not download"; break end
+                end
+                if ok then
+                    local made = {}
+                    for n, list in ipairs(sets) do
+                        SND.sounds[n] = {}
+                        for _, name in ipairs(list) do
+                            local snd = Instance.new("Sound")
+                            snd.Name = "PuppyAdminGB" .. n .. name
+                            snd.SoundId = ids[name]
+                            snd.Looped = true
+                            snd.Volume = 0
+                            snd.Parent = service
+                            SND.sounds[n][name] = snd
+                            made[#made + 1] = snd
+                        end
+                    end
+                    local t0, loaded = os.clock(), false
+                    while os.clock() - t0 < 6 do
+                        loaded = true
+                        for _, snd in ipairs(made) do
+                            if not snd.IsLoaded then loaded = false; break end
+                        end
+                        if loaded then break end
+                        task.wait(0.2)
+                    end
+                    if loaded then
+                        for _, snd in ipairs(made) do snd:Play() end
+                        SND.ready, SND.loading, SND.state, SND.format = true, false, nil, ext
+                        if onReady then onReady() end
+                        return
+                    end
+                    why = "Roblox did not load the ." .. ext .. " tones"
+                    for _, snd in ipairs(made) do pcall(function() snd:Destroy() end) end
+                    SND.sounds = {}
                 end
             end
-            SND.ready = true
+            SND.loading = false
+            SND.state = "no sound: " .. why
+            note("Game Boy", "No sound: " .. why, RED)
         end)
     end
     local function muteSound()
@@ -9047,7 +9079,16 @@ function UIAPI.buildGameBoyPanel(screenGui)
         table.find(VOLUMES, Cfg.gbVolume) or 1, function(i)
             Cfg.gbVolume = VOLUMES[i]
             cfgSave()
-            if Cfg.gbVolume == 0 then muteSound() end
+            if Cfg.gbVolume == 0 then muteSound(); return end
+            loadSounds(function()
+                if running then return end
+                local beep = SND.sounds[1] and SND.sounds[1].sq2_lo
+                if not beep then return end
+                beep.PlaybackSpeed = 4 -- 441 Hz
+                beep.Volume = Cfg.gbVolume * CHANNEL_GAIN
+                task.delay(0.35, function() if not running then beep.Volume = 0 end end)
+                note("Game Boy", "Sound test beep (" .. tostring(SND.format) .. " tones)", LIGHT)
+            end)
         end)
     volDd.button.TextSize = 11
     table.insert(cleanups, function()
@@ -9281,8 +9322,8 @@ function UIAPI.buildGameBoyPanel(screenGui)
             if now - secondStart >= 1 then
                 speedPct = math.floor(framesThisSecond / (now - secondStart) / 59.73 * 100 + 0.5)
                 framesThisSecond, secondStart = 0, now
-                local base = status.Text:gsub("  %[%d+%%%]$", "")
-                status.Text = base .. "  [" .. speedPct .. "%]"
+                local base = status.Text:gsub("  %[%d+%%%].*$", "")
+                status.Text = base .. "  [" .. speedPct .. "%]" .. (SND.state and ("  " .. SND.state) or "")
             end
             if now - lastSave > 5 then saveNow() end
         end)
