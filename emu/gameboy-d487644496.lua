@@ -1,4 +1,4 @@
--- PuppyAdmin gameboy 40247c7ce1 (original Game Boy emulator; games are loaded from your own PuppyAdmin/roms folder)
+-- PuppyAdmin gameboy d487644496 (original Game Boy emulator; games are loaded from your own PuppyAdmin/roms folder)
 local GB = (function()
 -- Puppy Admin Game Boy core (original DMG). Plain Lua that runs in Luau.
 -- GB.new(romString, saveString?) -> emu   (errors on a ROM it cannot run)
@@ -82,7 +82,7 @@ function GB.new(romStr, saveStr)
     local fZ, fN, fH, fC = 1, 0, 1, 1
     local SP, PC = 0xFFFE, 0x0100
     local ime, eiDelay, halted = false, false, false
-    local IE, IF = 0, 0xE1
+    local IE, IF = 0, 0x01
 
     -- cartridge
     local romOff = 16384          -- 1-based start of the switchable bank in rom[] minus 0x4000 handled in rb
@@ -92,6 +92,7 @@ function GB.new(romStr, saveStr)
     local rtcSel = -1
     local dirty = false
 
+    local rom0P, romP = 1, 16384 - 0x3FFF      -- rom[addr + rom0P] / rom[addr + romP]
     local function mapBanks()
         if mbc == "mbc1" then
             local bank = bankLo + bankHi * 32
@@ -110,6 +111,7 @@ function GB.new(romStr, saveStr)
         end
     end
 
+    local function bankPointers() rom0P = rom0Off + 1; romP = romOff - 0x3FFF end
     local function mbcWrite(a, v)
         if mbc == "none" then return end
         if a < 0x2000 then
@@ -142,6 +144,7 @@ function GB.new(romStr, saveStr)
             if mbc == "mbc1" then mbcMode = band(v, 1) end
         end
         mapBanks()
+        bankPointers()
     end
 
     -- MBC3 clock registers: read from the real time (latching is ignored)
@@ -160,6 +163,8 @@ function GB.new(romStr, saveStr)
     local TIMER_PERIOD = { [0] = 1024, [1] = 16, [2] = 64, [3] = 256 }
     local lcdc, stat, scy, scx, ly, lyc, bgp, obp0, obp1, wy, wx = 0x91, 0x85, 0, 0, 0, 0, 0xFC, 0xFF, 0xFF, 0, 0
     local mode, lineClock, winLine, frameDone = 2, 0, 0, false
+    local modeEnd, lcdOn = 80, true                  -- cycles until the next video stage; LCDC bit 7
+    local timerOn, timerPeriod = false, 1024         -- TAC bit 2 and its rate
     local joySel, dpad, buttons = 0x30, 15, 15     -- 1 = released
     local sb, serialOut = 0, {}
 
@@ -180,6 +185,7 @@ function GB.new(romStr, saveStr)
             freq = 0, duty = 2, volCode = 0, sweepTimer = 0, sweepOn = false, shadow = 0 }
     end
     local SND_BASE = { 0x10, 0x15, 0x1A, 0x1F }
+    local seqCount = 0
 
     local function sweepCalc(c)
         local r = snd.regs[0x10]
@@ -391,18 +397,19 @@ function GB.new(romStr, saveStr)
         elseif a == 0xFF04 then div = 0; divCount = 0
         elseif a == 0xFF05 then tima = v
         elseif a == 0xFF06 then tma = v
-        elseif a == 0xFF07 then tac = band(v, 7)
+        elseif a == 0xFF07 then tac = band(v, 7); timerOn = band(v, 4) ~= 0; timerPeriod = TIMER_PERIOD[band(v, 3)]
         elseif a == 0xFF0F then IF = band(v, 0x1F)
         elseif a == 0xFF40 then
             local was = band(lcdc, 0x80) ~= 0
             lcdc = v
             local on = band(v, 0x80) ~= 0
+            lcdOn = on
             if was and not on then ly = 0; mode = 0; lineClock = 0
-            elseif on and not was then ly = 0; mode = 2; lineClock = 0; winLine = 0; checkLyc() end
+            elseif on and not was then ly = 0; mode = 2; modeEnd = 80; lineClock = 0; winLine = 0; checkLyc() end
         elseif a == 0xFF41 then stat = band(v, 0x78)
         elseif a == 0xFF42 then scy = v
         elseif a == 0xFF43 then scx = v
-        elseif a == 0xFF45 then lyc = v; if band(lcdc, 0x80) ~= 0 then checkLyc() end
+        elseif a == 0xFF45 then lyc = v; if lcdOn then checkLyc() end
         elseif a == 0xFF46 then
             local base = v * 256
             for k = 0, 159 do oam[k + 1] = rb(base + k) end
@@ -416,8 +423,8 @@ function GB.new(romStr, saveStr)
     end
 
     rb = function(a)
-        if a < 0x4000 then return rom[a + rom0Off + 1]
-        elseif a < 0x8000 then return rom[a - 0x4000 + romOff + 1]
+        if a < 0x4000 then return rom[a + rom0P]
+        elseif a < 0x8000 then return rom[a + romP]
         elseif a < 0xA000 then return vram[a - 0x7FFF]
         elseif a < 0xC000 then
             if not ramOn then return 0xFF end
@@ -454,9 +461,12 @@ function GB.new(romStr, saveStr)
     end
 
     local function fetch()
-        local v = rb(PC)
-        PC = (PC + 1) % 65536
-        return v
+        local pc = PC
+        PC = pc + 1
+        if PC == 65536 then PC = 0 end
+        if pc < 0x4000 then return rom[pc + rom0P] end
+        if pc < 0x8000 then return rom[pc + romP] end
+        return rb(pc)
     end
     local function fetch16()
         local lo = fetch()
@@ -1072,8 +1082,13 @@ function GB.new(romStr, saveStr)
     cb[191] = function() A = band(A, 127) return 8 end
     cb[255] = function() A = bor(A, 128) return 8 end
 
-    -- one scanline into fb (background, window, sprites)
+    -- one scanline into fb (background, window, sprites); skipped for frames that are not shown
+    local renderOn = true
     local function renderLine()
+        if not renderOn then
+            if band(lcdc, 32) ~= 0 and ly >= wy and wx <= 166 then winLine = winLine + 1 end
+            return
+        end
         local row = ly * 160
         if band(lcdc, 1) ~= 0 then
             local mapBase = band(lcdc, 8) ~= 0 and 0x1C00 or 0x1800
@@ -1171,12 +1186,14 @@ function GB.new(romStr, saveStr)
     local emu = { fb = fb, title = title, battery = battery and ramSize > 0, mbc = mbc }
 
     -- runs one frame; returns the clock cycles it took
-    function emu.runFrame()
+    function emu.runFrame(draw)
+        renderOn = draw ~= false
         frameDone = false
         local total = 0
         while not frameDone and total < 70224 do
             local cyc
-            local pending = band(band(IE, IF), 0x1F)
+            local pending = 0
+            if IF ~= 0 then pending = band(IE, IF) end
             if halted and pending ~= 0 then halted = false end
             if ime and pending ~= 0 then
                 ime = false
@@ -1197,62 +1214,52 @@ function GB.new(romStr, saveStr)
             total = total + cyc
 
             -- sound sequencer (512 Hz)
-            local sc = snd.seqCount + cyc
-            if sc >= 8192 then sc = sc - 8192; sndStep() end
-            snd.seqCount = sc
+            seqCount = seqCount + cyc
+            if seqCount >= 8192 then seqCount = seqCount - 8192; sndStep() end
 
             -- timer
             divCount = divCount + cyc
-            while divCount >= 256 do divCount = divCount - 256; div = (div + 1) % 256 end
-            if band(tac, 4) ~= 0 then
+            if divCount >= 256 then divCount = divCount - 256; div = (div + 1) % 256 end
+            if timerOn then
                 timerCount = timerCount + cyc
-                local period = TIMER_PERIOD[band(tac, 3)]
-                while timerCount >= period do
-                    timerCount = timerCount - period
+                while timerCount >= timerPeriod do
+                    timerCount = timerCount - timerPeriod
                     tima = tima + 1
                     if tima > 255 then tima = tma; IF = bor(IF, 4) end
                 end
             end
 
-            -- video: mode 2 (80) -> 3 (172) -> 0 (204) per line, lines 144-153 = mode 1
-            if band(lcdc, 0x80) ~= 0 then
+            -- video: mode 2 (80) -> 3 (172) -> 0 (204) per line, lines 144-153 = mode 1 (456 each)
+            if lcdOn then
                 lineClock = lineClock + cyc
-                local again = true
-                while again do
-                    again = false
+                while lineClock >= modeEnd do
+                    lineClock = lineClock - modeEnd
                     if mode == 2 then
-                        if lineClock >= 80 then lineClock = lineClock - 80; mode = 3; again = true end
+                        mode = 3; modeEnd = 172
                     elseif mode == 3 then
-                        if lineClock >= 172 then lineClock = lineClock - 172; mode = 0; renderLine(); statIrq(0x08); again = true end
+                        mode = 0; modeEnd = 204
+                        renderLine()
+                        statIrq(0x08)
                     elseif mode == 0 then
-                        if lineClock >= 204 then
-                            lineClock = lineClock - 204
-                            ly = ly + 1
-                            checkLyc()
-                            if ly == 144 then
-                                mode = 1
-                                IF = bor(IF, 1)
-                                statIrq(0x10)
-                                frameDone = true
-                            else
-                                mode = 2
-                                statIrq(0x20)
-                            end
-                            again = true
+                        ly = ly + 1
+                        checkLyc()
+                        if ly == 144 then
+                            mode = 1; modeEnd = 456
+                            IF = bor(IF, 1)
+                            statIrq(0x10)
+                            frameDone = true
+                        else
+                            mode = 2; modeEnd = 80
+                            statIrq(0x20)
                         end
                     else
-                        if lineClock >= 456 then
-                            lineClock = lineClock - 456
-                            ly = ly + 1
-                            if ly > 153 then
-                                ly = 0
-                                winLine = 0
-                                mode = 2
-                                statIrq(0x20)
-                            end
-                            checkLyc()
-                            again = true
+                        ly = ly + 1
+                        if ly > 153 then
+                            ly = 0; winLine = 0
+                            mode = 2; modeEnd = 80
+                            statIrq(0x20)
                         end
+                        checkLyc()
                     end
                 end
             end
@@ -1324,6 +1331,7 @@ function GB.new(romStr, saveStr)
     function emu.pc() return PC end
 
     mapBanks()
+    bankPointers()
     return emu
 end
 

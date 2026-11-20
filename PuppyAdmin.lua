@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-22" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-23" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -8902,7 +8902,7 @@ function UIAPI.gbReadFile(name, paths)
         .. "apostrophes or brackets, e.g. " .. (simple ~= "" and simple or "game.zip") .. ", or unzip it and use the .gb file.", 0)
 end
 
-UIAPI.GB_MODULE = { version = "40247c7ce1", bytes = 73545 }
+UIAPI.GB_MODULE = { version = "d487644496", bytes = 73898 }
 
 function UIAPI.buildGameBoyPanel(screenGui)
     local W, HGT = 360, 470
@@ -8918,6 +8918,7 @@ function UIAPI.buildGameBoyPanel(screenGui)
 
     local emu, romPath, running, fast = nil, nil, false, false
     local acc, framesThisSecond, secondStart, speedPct = 0, 0, os.clock(), 0
+    local frameCost = 0.012 -- running average of seconds per emulated frame
     local lastSave = os.clock()
 
     pcall(function()
@@ -9332,18 +9333,23 @@ function UIAPI.buildGameBoyPanel(screenGui)
             if not (running and emu) then keepAllPlaying(); return end
             local start = os.clock()
             local ran = 0
+            -- How many frames this heartbeat: fast = as many as fit in ~35 ms (up to 3),
+            -- normal = what real time asks for (up to 2). Only the last one is drawn.
+            local want
             if fast then
-                while ran < 3 and os.clock() - start < 0.03 do emu.runFrame(); ran = ran + 1 end
+                want = math.clamp(math.floor(0.035 / math.max(frameCost, 0.001)), 1, 3)
                 acc = 0
             else
                 acc = math.min(acc + dt, 0.25)
-                while acc >= FRAME and ran < 2 do
-                    emu.runFrame()
-                    acc = acc - FRAME
-                    ran = ran + 1
-                    if os.clock() - start > 0.03 then break end
-                end
+                want = math.min(2, math.floor(acc / FRAME))
+                acc = acc - want * FRAME
                 if acc > 0.1 then acc = 0 end -- falling behind: run slower instead of piling up
+            end
+            for i = 1, want do
+                local t = os.clock()
+                emu.runFrame(i == want)
+                ran = ran + 1
+                frameCost = frameCost * 0.9 + (os.clock() - t) * 0.1
             end
             if ran > 0 then
                 present()
