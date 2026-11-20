@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-20" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-21" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -9056,9 +9056,21 @@ function UIAPI.buildGameBoyPanel(screenGui)
     -- tone that stopped, and jump back before the end (the files are whole
     -- wave cycles, so the jump lands on the same point of the wave).
     local function keepPlaying(snd)
-        if not snd.IsPlaying then snd:Play() end
         local len = snd.TimeLength
-        if len > 1 and snd.TimePosition > len - 0.25 then snd.TimePosition = 0 end
+        if not snd.IsPlaying then
+            -- a finished custom sound does not always restart from the top by itself
+            snd.TimePosition = 0
+            snd:Play()
+        elseif len > 1 and snd.TimePosition > len - 0.25 then
+            snd.TimePosition = 0
+        end
+    end
+    -- every tone, silent or not, so none of them runs out while unused
+    local function keepAllPlaying()
+        if not SND.ready then return end
+        for _, set in ipairs(SND.sounds) do
+            for _, snd in pairs(set) do keepPlaying(snd) end
+        end
     end
 
     local function muteSound()
@@ -9075,8 +9087,8 @@ function UIAPI.buildGameBoyPanel(screenGui)
             local key, speed
             if a.power and c.on and level > 0 then key, speed = soundKey(n, c) end
             for name, snd in pairs(SND.sounds[n]) do
+                keepPlaying(snd)
                 if name == key then
-                    keepPlaying(snd)
                     snd.PlaybackSpeed = speed
                     snd.Volume = c.vol * a.master * level * CHANNEL_GAIN
                 elseif snd.Volume ~= 0 then
@@ -9307,7 +9319,7 @@ function UIAPI.buildGameBoyPanel(screenGui)
     local function startLoop()
         if loop then return end
         loop = RunService.Heartbeat:Connect(function(dt)
-            if not (running and emu) then return end
+            if not (running and emu) then keepAllPlaying(); return end
             local start = os.clock()
             local ran = 0
             if fast then
@@ -9325,8 +9337,8 @@ function UIAPI.buildGameBoyPanel(screenGui)
             end
             if ran > 0 then
                 present()
-                -- fast-forward is silent
-                if fast or not emu.audio then muteSound() else updateSound(emu.audio()) end
+                -- fast-forward plays too (the music simply runs faster)
+                if emu.audio then updateSound(emu.audio()) else muteSound() end
             end
             framesThisSecond = framesThisSecond + ran
             local now = os.clock()
