@@ -1,15 +1,15 @@
 --[[
     Puppy Admin
     (formerly Tool Orbit) - orbit/tail/wings cosmetics, chat commands with
-    editable prefixes, a settings window, hide/mute, auras/VFX, novoline's
-    reanimation engine and Reanimate panel (embedded from novoline.lua),
+    editable prefixes, a settings window, hide/mute, auras/VFX, the built-in
+    reanimation engine and Reanimate panel, movement commands,
     teleport and click-teleport, and an allowlisted nametag editor.
 
     Everything the script draws (auras, nametags, hidden characters) is
     client-side: only you see it. Orbiting/tail/wings tools and the reanimation
     body follow the same replication rules as the original V3.
 
-    Quick start:  .help   .tools   .tools tail on   .fly   .esp   .reanimui
+    Quick start:  .help   .tools   .tools tail on   .fly   .esp   .anim   .taglist
 ]]
 
 local Players = game:GetService("Players")
@@ -282,7 +282,7 @@ end
 -- Some animation ids posted around are not an Animation asset directly but a
 -- model/rig/bundle that CONTAINS one, or a raw KeyframeSequence. Loading such an
 -- id straight as AnimationId gives a track with Length == 0 (no keyframes).
--- novoline.lua's resolveAnim does the same GetObjects + KeyframeSequenceProvider
+-- The reanimation engine's resolveAnim does the same GetObjects + KeyframeSequenceProvider
 -- dance; this is that pattern, cached by raw id.
 local animIdResolveCache = {}
 
@@ -928,7 +928,7 @@ local Mute
 ------------------------------------------------------------------------
 -- Hide / unhide
 -- `hide` (no argument) hides the script UI. For other players the behaviour is
--- ported from novoline.lua: parts go invisible on your screen (re-asserted every
+-- the same as the built-in engine's: parts go invisible on your screen (re-asserted every
 -- Heartbeat), their sounds and Billboard/SurfaceGuis are turned off, the name
 -- display is removed and their voice is paused. You cannot hide yourself.
 ------------------------------------------------------------------------
@@ -1105,7 +1105,7 @@ end
 -- Returns true when chat muting is active for this change (TextChatService games only).
 function Mute.set(p, on)
     Mute.players[p.UserId] = on or nil
-    -- voice pause is the novoline mute (SubscribePause); skipped while they are hidden
+    -- voice pause is the engine's mute (SubscribePause); skipped while they are hidden
     if p ~= plr and (on or not Hide.map[p.UserId]) then voicePause(p.UserId, on and true or false) end
     if p.Character then
         if on then Mute.muteChar(p.Character) else Mute.unmuteChar(p.Character) end
@@ -1525,7 +1525,7 @@ function Tags.asset(src, onReady)
     return nil
 end
 
--- Same move as novoline's `goto`: stand up if seated, then land beside them.
+-- Same move as the `goto` command: stand up if seated, then land beside them.
 function Tags.teleportTo(p)
     local myChar, theirChar = plr.Character, p.Character
     local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
@@ -2225,25 +2225,22 @@ end
 table.insert(cleanups, function() AntiKick.on = false end)
 
 ------------------------------------------------------------------------
--- Novoline: reanimation and movement, embedded from novoline.lua as-is
+-- Built-in engine: reanimation and movement
 --
--- Novo.load runs a trimmed copy of novoline's darklua bundle: the
--- reanimation API (clone, real body following it, keyframe playback, tricks,
--- pair, mimic, blend), the Reanimate panel (library, states, record, copy,
--- live, tricks, keys, transitions), novoline's movement engines and commands
--- (fly, superfly + Fly panel, hatfly, helicopter, noclip, airwalk, swim,
--- teleports, waypoints, follow / orbit / spectate, the movement library) and
--- the novoline UI kit those use. Command modules are cut down to their
--- movement handlers and the helpers those reference; nothing else is included. The block is generated from
--- novoline.lua, not hand-written; the one change is marked in the panel
--- module (`_G._nv_reanimState=_RS`) so the `reanim` command can use the
--- panel's own power toggle.
+-- Novo.load runs the embedded engine bundle: the reanimation API (clone, real
+-- body following it, keyframe playback, tricks, pair, mimic, blend), the
+-- Reanimate panel (library, states, record, copy, live, tricks, keys,
+-- transitions), the movement engines and commands (fly, superfly + Fly panel,
+-- hatfly, helicopter, noclip, airwalk, swim, teleports, waypoints, follow /
+-- orbit / spectate, the movement library) and the UI kit those use. The block
+-- is generated, not hand-written; changes in it are marked (the panel module
+-- publishes its state as _G._nv_reanimState, and its text says Puppy Admin).
 --
--- It keeps novoline's conventions: _G._reanimAPI / _G._reanimPanel globals,
--- files under the executor workspace's Novoline/ folder, the animation
--- library from static.rawth.net and the icon pack from molto.pages.dev (both
--- downloaded and run with loadstring by novoline's code). Running novoline
--- itself in the same session shares those globals, so run one or the other.
+-- Conventions it keeps: _G._reanimAPI / _G._reanimPanel globals, files under
+-- the executor workspace's PuppyAdmin/ folder, the animation library from
+-- static.rawth.net and the icon pack from molto.pages.dev (both downloaded
+-- and run with loadstring by the engine). Another script that uses the same
+-- _G names in the same session would collide with it.
 ------------------------------------------------------------------------
 
 local DIGIT_NAMES = {
@@ -2278,7 +2275,7 @@ local function novoModel(getter)
 end
 
 -- Teleport, ESP, the floor and the respawn guard read Reanim.active / .clone /
--- .real; they are answered by the novoline API at the moment they are read.
+-- .real; they are answered by the reanimation API at the moment they are read.
 local Reanim = setmetatable({}, { __index = function(_, key)
     if key == "clone" then return novoModel("get_clone") end
     if key == "real" then return novoModel("get_real_character") end
@@ -2944,7 +2941,7 @@ toner.roots[root]=nil end)end _G._nv_toneNow=function(root)if typeof(root)~=
 'Instance'then return end local root=body:FindFirstAncestorWhichIsA(
 'LayerCollector')if root then toner.watch(root)end end for body in _G.
 _nv_glassParts do pcall(_G._nv_toneWatch,body)end local packs={dir=
-'Novoline/themes',base={},value={}}packs.tabs={home=1,commands=2,players=3,music
+'PuppyAdmin/themes',base={},value={}}packs.tabs={home=1,commands=2,players=3,music
 =4,scripts=5,settings=6,plus=7}packs.digits=
 [[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/]]for i=1,64
 do packs.value[string.byte(packs.digits,i)]=i-1 end for _,p in theme.presets do
@@ -3016,12 +3013,12 @@ false,found)end end end end function packs.scan()for n=#theme.presets,1,-1 do
 local p=theme.presets[n]local base=packs.base[p.name]if base then p.color,p.look
 ,p.scene=base.color,base.look,base.scene else table.remove(theme.presets,n)end
 end if type(listfiles)~='function'or type(isfolder)~='function'then return 0 end
-if not isfolder('Novoline')then makefolder('Novoline')end if not isfolder(packs.
+if not isfolder('PuppyAdmin')then makefolder('PuppyAdmin')end if not isfolder(packs.
 dir)then makefolder(packs.dir)end packs.walk(packs.dir,true,{})local found,count
 ={},0 packs.walk(packs.dir,true,found)for _,path in found do local ok,p=pcall(
 packs.read,path)if ok and p then packs.add(p)count+=1 end end return count end
 _G._nv_themePack=function(name)if not packs.clean(name)then return false,
-'Give the name of a folder in Novoline/themes'end local dir=packs.dir..'/'..name
+'Give the name of a folder in PuppyAdmin/themes'end local dir=packs.dir..'/'..name
 if not(isfolder(dir)and isfile(dir..'/theme.json'))then return false,
 'No theme.json in '..dir end local ok,raw=pcall(packs.json,readfile(dir..
 '/theme.json'))if not ok or not raw or raw.name~=name then return false,
@@ -3030,7 +3027,7 @@ in listfiles(dir)do local key=string.match(path,'([^/\\]+)%.png$')if key and
 packs.clean(key)then images[key]=packs.encode(readfile(path))end end writefile(
 packs.dir..'/'..name..'.nvtheme',game:GetService('HttpService'):JSONEncode({
 format=1,theme=raw,images=images}))return true,'Saved '..name..
-'.nvtheme in Novoline/themes'end _G._nv_themeScan=function()local ok,count=
+'.nvtheme in PuppyAdmin/themes'end _G._nv_themeScan=function()local ok,count=
 pcall(packs.scan)local name=_G._nv_themeName local p=theme.find(name or'')if p
 then _G._nv_themeColor=p.color elseif name~='Custom'then _G._nv_themeName,_G.
 _nv_themeColor='Default',nil end theme.retint(0.4)if _G._nv_settingsRefresh then
@@ -3186,10 +3183,10 @@ not ok then break end if type(a)=='table'and type(a.Url)=='string'and a.Url~=''
 then local face=typeof(a.FontFace)=='Font'and type(a.Text)=='string'and a.
 FontFace or nil sprites[key]={a.Url,a.ImageRectOffset,a.ImageRectSize,face,face
 and a.Text or nil}end end end for key,url in REMOTE do pcall(function()local
-file='Novoline/icon_'..key..'.png'if not isfile(file)then local body=_nvL.
+file='PuppyAdmin/icon_'..key..'.png'if not isfile(file)then local body=_nvL.
 _nvHttpGet(url,{minLen=64,retries=2,retryDelay=0.6})if type(body)~='string'or
-body:sub(1,8)~='\137PNG\r\n\26\n'then return end if not isfolder('Novoline')then
-makefolder('Novoline')end writefile(file,body)end local asset=getcustomasset(
+body:sub(1,8)~='\137PNG\r\n\26\n'then return end if not isfolder('PuppyAdmin')then
+makefolder('PuppyAdmin')end writefile(file,body)end local asset=getcustomasset(
 file)if type(asset)=='string'and asset~=''then sprites[key]={asset,Vector2.zero,
 Vector2.zero}end end)end ready=true _G._nv_moltoReady=true local queued=pending
 pending={}for img in queued do local name=img:GetAttribute('NvIcon')if type(name
@@ -3398,7 +3395,7 @@ userChange,value)end end return handle end end function __DARKLUA_BUNDLE_MODULES
 ={c=__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.B=v end return v.c end end
 do local function
 __modImpl()return function(env)local _nvL=env._nvL local PATH=
-'Novoline/configs.json'local MAX=12 local SKIP={['RadarPanel/Radar']=true,[
+'PuppyAdmin/configs.json'local MAX=12 local SKIP={['RadarPanel/Radar']=true,[
 'FakelagPanel/Fakelag']=true,['AimbotPanel/EspMode']=true,['EspPanel/Hitboxes']=
 true,['EspPanel/Tracers']=true,['AimbotPanel/Tracers']=true}local store={values=
 {},list={},last=nil}pcall(function()if not(isfile and isfile(PATH))then return
@@ -3407,8 +3404,8 @@ readfile(PATH))end)if not(ok and type(d)=='table')then return end store.values=
 type(d.values)=='table'and d.values or{}store.list=type(d.list)=='table'and d.
 list or{}store.last=type(d.last)=='string'and d.last or nil end)local pending=
 false local function save()if pending then return end pending=true task.delay(
-0.5,function()pending=false pcall(function()if not isfolder('Novoline')then
-makefolder('Novoline')end writefile(PATH,game:GetService('HttpService'):
+0.5,function()pending=false pcall(function()if not isfolder('PuppyAdmin')then
+makefolder('PuppyAdmin')end writefile(PATH,game:GetService('HttpService'):
 JSONEncode(store))end)end)end local bound,defaults={},{}local cfg={}function cfg
 .key(anchor,label)if typeof(anchor)~='Instance'or type(label)~='string'or label
 ==''then return nil end local p=anchor while p and not p:GetAttribute(
@@ -3446,7 +3443,7 @@ end end function __DARKLUA_BUNDLE_MODULES.G():typeof(__modImpl())local v=
 __DARKLUA_BUNDLE_MODULES.cache.G if not v then v={c=__modImpl()}
 __DARKLUA_BUNDLE_MODULES.cache.G=v end return v.c end end
 do
-local function __modImpl()return function()local K={DIR='Novoline/copied',SAMPLE
+local function __modImpl()return function()local K={DIR='PuppyAdmin/copied',SAMPLE
 =1/30,MAX=60,TEAR=1024,LOOSE=64,HELD=1,ROOTED=0.35,WINDOW=1,STILL=6,SPOOF=4,JUMP
 =10}K.INDEX=K.DIR..'/index.json'function K.match(text,players)text=tostring(text
 or''):lower():gsub('^%s*@?',''):gsub('%s+$','')if text==''then return nil end
@@ -3623,7 +3620,7 @@ do if type(rec)=='table'and type(rec.name)=='string'and type(rec.path)=='string'
 then local ok,exists=pcall(isfile,rec.path)if ok and exists then out[#out+1]=rec
 end end end return out end function K.save(name,kfs,meta)if type(writefile)~=
 'function'then return nil,'writefile not available'end pcall(function()if not
-isfolder('Novoline')then makefolder('Novoline')end if not isfolder(K.DIR)then
+isfolder('PuppyAdmin')then makefolder('PuppyAdmin')end if not isfolder(K.DIR)then
 makefolder(K.DIR)end end)name=tostring(name or''):gsub('[^%w %-_]',''):gsub(
 '^%s+',''):gsub('%s+$','')if name==''then name='Copy'end local base,n=name,2
 local path=K.DIR..'/'..name..'.lua'while type(isfile)=='function'and isfile(path
@@ -3827,7 +3824,7 @@ return true end end return false end function R.inList(list,item)for _,it in
 list or{}do if it==item then return true end end return false end function R.
 refreshKb(name)local list=state.kbRefreshers and state.kbRefreshers[name]if list
 then for _,fn in list do pcall(fn)end end end R.TITLES_FILE,R.titles,R.titleVer=
-'Novoline/reanim_names.json',{},0 pcall(function()if type(isfile)~='function'or
+'PuppyAdmin/reanim_names.json',{},0 pcall(function()if type(isfile)~='function'or
 not isfile(R.TITLES_FILE)then return end local data=game:GetService(
 'HttpService'):JSONDecode(readfile(R.TITLES_FILE))if type(data)~='table'then
 return end for k,v in data do if type(k)=='string'and type(v)=='string'and v~=''
@@ -3835,8 +3832,8 @@ then R.titles[k]=v end end end)function R.title(name)return R.titles[name]or
 name end state.titleOf=R.title function R.setTitle(name,text)if type(name)~=
 'string'then return end text=tostring(text or''):gsub('%s+',' '):gsub('^ ',''):
 gsub(' $',''):sub(1,40)R.titles[name]=(text~=''and text~=name)and text or nil R.
-titleVer+=1 pcall(function()if isfolder and not isfolder('Novoline')and
-makefolder then makefolder('Novoline')end writefile(R.TITLES_FILE,game:
+titleVer+=1 pcall(function()if isfolder and not isfolder('PuppyAdmin')and
+makefolder then makefolder('PuppyAdmin')end writefile(R.TITLES_FILE,game:
 GetService('HttpService'):JSONEncode(R.titles))end)end function R.kbSig()local
 parts={}for k,b in state.favKeybinds or{}do parts[#parts+1]=k..'='..tostring(b.
 name)end table.sort(parts)return table.concat(parts,',')..'#'..R.titleVer end
@@ -3951,7 +3948,7 @@ function R.recElapsed()local f=state.recordFrames if type(f)=='table'and#f>0
 then return f[#f].Time or 0 end return 0 end function R.inCustom(rec)for _,it in
 state.customItems or{}do if it.category=='Recorded'and it.name==rec.name then
 return true end end if type(isfile)=='function'then local ok,e=pcall(isfile,(
-state.REANIM_RECORDED_CUSTOM_DIR or'Novoline/custom/Recorded')..'/'..tostring(
+state.REANIM_RECORDED_CUSTOM_DIR or'PuppyAdmin/custom/Recorded')..'/'..tostring(
 rec.name)..(tostring(rec.path):match('%.%w+$')or'.json'))if ok and e then return
 true end end return false end function R.libraryError()local sc=state.
 reanimScroll if not sc then return false end for _,c in sc:GetChildren()do if c:
@@ -4149,11 +4146,11 @@ then nm='pasted'end local ext='lua'local okJson,decoded=pcall(function()return
 game:GetService('HttpService'):JSONDecode(raw)end)if okJson and type(decoded)==
 'table'then ext='json'elseif state.loadAnim then local data,text=state.loadAnim(
 raw)if not data then _nvL.notify('Reanim','Not saved: '..text)return end raw=
-text end if isfolder and makefolder then if not isfolder('Novoline')then
-makefolder('Novoline')end if not isfolder('Novoline/custom')then makefolder(
-'Novoline/custom')end end local base,n=nm,2 while isfile and isfile(
-'Novoline/custom/'..nm..'.'..ext)do nm=base..' '..n n+=1 end local path=
-'Novoline/custom/'..nm..'.'..ext local wok,werr=pcall(writefile,path,raw)if not
+text end if isfolder and makefolder then if not isfolder('PuppyAdmin')then
+makefolder('PuppyAdmin')end if not isfolder('PuppyAdmin/custom')then makefolder(
+'PuppyAdmin/custom')end end local base,n=nm,2 while isfile and isfile(
+'PuppyAdmin/custom/'..nm..'.'..ext)do nm=base..' '..n n+=1 end local path=
+'PuppyAdmin/custom/'..nm..'.'..ext local wok,werr=pcall(writefile,path,raw)if not
 wok then _nvL.notify('Reanim','Save failed: '..tostring(werr))return end data.
 Text=''setImport(false)if _nvL.reloadCustom then task.spawn(_nvL.reloadCustom)
 end _nvL.notify('Reanim','Saved: '..nm:sub(1,24))end write(raw:match(
@@ -4275,7 +4272,7 @@ show then return end local icon,line='search','Nothing matches your search'if G.
 query==''then if G.source=='favs'then icon,line='star',
 [[No favorites yet. Tap the star on any animation to keep it here.]]elseif G.
 source=='custom'then icon,line='doclist',
-[[No custom animations yet. Import one or add files to Novoline/custom.]]elseif
+[[No custom animations yet. Import one or add files to PuppyAdmin/custom.]]elseif
 R.libraryError()then icon,line='library',
 'Could not load the library. Reopen the panel to try again.'else icon,line=
 'library','Loading animations'end end R.glyph(eIcon,icon)if eText.Text~=line
@@ -4867,7 +4864,7 @@ then state.setSyncDelay(n/10)end v.Text=TR.delayText(n/10)end,onRelease=function
 TR.delayText(state.syncDelay or 0)local note for _,c in r:GetChildren()do if c:
 IsA('TextLabel')and c.Text=='Seconds behind them'then note=c end end TR.delay={
 slider=s,label=v,note=note}end TR.pairSw=unlockRow(g,3,'Pair mode',
-'Let Novoline users sync to you',function()if state.setPairHost then state.
+'Let Puppy Admin users sync to you',function()if state.setPairHost then state.
 setPairHost(not state.pairHost)end end)TR.syncHint=hint()g=card(1)TR.setMimic,TR
 .mimicKey=header(g,'mimic',R.TINT.blue,'Mimic','Move exactly like someone',
 function()TR.toggleMimic()end,'mimic')do local r=row(g,1,'Player',
@@ -5078,7 +5075,7 @@ elseif syncing and d>0 then sh='Copying '..who..' '..dl..
 ' behind. Turn it off or play something else to stop.'elseif syncing then sh=
 'Copying '..who..' live. Turn it off or play something else to stop.'elseif
 hosting then sh='Pair mode is on. Your dance runs '..lead..
-' behind so Novoline users who sync you match it exactly.'elseif picked then sh=
+' behind so Puppy Admin users who sync you match it exactly.'elseif picked then sh=
 'Turn it on to copy '..who..' as they emote.'else sh=
 'Pick a player, then turn this on to copy their emote live.'end say(TR.syncHint,
 sh,syncing or hosting)local mapi=TR.mimicApi()R.guard()local mimicking=TR.
@@ -5466,7 +5463,7 @@ __DARKLUA_BUNDLE_MODULES.K():typeof(__modImpl())local v=__DARKLUA_BUNDLE_MODULES
 .cache.K if not v then v={c=__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.K=v end
 return v.c end end
 do local function __modImpl()return function(env)local tween=
-env.tween local W={file='Novoline/windows.json',panels=setmetatable({},{__mode=
+env.tween local W={file='PuppyAdmin/windows.json',panels=setmetatable({},{__mode=
 'k'}),pending={}}_G._nv_windows=W local hs=game:GetService('HttpService')
 local function viewport()local cam=workspace.CurrentCamera local vp=cam and cam.
 ViewportSize if not vp or vp.X<1 or vp.Y<1 then return 1280,720 end return vp.X,
@@ -5511,8 +5508,8 @@ ax,ay=W.spotOf(pnl)list[#list+1]={cmd=cmd,title=W.titleOf(pnl)or cmd,x=x,y=y,ax=
 ax,ay=ay,w=pnl.Size.X.Offset,h=pnl.Size.Y.Offset}end end end for _,e in W.
 pending do if not seen[e.cmd]then seen[e.cmd]=true list[#list+1]=e end end
 pcall(function()local json=hs:JSONEncode({windows=list})if json==W.written then
-return end if isfolder and not isfolder('Novoline')and makefolder then
-makefolder('Novoline')end writefile(W.file,json)W.written=json end)end function
+return end if isfolder and not isfolder('PuppyAdmin')and makefolder then
+makefolder('PuppyAdmin')end writefile(W.file,json)W.written=json end)end function
 W.changed()if W.dirty or not _G._nv_saveWindows then return end W.dirty=true
 task.delay(1,W.save)end function W.track(pnl)W.panels[pnl]=true pnl:
 GetPropertyChangedSignal('Visible'):Connect(function()if pnl.Visible and _G.
@@ -6757,7 +6754,7 @@ want)end end T.attachStep(body,want)T.legsStep(dt,body,want)T.spiderStep(dt,body
 ,want)T.pointStep(dt,body,want)end T.want=want T.apply(want)T.freeStep()end
 function T.render()if next(T.want)==nil and next(T.live)==nil then return end T.
 apply(T.want)end S.trickStep=function()local ok,err=pcall(T.tick)if not ok and
-not T.warned then T.warned=true warn('Novoline tricks: '..tostring(err))end end
+not T.warned then T.warned=true warn('Puppy Admin tricks: '..tostring(err))end end
 run.RenderStepped:Connect(function()if S.flags.reanimated then pcall(T.render)
 end end)run.Stepped:Connect(function()if S.flags.reanimated then pcall(T.render)
 end end)API.trick_head=function(on,mode,free)T.head.on=on==true if mode==
@@ -7013,11 +7010,11 @@ clone_char_child_removed=nil,animation_hb=nil},real_chars={},callbacks={on_play=
 nil,on_stop=nil,on_deactivate=nil},animation={cache={},load_id=0,state={
 is_playing=false,current_url=nil,speed=1,keyframes=nil,total_duration=0,
 elapsed_time=0},original_motor_c0s={},joints={},ac_joint_map=nil,body=nil}}local
-API={}local ANIM_CACHE_DIR='Novoline/anim_cache'local function animCachePath(url
+API={}local ANIM_CACHE_DIR='PuppyAdmin/anim_cache'local function animCachePath(url
 )local h=0 for i=1,#url do h=(h*31+string.byte(url,i))%2147483647 end return
 ANIM_CACHE_DIR..'/'..tostring(h)..'.lua'end local function ensureAnimCacheDir()
 pcall(function()if typeof(isfolder)=='function'and typeof(makefolder)==
-'function'then if not isfolder('Novoline')then makefolder('Novoline')end if not
+'function'then if not isfolder('PuppyAdmin')then makefolder('PuppyAdmin')end if not
 isfolder(ANIM_CACHE_DIR)then makefolder(ANIM_CACHE_DIR)end end end)end
 local function decodeAnimSource(src)if type(src)~='string'or src==''then return
 nil,'empty source'end local loaded_fn,load_err=_safeLoadstring(src)if not
@@ -7890,12 +7887,12 @@ Color=C.DIV,Transparency=0.5})end)statesSearchBox:GetPropertyChangedSignal(
 'Text'):Connect(function()if _RS.activeTab=='states'then _RS.reanimSearchBox.
 Text=statesSearchBox.Text _RS.reanimRefreshSearch()end end)_RS.statesSearchCard=
 statesSearchCard _RS.statesSearchBox=statesSearchBox end _RS.reanimDir=1 _RS.
-PLAY_BINDS_FILE='Novoline/reanim_play.json'_RS.playBinds={rewind='None',pause=
+PLAY_BINDS_FILE='PuppyAdmin/reanim_play.json'_RS.playBinds={rewind='None',pause=
 'None',speedUp='None',speedDown='None',record='None',live='None',pole='None',
 poleHere='None',stretch='None',point='None',drive='LeftAlt',headTrack='None',
 torso='None',fly='None',sync='None',mimic='None',legs='None',wobble='None',
 spider='None'}_RS.savePlayBinds=function()pcall(function()if isfolder and not
-isfolder('Novoline')and makefolder then makefolder('Novoline')end writefile(_RS.
+isfolder('PuppyAdmin')and makefolder then makefolder('PuppyAdmin')end writefile(_RS.
 PLAY_BINDS_FILE,game:GetService('HttpService'):JSONEncode(_RS.playBinds))end)end
 _RS.loadPlayBinds=function()pcall(function()if type(isfile)~='function'or not
 isfile(_RS.PLAY_BINDS_FILE)then return end local ok,data=pcall(function()return
@@ -7905,11 +7902,11 @@ not ok or type(data)~='table'then return end for _,k in{'rewind','pause',
 'drive','headTrack','torso','fly','sync','mimic','legs','wobble','spider'}do
 local v=data[k]if type(v)=='string'and v~=''and v~='Unknown'and v:sub(1,5)~=
 'Mouse'then if v~='None'or k=='drive'then _RS.playBinds[k]=v end end end end)end
-_RS.loadPlayBinds()_RS.SPEED_BINDS_FILE='Novoline/reanim_speeds.json'_RS.
+_RS.loadPlayBinds()_RS.SPEED_BINDS_FILE='PuppyAdmin/reanim_speeds.json'_RS.
 speedBinds={}_RS.saveSpeedBinds=function()pcall(function()local out={}for _,sb
 in _RS.speedBinds do if not sb.fresh then out[#out+1]={key=sb.key or'None',speed
-=sb.speed}end end if isfolder and not isfolder('Novoline')and makefolder then
-makefolder('Novoline')end writefile(_RS.SPEED_BINDS_FILE,game:GetService(
+=sb.speed}end end if isfolder and not isfolder('PuppyAdmin')and makefolder then
+makefolder('PuppyAdmin')end writefile(_RS.SPEED_BINDS_FILE,game:GetService(
 'HttpService'):JSONEncode(out))end)end _RS.loadSpeedBinds=function()pcall(
 function()if type(isfile)~='function'or not isfile(_RS.SPEED_BINDS_FILE)then
 return end local ok,data=pcall(function()return game:GetService('HttpService'):
@@ -8173,13 +8170,13 @@ new(0,6)})local recEmpty=createInstance('TextLabel',{Parent=recList,
 BackgroundTransparency=1,Size=UDim2.new(1,0,0,40),Font=Enum.Font.GothamSemibold,
 TextSize=11,TextColor3=C.DIM,TextWrapped=true,TextXAlignment=Enum.TextXAlignment
 .Center,TextYAlignment=Enum.TextYAlignment.Top,Text='Nothing recorded yet',
-LayoutOrder=99,ZIndex=155})_RS.REANIM_RECENT_FILE='Novoline/reanim_recent.json'
-_RS.REANIM_RECORD_DIR='Novoline/recorded'_RS.REANIM_RECORDED_CUSTOM_DIR=
-'Novoline/custom/Recorded'_RS.recentRecordings={}_RS.recordActive=false _RS.
+LayoutOrder=99,ZIndex=155})_RS.REANIM_RECENT_FILE='PuppyAdmin/reanim_recent.json'
+_RS.REANIM_RECORD_DIR='PuppyAdmin/recorded'_RS.REANIM_RECORDED_CUSTOM_DIR=
+'PuppyAdmin/custom/Recorded'_RS.recentRecordings={}_RS.recordActive=false _RS.
 recordFrames=nil _RS.recordConn=nil _RS.recordOrigC0s=nil _RS.recordLastStop=0
 local function ensureDir(path)pcall(function()if type(isfolder)~='function'or
-type(makefolder)~='function'then return end if not isfolder('Novoline')then
-makefolder('Novoline')end if path and path~='Novoline'and not isfolder(path)then
+type(makefolder)~='function'then return end if not isfolder('PuppyAdmin')then
+makefolder('PuppyAdmin')end if path and path~='PuppyAdmin'and not isfolder(path)then
 makefolder(path)end end)end local function sanitizeName(s)s=tostring(s or''):
 gsub('[^%w %-_]',''):gsub('^%s+',''):gsub('%s+$','')if s==''then s='Recording'
 end return s end local function fmtDur(t)t=tonumber(t)or 0 local m=math.floor(t/
@@ -8189,7 +8186,7 @@ in _RS.customItems or{}do if it.category=='Recorded'and it.name==recName then
 return true end end if type(isfile)=='function'then local p=_RS.
 REANIM_RECORDED_CUSTOM_DIR..'/'..recName..'.json'local ok,exists=pcall(isfile,p)
 if ok and exists then return true end end return false end _RS.
-saveRecentRecordings=function()pcall(function()ensureDir('Novoline')if type(
+saveRecentRecordings=function()pcall(function()ensureDir('PuppyAdmin')if type(
 writefile)~='function'then return end local data={}for i=1,math.min(3,#_RS.
 recentRecordings)do local rec=_RS.recentRecordings[i]if rec and type(rec.name)==
 'string'and type(rec.path)=='string'then data[#data+1]={name=rec.name,path=rec.
@@ -8291,8 +8288,8 @@ tostring(rec.name or'recording'):sub(1,24))end _RS.addRecordingToCustom=function
 'function'or type(writefile)~='function'then _nvL.notify('Reanim',
 'Filesystem not available')return end local ok,src=pcall(readfile,rec.path)if
 not ok or type(src)~='string'or src==''then _nvL.notify('Reanim',
-'Could not read recording')return end ensureDir('Novoline')ensureDir(
-'Novoline/custom')ensureDir(_RS.REANIM_RECORDED_CUSTOM_DIR)local nm=
+'Could not read recording')return end ensureDir('PuppyAdmin')ensureDir(
+'PuppyAdmin/custom')ensureDir(_RS.REANIM_RECORDED_CUSTOM_DIR)local nm=
 sanitizeName(rec.name)local dest=_RS.REANIM_RECORDED_CUSTOM_DIR..'/'..nm..(rec.
 path:match('%.%w+$')or'.json')local wok=pcall(writefile,dest,src)if not wok then
 _nvL.notify('Reanim','Failed to add to Custom')return end if _RS.localAnimCache
@@ -8307,7 +8304,7 @@ Time or 0 local defaultName='Rec '..os.date('%H-%M-%S')local encoded pcall(
 function()encoded=game:GetService('HttpService'):JSONEncode(frames)end)if type(
 encoded)~='string'or encoded==''then _nvL.notify('Reanim',
 'Failed to encode recording')return end local function persistRecording(nm)nm=
-sanitizeName(nm)ensureDir('Novoline')ensureDir(_RS.REANIM_RECORD_DIR)local base=
+sanitizeName(nm)ensureDir('PuppyAdmin')ensureDir(_RS.REANIM_RECORD_DIR)local base=
 nm local path=_RS.REANIM_RECORD_DIR..'/'..base..'.json'if type(isfile)==
 'function'then local n=2 while n<=20 do local ok,exists=pcall(isfile,path)if not
 ok or not exists then break end nm=base..' '..n path=_RS.REANIM_RECORD_DIR..'/'
@@ -8774,10 +8771,10 @@ inp.Position.Z if z~=0 then lvNud(0,0,z*6*(_RS.liveSens or 1))end end end)
 userInputService.WindowFocusReleased:Connect(function()if _RS.setLiveDriving
 then _RS.setLiveDriving(false)end end)pcall(_RS.refreshLiveUI,true)end _RS.
 globalItems={}_RS.customItems={}_RS.favsItems={}_RS.favKeybinds={}_RS.
-REANIM_KEYBINDS_FILE='Novoline/reanim_keybinds.json'_RS.REANIM_FAVS_FILE=
-'Novoline/reanim_favs.json'_RS.REANIM_STATES_FILE='Novoline/reanim_states.json'
+REANIM_KEYBINDS_FILE='PuppyAdmin/reanim_keybinds.json'_RS.REANIM_FAVS_FILE=
+'PuppyAdmin/reanim_favs.json'_RS.REANIM_STATES_FILE='PuppyAdmin/reanim_states.json'
 _RS.savedReanimKeybinds={}_RS.saveReanimKeybinds=function()pcall(function()if
-not isfolder('Novoline')then makefolder('Novoline')end local data={}for keyName,
+not isfolder('PuppyAdmin')then makefolder('PuppyAdmin')end local data={}for keyName,
 bind in _RS.favKeybinds do if type(keyName)=='string'and type(bind)=='table'and
 type(bind.name)=='string'and bind.name~=''then data[bind.name]=keyName end end
 _RS.savedReanimKeybinds=data writefile(_RS.REANIM_KEYBINDS_FILE,game:GetService(
@@ -8788,8 +8785,8 @@ REANIM_KEYBINDS_FILE))end)if ok and type(data)=='table'then _RS.
 savedReanimKeybinds={}for emoteName,keyName in data do if type(emoteName)==
 'string'and type(keyName)=='string'and keyName~=''and keyName~='Unknown'then _RS
 .savedReanimKeybinds[emoteName]=keyName end end end end end)end _RS.
-saveFavsItems=function()pcall(function()if not isfolder('Novoline')then
-makefolder('Novoline')end local data={}for _,it in _RS.favsItems do if type(it.
+saveFavsItems=function()pcall(function()if not isfolder('PuppyAdmin')then
+makefolder('PuppyAdmin')end local data={}for _,it in _RS.favsItems do if type(it.
 name)=='string'and it.name~=''then data[#data+1]={name=it.name,url=it.url}end
 end writefile(_RS.REANIM_FAVS_FILE,game:GetService('HttpService'):JSONEncode(
 data))end)end _RS.savedFavsData={}_RS.loadFavsData=function()pcall(function()if
@@ -8797,7 +8794,7 @@ isfile and isfile(_RS.REANIM_FAVS_FILE)then local ok,data=pcall(function()return
 game:GetService('HttpService'):JSONDecode(readfile(_RS.REANIM_FAVS_FILE))end)if
 ok and type(data)=='table'then _RS.savedFavsData=data end end end)end _RS.
 loadFavsData()_RS.saveStateAnims=function()pcall(function()if not isfolder(
-'Novoline')then makefolder('Novoline')end local data={}for slot,anim in _RS.
+'PuppyAdmin')then makefolder('PuppyAdmin')end local data={}for slot,anim in _RS.
 stateAnims do if anim and type(anim.name)=='string'and anim.name~=''then data[
 slot]={name=anim.name,url=anim.url}end end writefile(_RS.REANIM_STATES_FILE,game
 :GetService('HttpService'):JSONEncode(data))end)end _RS.savedStatesData={}_RS.
@@ -9109,11 +9106,11 @@ clone:FindFirstChild('Animate')if animScript then animScript.Enabled=true end
 end _RS.reanimCurrentName=nil _RS.reanimStatusLbl.Text='Idle'else _rawPlay(anim.
 name,anim.url,true)_RS.reanimStatusLbl.Text=slot:sub(1,1):upper()..slot:sub(2)..
 ': '..anim.name:sub(1,16)end end)end _RS.startStateLoop=startStateLoop _RS.
-stopStateLoop=stopStateLoop local SONGS_FOLDER='Novoline/Songs'local emoteSounds
+stopStateLoop=stopStateLoop local SONGS_FOLDER='PuppyAdmin/Songs'local emoteSounds
 ={}local emoteSound=createInstance('Sound',{Volume=0.8,Looped=true})pcall(
 function()emoteSound.Parent=game:GetService('SoundService')end)local function
-ensureSongsFolder()pcall(function()if not isfolder('Novoline')then makefolder(
-'Novoline')end if not isfolder(SONGS_FOLDER)then makefolder(SONGS_FOLDER)end end
+ensureSongsFolder()pcall(function()if not isfolder('PuppyAdmin')then makefolder(
+'PuppyAdmin')end if not isfolder(SONGS_FOLDER)then makefolder(SONGS_FOLDER)end end
 )end local function scanSongsFolder()ensureSongsFolder()if not listfiles then
 return end local ok,files=pcall(listfiles,SONGS_FOLDER)if not ok or not files
 then return end for _,path in files do local ext=path:match('%.([^%.]+)$')if ext
@@ -9272,7 +9269,7 @@ _RS.customLoadLbl.TextSize=12 _RS.customLoadLbl.TextColor3=C.SUB _RS.
 customLoadLbl.Text=
 [[No custom animations found.
 Add .lua, .txt, or .json animation files to:
-workspace/Novoline/custom/]]
+workspace/PuppyAdmin/custom/]]
 _RS.customLoadLbl.TextWrapped=true _RS.customLoadLbl.TextXAlignment=Enum.
 TextXAlignment.Center _RS.customLoadLbl.TextYAlignment=Enum.TextYAlignment.Top
 _RS.customLoadLbl.Visible=false _RS.customLoadLbl.ZIndex=153 local function
@@ -9301,11 +9298,11 @@ _RS.customLoadGen or 0)+1 local gen=_RS.customLoadGen for _,it in _RS.
 customItems do it.row:Destroy()end table.clear(_RS.customItems)if _RS.
 customCatHeaders then for _,h in _RS.customCatHeaders do if type(h)=='table'and
 h.row then pcall(function()h.row:Destroy()end)end end end _RS.customCatHeaders={
-}if isfolder and makefolder then if not isfolder('Novoline')then makefolder(
-'Novoline')end if not isfolder('Novoline/custom')then makefolder(
-'Novoline/custom')end end local recFiles=_listAnimFiles(
-'Novoline/custom/Recorded')local files={}for _,path in _listAnimFiles(
-'Novoline/custom')do if not path:find('[/\\][Rr]ecorded[/\\]')then files[#files+
+}if isfolder and makefolder then if not isfolder('PuppyAdmin')then makefolder(
+'PuppyAdmin')end if not isfolder('PuppyAdmin/custom')then makefolder(
+'PuppyAdmin/custom')end end local recFiles=_listAnimFiles(
+'PuppyAdmin/custom/Recorded')local files={}for _,path in _listAnimFiles(
+'PuppyAdmin/custom')do if not path:find('[/\\][Rr]ecorded[/\\]')then files[#files+
 1]=path end end if _RS.customLoadGen~=gen then return end if#recFiles==0 and#
 files==0 then if _RS.activeTab=='custom'then _RS.customLoadLbl.Visible=true _RS.
 currentFilteredReanim={}if _RS.hideAllRows then pcall(_RS.hideAllRows)end _RS.
@@ -9399,9 +9396,9 @@ local data=tostring(dataBox.Text or''):gsub('^%s+',''):gsub('%s+$','')if data==
 writefile then _nvL.notify('Reanim','writefile not available')return end local
 ext='lua'local okJson,decoded=pcall(function()return game:GetService(
 'HttpService'):JSONDecode(data)end)if okJson and type(decoded)=='table'then ext=
-'json'end if isfolder and makefolder then if not isfolder('Novoline')then
-makefolder('Novoline')end if not isfolder('Novoline/custom')then makefolder(
-'Novoline/custom')end end local path='Novoline/custom/'..nm..'.'..ext local wok,
+'json'end if isfolder and makefolder then if not isfolder('PuppyAdmin')then
+makefolder('PuppyAdmin')end if not isfolder('PuppyAdmin/custom')then makefolder(
+'PuppyAdmin/custom')end end local path='PuppyAdmin/custom/'..nm..'.'..ext local wok,
 werr=pcall(writefile,path,data)if not wok then _nvL.notify('Reanim',
 'Save failed: '..tostring(werr))return end nameBox.Text=''dataBox.Text=''
 closePaste()if _nvL.reloadCustom then _nvL.reloadCustom()end _RS.setTab('custom'
@@ -9577,7 +9574,7 @@ function(dt)if myGen~=_RS.reanimGeneration then conn:Disconnect()if _RS.syncConn
 syncPairLate=false,false end if _RS.syncOn and _RS.syncGen==myGen then _RS.
 syncOn=false _nvL.notify('Sync','Sync off')end return end local ok,why=pcall(
 step,dt)if not ok then if not _RS.syncWarned then _RS.syncWarned=true warn(
-'Novoline sync: '..tostring(why))end _RS.stopSync('Sync stopped: '..(tostring(
+'Puppy Admin sync: '..tostring(why))end _RS.stopSync('Sync stopped: '..(tostring(
 why):gsub('^.-:%d+: ','')):sub(1,80))elseif why then _RS.stopSync(why)end end)
 _RS.syncConn=conn _RS.syncOn,_RS.syncGen=true,myGen _RS.manualOverride=true _RS.
 reanimCurrentName='@'..plr.Name if _RS.reanimStatusLbl then _RS.reanimStatusLbl.
@@ -9855,10 +9852,10 @@ _origLoadAPI=_G.loadReanimAPI _G.loadReanimAPI=function(cb)_origLoadAPI(function
 ()if _G._reanimAPI then _G._reanimAPI.on_deactivate(_onReanimDeactivate)end if
 _RS.applyBlend then _RS.applyBlend()end if cb then cb()end end)end end local
 okSetup,errSetup=pcall(_setup)if not okSetup then warn(
-'Novoline: reanim _setup failed:',errSetup)if _G._reanimPanel then pcall(
+'Puppy Admin: reanim _setup failed:',errSetup)if _G._reanimPanel then pcall(
 function()_G._reanimPanel:Destroy()end)end _G._reanimPanel=nil _G.
 _reanimSpeedPanel=nil return end local okLogic,errLogic=pcall(_logic)if not
-okLogic then warn('Novoline: reanim _logic failed:',errLogic)end pcall(function(
+okLogic then warn('Puppy Admin: reanim _logic failed:',errLogic)end pcall(function(
 )_nvL.applyThemeTo(_G._reanimPanel)end)pcall(function()if _G._reanimSpeedPanel
 then _nvL.applyThemeTo(_G._reanimSpeedPanel)end end)end end function
 __DARKLUA_BUNDLE_MODULES.aj():typeof(__modImpl())local v=
@@ -10119,7 +10116,7 @@ tpToolInstance.Parent then tpToolInstance:Destroy()end if tpToolConn then
 tpToolConn:Disconnect()tpToolConn=nil end tpToolInstance=nil _nvL.notify(
 'TP Tool','Removed')end)end 
 do
-local WP_FILE='Novoline/waypoints.json'
+local WP_FILE='PuppyAdmin/waypoints.json'
 local
 _nv_wps={}
 local _nv_wpVis={}
@@ -10128,7 +10125,7 @@ local _nv_wpToolConn=nil
 local
 hs_wp=game:GetService('HttpService')
 local function wpSave()pcall(function()if
-not isfolder('Novoline')then makefolder('Novoline')end writefile(WP_FILE,hs_wp:
+not isfolder('PuppyAdmin')then makefolder('PuppyAdmin')end writefile(WP_FILE,hs_wp:
 JSONEncode(_nv_wps))end)end 
 local function wpDistStr(pos)local hrp=_nvL.lp.Character and getRootPart(_nvL.lp
 .Character)if not hrp then return'?m'end return tostring(math.round((hrp.
@@ -10506,7 +10503,7 @@ HELI_ANIM})end heliAnim=anim local okLoad,track=pcall(function()return animator:
 LoadAnimation(anim)end)if okLoad and track then heliTrack=track heliTrack.
 Priority=Enum.AnimationPriority.Action4 heliTrack.Looped=true pcall(function()
 heliTrack:Play(0.1,1,1)end)end heliSound=createInstance('Sound',{Name=
-'NovolineHelicopter',SoundId='rbxassetid://'..HELI_SOUND,Volume=0.35,Looped=true
+'PuppyAdminHelicopter',SoundId='rbxassetid://'..HELI_SOUND,Volume=0.35,Looped=true
 ,RollOffMode=Enum.RollOffMode.InverseTapered,Parent=root})pcall(function()
 heliSound:Play()end)heliDiedConn=hum.Died:Connect(function()stopHelicopter(false
 )local prof=_G._nv_profileRuntime if prof and prof.drop then prof:drop(
@@ -11281,7 +11278,7 @@ _nvL.currentThemeName='Modern'
 _nvL.placeWindows=false 
 _nvL.keybindListening=false 
 _nvL.reloadCustom=function()end 
-local _nv_profileStore=_G._nv_profileStore or{path='Novoline/profiles.json',data
+local _nv_profileStore=_G._nv_profileStore or{path='PuppyAdmin/profiles.json',data
 ={version=1,order={},profiles={}},defaults={notifEnabled=true,welcomeEnabled=
 true,singleTabEnabled=false,autoHideNavbar=false,placeWindows=false,tabDocking=
 true,tabDockCorners={},saveWindows=false,immersiveMusic=true,haptics=true,
@@ -11299,14 +11296,14 @@ spamNotifs=true,webhookChat=false,webhookJoin=false,webhookChatUrl='',
 webhookJoinUrl=''}}
 local saveSettings=
 function()pcall(function()local hs=game:GetService('HttpService')local path=
-'Novoline/settings.json'if not isfolder('Novoline')then makefolder('Novoline')
+'PuppyAdmin/settings.json'if not isfolder('PuppyAdmin')then makefolder('PuppyAdmin')
 end writefile(path,hs:JSONEncode(_nv_profileStore:captureSettings()))end)end 
 local sfx={tabOpen=function()end,
 tabClose=function()end,hover=function()end,scroll=function()end,notify=function(
 )end}
 pcall(function()local hs=game:GetService('HttpService')if isfile and isfile(
-'Novoline/binds.json')then local ok,data=pcall(hs.JSONDecode,hs,readfile(
-'Novoline/binds.json'))if ok and type(data)=='table'then _nvL._nv_binds=data end
+'PuppyAdmin/binds.json')then local ok,data=pcall(hs.JSONDecode,hs,readfile(
+'PuppyAdmin/binds.json'))if ok and type(data)=='table'then _nvL._nv_binds=data end
 end end)
 _G._nv_propertyTweens=setmetatable({},{__mode=
 'k'})
@@ -11527,8 +11524,8 @@ function(key)local parts={}for part in tostring(key):gmatch('[^+]+')do parts[#
 parts+1]=_nvL.keyWords[part]or part end return table.concat(parts,' ')end
 
 local function saveAutoExec()pcall(function()local hs=game:GetService(
-'HttpService')if not isfolder('Novoline')then makefolder('Novoline')end
-writefile('Novoline/autoexecute.json',hs:JSONEncode(_nvL._nv_autoexec))end)end
+'HttpService')if not isfolder('PuppyAdmin')then makefolder('PuppyAdmin')end
+writefile('PuppyAdmin/autoexecute.json',hs:JSONEncode(_nvL._nv_autoexec))end)end
 
 local function _nvMakeSliderSwitch
 (parent,default,zindex,layout)layout=type(layout)=='table'and layout or{}local
@@ -11795,7 +11792,7 @@ _reanimSpeedPanel==nil then pcall(function()_G._reanimPanel:Destroy()end)_G.
 _reanimPanel=nil end if _G[panelKey]~=nil then return _G[panelKey]end local fn=
 initFn if type(fn)~='function'and type(_G[initFn])=='function'then fn=_G[initFn]
 end if type(fn)=='function'then local ok,err=pcall(fn)if not ok then warn(
-'Novoline: ensurePanel failed:',panelKey,err)if panelKey=='_reanimPanel'then if
+'Puppy Admin: ensurePanel failed:',panelKey,err)if panelKey=='_reanimPanel'then if
 _G._reanimPanel then pcall(function()_G._reanimPanel:Destroy()end)end _G.
 _reanimPanel=nil _G._reanimSpeedPanel=nil end end end return _G[panelKey]end _G.
 _nvEnsurePanel=ensurePanel end 
@@ -11963,25 +11960,66 @@ end
 return { init = _initReanimPanel, gui = sg, cmds = novoCmdReg, nvL = _nvL, mv = _mv }
 end
 
--- Runs the embedded novoline code once (engines, UI kit, command registry).
+-- Runs the embedded engine once (engines, UI kit, command registry).
 function Novo.boot()
     if Novo.booted then return true end
     if Novo.failed then
-        note("Novoline", "Unavailable: " .. Novo.failed:sub(1, 60), RED)
+        note("Puppy Admin", "Unavailable: " .. Novo.failed:sub(1, 60), RED)
         return false
     end
     local ok, res = pcall(Novo.load, {
-        notify = function(title, text) note(tostring(title or "Novoline"), tostring(text or "")) end,
+        notify = function(title, text) note(tostring(title or "Puppy Admin"), tostring(text or "")) end,
         parentGui = parentGui,
     })
     if not ok or type(res) ~= "table" or type(res.init) ~= "function" or type(res.cmds) ~= "table" then
         Novo.failed = ok and "engine returned nothing" or tostring(res)
-        note("Novoline", "Engine failed: " .. Novo.failed:sub(1, 60), RED)
+        note("Puppy Admin", "Engine failed: " .. Novo.failed:sub(1, 60), RED)
         return false
     end
     Novo.booted, Novo.gui, Novo.cmds, Novo.nvL, Novo.init = true, res.gui, res.cmds, res.nvL, res.init
-    if Novo.gui then Novo.gui.Enabled = not Hide.uiHidden end
+    if Novo.gui then
+        Novo.gui.Enabled = not Hide.uiHidden
+        -- the engine's palette is the default theme's, so theme presets and
+        -- colour roles recolour its panels like every other window
+        pcall(Theme.attach, Novo.gui)
+    end
     return true
+end
+
+-- Window look shared with the rest of the script: 12 px corners, flat theme
+-- background (no gradient), theme stroke, 14 px bold title, and the theme's
+-- background image. Re-applied each time the panel opens, because the
+-- engine's tone pass repaints its surfaces on open.
+function Novo.stylePanel(panel)
+    if typeof(panel) ~= "Instance" then return end
+    local function apply()
+        local corner = panel:FindFirstChildOfClass("UICorner")
+        if corner then corner.CornerRadius = UDim.new(0, 12) end
+        local surface = panel:FindFirstChild("UtilitySurface")
+        if surface then
+            local grad = surface:FindFirstChildOfClass("UIGradient")
+            if grad then grad.Enabled = false end
+            local round = surface:FindFirstChildOfClass("UICorner")
+            if round then round.CornerRadius = UDim.new(0, 12) end
+            surface.BackgroundColor3 = Theme.current.bg
+            if not Theme.backdrops[surface] then
+                surface.BackgroundTransparency = 0.05
+                Theme.addBackdrop(surface, 12)
+            end
+        end
+        for _, holder in ipairs({ panel, surface }) do
+            local edge = holder and holder:FindFirstChildOfClass("UIStroke")
+            if edge then edge.Color, edge.Thickness, edge.Transparency = Theme.current.border, 1, 0 end
+        end
+        local bar = panel:FindFirstChild("TitleBar")
+        local title = bar and bar:FindFirstChild("Title")
+        if title and title:IsA("TextLabel") then title.Font, title.TextSize = Enum.Font.GothamBold, 14 end
+    end
+    pcall(apply)
+    panel:GetPropertyChangedSignal("Visible"):Connect(function()
+        if panel.Visible then task.defer(function() pcall(apply) end) end
+    end)
+    table.insert(Theme.listeners, function() pcall(apply) end)
 end
 
 -- Builds the Reanimate panel on first use.
@@ -11998,7 +12036,7 @@ function Novo.ensure()
     local logConn
     pcall(function()
         logConn = game:GetService("LogService").MessageOut:Connect(function(msg, kind)
-            if not captured and kind == Enum.MessageType.MessageWarning and tostring(msg):find("Novoline", 1, true) then
+            if not captured and kind == Enum.MessageType.MessageWarning and tostring(msg):find("Puppy Admin", 1, true) then
                 captured = tostring(msg)
             end
         end)
@@ -12006,6 +12044,7 @@ function Novo.ensure()
     local okInit, err = pcall(Novo.init)
     task.wait() -- MessageOut can arrive a frame late
     if logConn then logConn:Disconnect() end
+    if typeof(_G._reanimPanel) == "Instance" then Novo.stylePanel(_G._reanimPanel) end
     if captured then warn("[PuppyAdmin] reanimation panel: " .. captured) end
     if not okInit or typeof(_G._reanimPanel) ~= "Instance" then
         Novo.panelFailed = okInit and (captured or "panel was not created") or tostring(err)
@@ -12079,9 +12118,9 @@ table.insert(cleanups, function()
 end)
 
 
--- Generated from novoline.lua: every command novoline files under "movement",
--- plus the fly / noclip / swim / hatfly / helicopter family. Each runs novoline's
--- own handler (Novo.run); this table only feeds help, aliases and autocomplete.
+-- Generated from the engine's registry: every command in its "movement" group,
+-- plus the fly / noclip / swim / hatfly / helicopter family. Each runs the
+-- engine's own handler (Novo.run); this table only feeds help, aliases and autocomplete.
 local NOVO_MOVE = {
     { name = "airwalk", args = "", desc = "Walk on air (Space to go up)", aliases = { "aw" } },
     { name = "autoflashback", args = "", desc = "Go back to where you died every time you respawn", aliases = { "autofb" } },
@@ -12189,13 +12228,13 @@ local NOVO_MOVE = {
 }
 
 ------------------------------------------------------------------------
--- Movement: novoline's movement commands, run through novoline's registry
+-- Movement: the engine's movement commands, run through its own registry
 --
--- The handlers are novoline's code (embedded above in Novo.boot): fly and
+-- The handlers are the engine's code (embedded above in Novo.load): fly and
 -- its speed/keys, superfly and its panel, hatfly, helicopter, noclip holds,
 -- airwalk, swim, every teleport / waypoint / follow command, and the
 -- movement library (cframefly, vfly, dash, glide, wallrun, ...). They are
--- called the way novoline's command bar calls them: exec({ name, args... }).
+-- called the way the engine's command bar calls them: exec({ name, args... }).
 ------------------------------------------------------------------------
 
 Novo.active = {}   -- commands with an "un..." counterpart that are on right now
@@ -12209,7 +12248,7 @@ function Novo.find(name)
 end
 
 -- a: PuppyAdmin args (without the command name). Runs on its own thread
--- because novoline handlers wait (fly restarts, tweens, teleports).
+-- because the handlers wait (fly restarts, tweens, teleports).
 function Novo.run(name, a)
     local c = Novo.find(name)
     if not c or type(c.exec) ~= "function" then
@@ -12231,7 +12270,7 @@ function Novo.run(name, a)
 end
 
 -- State the Movement panel shows. Fly, superfly, noclip, swim and the fly
--- speed are novoline's own fields; helicopter, hatfly and airwalk keep their
+-- speed are the engine's own fields; helicopter, hatfly and airwalk keep their
 -- state in module locals, so those follow the commands sent from here.
 Novo.state = {}
 function Novo.state.flying() return type(_G._nvMove) == "table" and _G._nvMove.FLYING == true end
@@ -12261,7 +12300,7 @@ end)
 
 ------------------------------------------------------------------------
 -- World and visuals: infinite baseplate, ESP (chams, hitboxes, tracers).
--- Movement is novoline's own code now (see Novo / NOVO_MOVE above).
+-- Movement is the built-in engine's code (see Novo / NOVO_MOVE above).
 ------------------------------------------------------------------------
 
 local Baseplate, BASEPLATE_PRESETS, bpApplyAll, Esp, isMobile
@@ -12432,7 +12471,7 @@ function Baseplate.useCustom(raw)
 end
 
 ------------------------------------------------------------------------
--- ESP (novoline visuals: highlight + name/health/distance pill, chams,
+-- ESP (highlight + name/health/distance pill, chams,
 -- hitboxes, tracers, team colors, per-team hiding). Your screen only.
 ------------------------------------------------------------------------
 
@@ -12685,1354 +12724,176 @@ end)
 end
 
 ------------------------------------------------------------------------
--- Anti VC ban (VC Bypasser panel, opened with `antivcban`)
+-- Anti VC ban (opened with `antivcban`): the voice-chat bypass, one method
+-- (formerly "Bypass V2"). The panel is built with the rest of the panels;
+-- this is the logic, with no UI of its own except the replacement mic
+-- button it places over the top bar's mic once the bypass is active.
 ------------------------------------------------------------------------
 
--- Ported from vcBypass_standalone.lua. Built on the first `antivcban`, in its
--- own function so its locals do not count against the main chunk's limit.
-local VCB = { conns = {} }
-
-function VCB.build()
-local LocalPlayer = plr
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-local GuiService = game:GetService("GuiService")
-local function track(c)
-	table.insert(VCB.conns, c)
-	return c
-end
-
--- Optional executor globals: fall back to safe no-ops when absent.
-local clonerefFn = (type(cloneref) == "function") and cloneref or function(instance)
-	return instance
-end
-local getconnectionsFn = (type(getconnections) == "function") and getconnections or nil
-local gethuiFn = (type(gethui) == "function") and gethui or nil
-
--- Some services are protected; never hard-error on them.
-local function softService(name)
-	local ok, service = pcall(function()
-		return game:GetService(name)
-	end)
-	if ok then
-		return service
-	end
-	return nil
-end
-
-local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-
----------------------------------------------------------------------
--- 1.  Style tokens
----------------------------------------------------------------------
-local S = {
-	QUICK = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-	SOFT = TweenInfo.new(0.30, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
-
-	WHITE = Color3.fromRGB(255, 255, 255),
-	INK = Color3.fromRGB(12, 14, 18),
-	TEXT = Color3.fromRGB(236, 240, 248),
-	SUBTLE = Color3.fromRGB(146, 154, 172),
-	ACTION = Color3.fromRGB(96, 148, 255),
-	DANGER = Color3.fromRGB(255, 96, 102),
-	PANEL = Color3.fromRGB(22, 24, 31),
-	BTN = Color3.fromRGB(40, 44, 55),
-
-	TINT = {
-		teal = { Color3.fromRGB(24, 78, 68), Color3.fromRGB(96, 240, 196) },
-		gray = { Color3.fromRGB(48, 52, 64), Color3.fromRGB(214, 220, 232) },
-		red = { Color3.fromRGB(78, 28, 34), Color3.fromRGB(255, 112, 118) },
-	},
-}
-
-local ICON_IMAGES = {
-	mic = "rbxasset://textures/ui/VoiceChat/MicLight/Talking0.png",
-	micoff = "rbxasset://textures/ui/VoiceChat/MicLight/Muted.png",
-}
-
----------------------------------------------------------------------
--- 2.  Tiny UI toolkit
----------------------------------------------------------------------
-local function create(className, props)
-	local instance = Instance.new(className)
-	local parent = nil
-	for key, value in pairs(props or {}) do
-		if key == "Parent" then
-			parent = value
-		elseif key == "Icon" then
-			instance:SetAttribute("NvIcon", value)
-			if ICON_IMAGES[value] then
-				instance.Image = ICON_IMAGES[value]
-			end
-		else
-			instance[key] = value
-		end
-	end
-	if parent then
-		instance.Parent = parent
-	end
-	return instance
-end
-
-local function tween(instance, info, goals)
-	if not instance then
-		return nil
-	end
-	local anim = TweenService:Create(instance, info or S.QUICK, goals)
-	anim:Play()
-	return anim
-end
-
-local function round(instance, radius)
-	return create("UICorner", {
-		Parent = instance,
-		CornerRadius = typeof(radius) == "UDim" and radius or UDim.new(0, radius or 10),
-	})
-end
-
-local function rim(instance, transparency, thickness)
-	return create("UIStroke", {
-		Parent = instance,
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		Color = S.WHITE,
-		Transparency = transparency or 0.9,
-		Thickness = thickness or 1,
-	})
-end
-
-local function setIcon(label, name)
-	if not label then
-		return
-	end
-	label:SetAttribute("NvIcon", name)
-	if ICON_IMAGES[name] then
-		label.Image = ICON_IMAGES[name]
-	end
-end
-
--- Draw a crisp X without relying on font glyph coverage.
-local function xGlyph(parent, colour)
-	local a = create("Frame", {
-		Parent = parent,
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0.5, 0, 0.5, 0),
-		Size = UDim2.fromOffset(10, 2),
-		BackgroundColor3 = colour,
-		BorderSizePixel = 0,
-		Rotation = 45,
-	})
-	local b = create("Frame", {
-		Parent = parent,
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0.5, 0, 0.5, 0),
-		Size = UDim2.fromOffset(10, 2),
-		BackgroundColor3 = colour,
-		BorderSizePixel = 0,
-		Rotation = -45,
-	})
-	round(a, 1)
-	round(b, 1)
-	return a, b
-end
-
----------------------------------------------------------------------
--- 3.  GUI container (CoreGui when permitted, PlayerGui otherwise)
----------------------------------------------------------------------
-local function resolveGuiRoot()
-	if gethuiFn then
-		local ok, result = pcall(gethuiFn)
-		if ok and typeof(result) == "Instance" then
-			return result
-		end
-	end
-
-	local coreGui = softService("CoreGui")
-	if coreGui then
-		local probe = Instance.new("Folder")
-		probe.Name = "VCB_Probe"
-		local parented = pcall(function()
-			probe.Parent = coreGui
-		end)
-		probe:Destroy()
-		if parented then
-			return coreGui
-		end
-	end
-
-	return PlayerGui
-end
-
-local guiRoot = resolveGuiRoot()
-
-local function attach(instance, preferred)
-	local ok = pcall(function()
-		instance.Parent = preferred or guiRoot
-	end)
-	if not ok then
-		pcall(function()
-			instance.Parent = PlayerGui
-		end)
-	end
-	return instance
-end
-
----------------------------------------------------------------------
--- 3b. Executor re-run safety: drop anything a previous run left behind
----------------------------------------------------------------------
-local PREVIOUS_UI = { "VCBypass", "VCB_Toasts", "VCB_MicToggleGUI", "CustomVoiceController" }
-for _, container in ipairs({ guiRoot, PlayerGui }) do
-	if container then
-		pcall(function()
-			for _, name in ipairs(PREVIOUS_UI) do
-				local stale = container:FindFirstChild(name)
-				if stale then
-					stale:Destroy()
-				end
-			end
-		end)
-	end
-end
-
----------------------------------------------------------------------
--- 4.  Toasts (replacement for the host's notify helper)
----------------------------------------------------------------------
-local toastGui = create("ScreenGui", {
-	Name = "VCB_Toasts",
-	ResetOnSpawn = false,
-	IgnoreGuiInset = true,
-	DisplayOrder = 240,
-	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-})
-attach(toastGui)
-
-local toastStack = create("Frame", {
-	Parent = toastGui,
-	Name = "Stack",
-	AnchorPoint = Vector2.new(0.5, 1),
-	Position = UDim2.new(0.5, 0, 1, -18),
-	Size = UDim2.new(0, 300, 0, 0),
-	BackgroundTransparency = 1,
-})
-create("UIListLayout", {
-	Parent = toastStack,
-	Padding = UDim.new(0, 8),
-	SortOrder = Enum.SortOrder.LayoutOrder,
-	HorizontalAlignment = Enum.HorizontalAlignment.Center,
-	VerticalAlignment = Enum.VerticalAlignment.Bottom,
-})
-
-local toastIndex = 0
-
-local function notify(title, body, duration)
-	duration = tonumber(duration) or 3
-	body = tostring(body or "")
-	title = tostring(title or "")
-
-	toastIndex = toastIndex + 1
-	local height = (body ~= "" and 56) or 38
-
-	local card = create("Frame", {
-		Parent = toastStack,
-		LayoutOrder = toastIndex,
-		Size = UDim2.new(1, 0, 0, height),
-		BackgroundColor3 = S.PANEL,
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-	})
-	round(card, 10)
-	local stroke = rim(card, 1, 1)
-
-	local accent = create("Frame", {
-		Parent = card,
-		Size = UDim2.new(0, 3, 1, -16),
-		Position = UDim2.new(0, 7, 0, 8),
-		BackgroundColor3 = S.ACTION,
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-	})
-	round(accent, UDim.new(1, 0))
-
-	local headline = create("TextLabel", {
-		Parent = card,
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 18, 0, body ~= "" and 9 or 0),
-		Size = UDim2.new(1, -30, 0, body ~= "" and 14 or height),
-		Font = Enum.Font.GothamBold,
-		TextSize = 12,
-		Text = title,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = S.WHITE,
-		TextTransparency = 1,
-	})
-
-	local detail
-	if body ~= "" then
-		detail = create("TextLabel", {
-			Parent = card,
-			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 18, 0, 25),
-			Size = UDim2.new(1, -30, 0, 24),
-			Font = Enum.Font.GothamMedium,
-			TextSize = 11,
-			Text = body,
-			TextWrapped = true,
-			TextTruncate = Enum.TextTruncate.AtEnd,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextYAlignment = Enum.TextYAlignment.Top,
-			TextColor3 = S.SUBTLE,
-			TextTransparency = 1,
-		})
-	end
-
-	tween(card, S.SOFT, { BackgroundTransparency = 0.06 })
-	tween(accent, S.SOFT, { BackgroundTransparency = 0 })
-	tween(headline, S.SOFT, { TextTransparency = 0 })
-	if detail then
-		tween(detail, S.SOFT, { TextTransparency = 0 })
-	end
-
-	task.delay(duration, function()
-		if not card.Parent then
-			return
-		end
-		tween(card, S.SOFT, { BackgroundTransparency = 1 })
-		tween(accent, S.SOFT, { BackgroundTransparency = 1 })
-		tween(headline, S.SOFT, { TextTransparency = 1 })
-		if detail then
-			tween(detail, S.SOFT, { TextTransparency = 1 })
-		end
-		task.delay(0.35, function()
-			card:Destroy()
-		end)
-	end)
-end
-
----------------------------------------------------------------------
--- 5.  Panel shell
----------------------------------------------------------------------
-local VCB_W = isMobile and 280 or 260
-local VCB_H = 170
-local VCB_PAD = 18
-local VCB_BTN_H = 36
-local VCB_MIC_W = VCB_BTN_H
-
-local panelGui = create("ScreenGui", {
-	Name = "VCBypass",
-	ResetOnSpawn = false,
-	IgnoreGuiInset = true,
-	DisplayOrder = 180,
-	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-})
-attach(panelGui)
-
-local panel = create("Frame", {
-	Parent = panelGui,
-	Name = "VCBypassPanel",
-	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 60),
-	Size = UDim2.fromOffset(VCB_W, VCB_H),
-	BackgroundColor3 = S.PANEL,
-	BorderSizePixel = 0,
-	Active = true,
-	ZIndex = 150,
-})
-round(panel, 14)
-rim(panel, 0.86, 1)
-
-local panelShade = create("UIGradient", {
-	Parent = panel,
-	Rotation = 90,
-	Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.35),
-		NumberSequenceKeypoint.new(1, 0.72),
-	}),
-	Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(54, 62, 84)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(16, 18, 24)),
-	}),
-})
-
-create("UIScale", { Parent = panel })
-
----------------------------------------------------------------------
--- 6.  Title bar: title, close button, drag
----------------------------------------------------------------------
-local titleBar = create("Frame", {
-	Parent = panel,
-	Name = "TitleBar",
-	Size = UDim2.new(1, 0, 0, 34),
-	BackgroundTransparency = 1,
-	ZIndex = 151,
-})
-
-local dot = create("Frame", {
-	Parent = titleBar,
-	AnchorPoint = Vector2.new(0, 0.5),
-	Position = UDim2.new(0, VCB_PAD, 0.5, 0),
-	Size = UDim2.fromOffset(6, 6),
-	BackgroundColor3 = S.ACTION,
-	BorderSizePixel = 0,
-	ZIndex = 152,
-})
-round(dot, UDim.new(1, 0))
-
-create("TextLabel", {
-	Parent = titleBar,
-	Position = UDim2.new(0, VCB_PAD + 14, 0, 0),
-	Size = UDim2.new(1, -80, 1, 0),
-	BackgroundTransparency = 1,
-	Font = Enum.Font.GothamBold,
-	TextSize = 12,
-	Text = "VC BYPASSER",
-	TextXAlignment = Enum.TextXAlignment.Left,
-	TextColor3 = S.WHITE,
-	ZIndex = 152,
-})
-
-local closeBtn = create("TextButton", {
-	Parent = titleBar,
-	Name = "Close",
-	AnchorPoint = Vector2.new(1, 0.5),
-	Position = UDim2.new(1, -12, 0.5, 0),
-	Size = UDim2.fromOffset(24, 24),
-	BackgroundColor3 = S.TINT.gray[1],
-	BackgroundTransparency = 0.35,
-	BorderSizePixel = 0,
-	Text = "",
-	AutoButtonColor = false,
-	ZIndex = 153,
-})
-round(closeBtn, 8)
-rim(closeBtn, 0.9, 1)
-xGlyph(closeBtn, S.TEXT)
-
-local function makeDraggable(frame, handle)
-	local dragging = false
-	local dragStart, startPos, moveConn, releaseConn
-
-	handle.InputBegan:Connect(function(input)
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1
-			and input.UserInputType ~= Enum.UserInputType.Touch then
-			return
-		end
-
-		dragging = true
-		dragStart = input.Position
-		startPos = frame.Position
-
-		moveConn = track(UserInputService.InputChanged:Connect(function(change)
-			if not dragging then
-				return
-			end
-			if change.UserInputType ~= Enum.UserInputType.MouseMovement
-				and change.UserInputType ~= Enum.UserInputType.Touch then
-				return
-			end
-			local delta = change.Position - dragStart
-			frame.Position = UDim2.new(
-				startPos.X.Scale,
-				startPos.X.Offset + delta.X,
-				startPos.Y.Scale,
-				startPos.Y.Offset + delta.Y
-			)
-		end))
-
-		releaseConn = track(UserInputService.InputEnded:Connect(function(ended)
-			if ended.UserInputType ~= Enum.UserInputType.MouseButton1
-				and ended.UserInputType ~= Enum.UserInputType.Touch then
-				return
-			end
-			dragging = false
-			if moveConn then
-				moveConn:Disconnect()
-				moveConn = nil
-			end
-			if releaseConn then
-				releaseConn:Disconnect()
-				releaseConn = nil
-			end
-		end))
-	end)
-end
-
-makeDraggable(panel, titleBar)
-
----------------------------------------------------------------------
--- 7.  Content
----------------------------------------------------------------------
-local content = create("Frame", {
-	Parent = panel,
-	Name = "Content",
-	BackgroundTransparency = 1,
-	BorderSizePixel = 0,
-	Position = UDim2.new(0, 0, 0, 34),
-	Size = UDim2.new(1, 0, 1, -34),
-	ZIndex = 151,
-})
-
-local SEG_H = 32
-local SEG_Y = 14
-local BTN_Y = SEG_Y + SEG_H + 10
-local NOTE_Y = BTN_Y + VCB_BTN_H + 12
-
-local version = 1
-local VCB_NOTES = { "Not supported on Xeno or Solara", "Second VCB" }
-
--- Version segmented control -----------------------------------------
-local seg = create("Frame", {
-	Parent = content,
-	Name = "Versions",
-	Position = UDim2.new(0, VCB_PAD, 0, SEG_Y),
-	Size = UDim2.new(1, -VCB_PAD * 2, 0, SEG_H),
-	BackgroundColor3 = S.TINT.gray[1],
-	BackgroundTransparency = 0.25,
-	BorderSizePixel = 0,
-	ZIndex = 152,
-})
-round(seg, 9)
-rim(seg, 0.9, 1)
-
-local segThumb = create("Frame", {
-	Parent = seg,
-	Name = "Thumb",
-	Position = UDim2.new(0, 3, 0, 3),
-	Size = UDim2.new(0.5, -4, 1, -6),
-	BackgroundColor3 = S.WHITE,
-	BorderSizePixel = 0,
-	ZIndex = 153,
-})
-round(segThumb, 7)
-
-local segButtons = {}
-for index, label in ipairs({ "Bypass V1", "Bypass V2" }) do
-	segButtons[index] = create("TextButton", {
-		Parent = seg,
-		Name = "V" .. index,
-		Position = UDim2.new((index - 1) * 0.5, 0, 0, 0),
-		Size = UDim2.new(0.5, 0, 1, 0),
-		BackgroundTransparency = 1,
-		AutoButtonColor = false,
-		Font = Enum.Font.GothamBold,
-		TextSize = 12,
-		Text = label,
-		TextColor3 = (index == 1) and S.INK or S.TEXT,
-		ZIndex = 154,
-	})
-end
-
--- Execute button ----------------------------------------------------
-local execBtn = create("TextButton", {
-	Parent = content,
-	Name = "Execute",
-	Position = UDim2.new(0, VCB_PAD, 0, BTN_Y),
-	Size = UDim2.new(1, -(VCB_PAD * 2 + VCB_MIC_W + 8), 0, VCB_BTN_H),
-	BackgroundColor3 = S.BTN,
-	BorderSizePixel = 0,
-	AutoButtonColor = false,
-	Font = Enum.Font.GothamBold,
-	TextSize = 13,
-	TextColor3 = S.TEXT,
-	Text = "Execute Bypass",
-	ZIndex = 152,
-})
-round(execBtn, 10)
-rim(execBtn, 0.88, 1)
-
-local function execTint(text)
-	local lowered = string.lower(tostring(text or ""))
-	if lowered == "bypassed" then
-		return S.TINT.teal
-	end
-	if string.find(lowered, "bypassing", 1, true) then
-		return S.TINT.gray
-	end
-	return nil
-end
+local VCB = { state = "idle", muted = true, controller = nil, conns = {}, listeners = {} }
 
 do
-	local function applyTint()
-		local tint = execTint(execBtn.Text)
-		tween(execBtn, S.QUICK, { BackgroundColor3 = tint and tint[1] or S.BTN })
-		execBtn.TextColor3 = tint and tint[2] or S.TEXT
-	end
-	execBtn:GetPropertyChangedSignal("Text"):Connect(applyTint)
-	execBtn.MouseEnter:Connect(function()
-		if execTint(execBtn.Text) then
-			return
-		end
-		tween(execBtn, S.QUICK, { BackgroundColor3 = Color3.fromRGB(52, 58, 72) })
-	end)
-	execBtn.MouseLeave:Connect(function()
-		if execTint(execBtn.Text) then
-			return
-		end
-		tween(execBtn, S.QUICK, { BackgroundColor3 = S.BTN })
-	end)
-	execBtn.MouseButton1Down:Connect(function()
-		tween(execBtn, S.QUICK, { Size = UDim2.new(1, -(VCB_PAD * 2 + VCB_MIC_W + 8), 0, VCB_BTN_H - 2) })
-	end)
-	execBtn.MouseButton1Up:Connect(function()
-		tween(execBtn, S.QUICK, { Size = UDim2.new(1, -(VCB_PAD * 2 + VCB_MIC_W + 8), 0, VCB_BTN_H) })
-	end)
+    local MUTED_ICON = "rbxasset://textures/ui/VoiceChat/MicLight/Muted.png"
+    local HIT_OFFSET_X, HIT_OFFSET_Y, HIT_SIZE = 14, 13, 35
+    local clonerefFn = (type(cloneref) == "function") and cloneref or function(i) return i end
+
+    local function softService(name)
+        local ok, svc = pcall(function() return game:GetService(name) end)
+        return ok and svc and clonerefFn(svc) or nil
+    end
+
+    local function changed()
+        for _, fn in ipairs(VCB.listeners) do pcall(fn) end
+    end
+
+    local function setState(s)
+        VCB.state = s
+        changed()
+    end
+
+    -- Mutes or unmutes your published voice and keeps the replacement button in step.
+    function VCB.setMuted(value)
+        VCB.muted = value and true or false
+        if VCB.applyPaused then VCB.applyPaused(VCB.muted) end
+        changed()
+    end
+
+    function VCB.run()
+        if VCB.state ~= "idle" then
+            note("Anti VC Ban", VCB.state == "active" and "Already bypassed" or "Already running")
+            return
+        end
+        setState("running")
+        task.spawn(function()
+            local ok, err = pcall(function()
+                local voiceService = softService("VoiceChatService")
+                local voiceInternal = softService("VoiceChatInternal")
+                local coreGui = softService("CoreGui")
+                if not (voiceService and voiceInternal and coreGui) then
+                    error("voice chat services are not accessible here")
+                end
+                local talkingIcon = "rbxasset://textures/ui/VoiceChat/MicLight/Talking0.png"
+                local micToggle, iconHolder, redDot
+
+                local function findMicNodes()
+                    for _, node in ipairs(coreGui:GetDescendants()) do
+                        if node.Name == "toggle_mic_mute" then
+                            micToggle = node
+                        elseif node.Name == "RedVoiceDot" and node:IsA("GuiObject") then
+                            redDot = node
+                        end
+                    end
+                    local frame = micToggle and micToggle:FindFirstChild("IntegrationIconFrame", true)
+                    iconHolder = frame and frame:FindFirstChild("IntegrationIcon", true) or nil
+                end
+
+                findMicNodes()
+                if not micToggle then
+                    task.spawn(function() pcall(function() voiceService:joinVoice() end) end)
+                    task.wait(1.5)
+                    findMicNodes()
+                end
+
+                note("Anti VC Ban", "Unmute your mic to continue")
+                local function iconImage()
+                    local img = iconHolder and iconHolder:FindFirstChild("1")
+                    return img and img.Image or nil
+                end
+                local waited = 0
+                while true do
+                    local image = iconImage()
+                    if image and image ~= MUTED_ICON and image ~= "" then
+                        talkingIcon = image
+                        break
+                    end
+                    if waited >= 60 then error("timed out waiting for your mic to unmute") end
+                    task.wait(0.5)
+                    waited = waited + 0.5
+                end
+                task.wait(1)
+
+                task.spawn(function() pcall(function() voiceService:leaveVoice() end) end)
+                task.wait(2)
+                if type(getconnections) == "function" then
+                    pcall(function()
+                        for index, connection in ipairs(getconnections(voiceInternal.StateChanged)) do
+                            if index >= 7 and connection then pcall(function() connection:Disable() end) end
+                        end
+                    end)
+                end
+                task.wait(2)
+                task.spawn(function() pcall(function() voiceService:joinVoice() end) end)
+                task.wait(1)
+                findMicNodes()
+
+                -- the top bar's own mic no longer reflects the real state; hide it
+                if micToggle then
+                    for _, d in ipairs(micToggle:GetDescendants()) do
+                        if d:IsA("ImageLabel") or d:IsA("ImageButton") then d.ImageTransparency = 1
+                        elseif d:IsA("TextLabel") or d:IsA("TextButton") then d.TextTransparency = 1 end
+                    end
+                end
+
+                local controller = Instance.new("ScreenGui")
+                controller.Name = "CustomVoiceController"
+                controller.ResetOnSpawn = false
+                controller.IgnoreGuiInset = true
+                controller.DisplayOrder = 999999
+                controller.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+                parentGui(controller)
+                VCB.controller = controller
+
+                local hitArea = make("TextButton", {
+                    Name = "MicHitArea", Size = UDim2.fromOffset(HIT_SIZE, HIT_SIZE),
+                    Position = UDim2.new(0, 150 + HIT_OFFSET_X, 0, 4 + HIT_OFFSET_Y),
+                    BackgroundTransparency = 1, Text = "", Active = true, ZIndex = 10000,
+                }, controller)
+                local micIcon = make("ImageLabel", {
+                    Name = "MicIcon", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+                    Image = MUTED_ICON, ScaleType = Enum.ScaleType.Fit, ZIndex = 10001,
+                }, hitArea)
+
+                function VCB.applyPaused(value)
+                    micIcon.Image = value and MUTED_ICON or talkingIcon
+                    if redDot and redDot.Parent then redDot.Visible = not value end
+                    task.spawn(function() pcall(function() voiceInternal:PublishPause(value) end) end)
+                end
+                hitArea.MouseButton1Click:Connect(function() VCB.setMuted(not VCB.muted) end)
+
+                local anchor = (iconHolder and iconHolder.AbsolutePosition.X > 50 and iconHolder.AbsolutePosition)
+                    or (micToggle and micToggle.AbsolutePosition.X > 50 and micToggle.AbsolutePosition)
+                if anchor and anchor.Y >= 0 then
+                    hitArea.Position = UDim2.new(0, anchor.X + HIT_OFFSET_X, 0, anchor.Y + HIT_OFFSET_Y)
+                end
+                table.insert(VCB.conns, voiceInternal.StateChanged:Connect(function()
+                    local okPaused, paused = pcall(function() return voiceInternal:IsPublishPaused() end)
+                    if okPaused and redDot and redDot.Parent then redDot.Visible = not paused end
+                end))
+                VCB.setMuted(true)
+            end)
+            if ok then
+                setState("active")
+                note("Anti VC Ban", "Bypassed - use the mic button to mute and unmute", LIGHT)
+            else
+                setState("idle")
+                note("Anti VC Ban", "Bypass failed: " .. tostring(err):sub(1, 70), RED)
+            end
+        end)
+    end
+
+    -- An active bypass keeps its mic button after the script stops: the
+    -- disabled StateChanged handlers cannot be restored, so it is the only
+    -- way left to mute.
+    table.insert(cleanups, function()
+        if VCB.state ~= "active" then
+            for _, c in ipairs(VCB.conns) do pcall(function() c:Disconnect() end) end
+            table.clear(VCB.conns)
+            if VCB.controller then pcall(function() VCB.controller:Destroy() end) end
+        end
+        VCB.listeners = {}
+    end)
 end
 
--- Note line ---------------------------------------------------------
-local note = create("TextLabel", {
-	Parent = content,
-	Name = "Note",
-	Position = UDim2.new(0, VCB_PAD, 0, NOTE_Y),
-	Size = UDim2.new(1, -VCB_PAD * 2, 0, 14),
-	BackgroundTransparency = 1,
-	Font = Enum.Font.GothamMedium,
-	TextSize = 11,
-	Text = VCB_NOTES[1],
-	TextXAlignment = Enum.TextXAlignment.Left,
-	TextTruncate = Enum.TextTruncate.AtEnd,
-	TextColor3 = S.SUBTLE,
-	ZIndex = 152,
-})
-
--- Mic button (bottom right of the button row) -----------------------
-local micBtn = create("TextButton", {
-	Parent = content,
-	Name = "MicToggle",
-	Position = UDim2.new(1, -(VCB_PAD + VCB_MIC_W), 0, BTN_Y),
-	Size = UDim2.fromOffset(VCB_MIC_W, VCB_BTN_H),
-	BackgroundTransparency = 1,
-	Text = "",
-	AutoButtonColor = false,
-	BorderSizePixel = 0,
-	ZIndex = 152,
-})
-round(micBtn, UDim.new(1, 0))
-
-local micFace = create("Frame", {
-	Parent = micBtn,
-	Name = "Face",
-	Size = UDim2.fromScale(1, 1),
-	BackgroundColor3 = S.TINT.gray[1],
-	BorderSizePixel = 0,
-	ZIndex = 152,
-})
-round(micFace, UDim.new(1, 0))
-rim(micFace, 0.9, 1)
-
-local micIcon = create("ImageLabel", {
-	Parent = micBtn,
-	Size = UDim2.fromOffset(18, 18),
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.new(0.5, 0, 0.5, 0),
-	BackgroundTransparency = 1,
-	Icon = "mic",
-	ImageColor3 = S.WHITE,
-	ScaleType = Enum.ScaleType.Fit,
-	ZIndex = 153,
-})
-
-micIcon:GetAttributeChangedSignal("NvIcon"):Connect(function()
-	local muted = micIcon:GetAttribute("NvIcon") == "micoff"
-	local tint = muted and S.TINT.red or S.TINT.gray
-	tween(micFace, S.QUICK, { BackgroundColor3 = tint[1] })
-	micIcon.ImageColor3 = muted and tint[2] or S.WHITE
-end)
-
-micBtn.MouseEnter:Connect(function()
-	tween(micFace, S.QUICK, { BackgroundTransparency = -0.12 })
-end)
-micBtn.MouseLeave:Connect(function()
-	tween(micFace, S.QUICK, { BackgroundTransparency = 0 })
-end)
-
--- Reopen chip (shown after closing the panel) ------------------------
-local reopenBtn = create("TextButton", {
-	Parent = panelGui,
-	Name = "Reopen",
-	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 46),
-	Size = UDim2.fromOffset(46, 28),
-	BackgroundColor3 = S.PANEL,
-	BackgroundTransparency = 0.08,
-	BorderSizePixel = 0,
-	AutoButtonColor = false,
-	Font = Enum.Font.GothamBold,
-	TextSize = 11,
-	Text = "VC",
-	TextColor3 = S.WHITE,
-	Visible = false,
-	ZIndex = 149,
-})
-round(reopenBtn, 9)
-rim(reopenBtn, 0.85, 1)
-
----------------------------------------------------------------------
--- 8.  Placement (kept from the original module)
----------------------------------------------------------------------
-local function placePanelTop()
-	if not panel then
-		return
-	end
-
-	local camera = workspace.CurrentCamera
-	local viewport = camera and camera.ViewportSize
-	local vpX = tonumber(viewport and viewport.X) or 1280
-	local vpY = tonumber(viewport and viewport.Y) or 720
-
-	local topInset = 36
-	pcall(function()
-		local inset = GuiService:GetGuiInset()
-		if typeof(inset) == "Vector2" then
-			topInset = math.max(tonumber(inset.Y) or 36, 36)
-		end
-	end)
-	topInset = tonumber(topInset) or 36
-
-	local sideMargin = isMobile and 12 or 16
-	local topGap = isMobile and 8 or 10
-	local maxWidth = math.max(180, vpX - sideMargin * 2)
-	local fitWidth = math.clamp(VCB_W, 180, math.min(300, maxWidth))
-	if vpX < 420 then
-		fitWidth = math.clamp(vpX - sideMargin * 2, 180, 280)
-	end
-	panel.Size = UDim2.new(0, fitWidth, 0, VCB_H)
-
-	local scale = 1
-	local uiScale = panel:FindFirstChildOfClass("UIScale")
-	if uiScale then
-		local maxFit = math.min(
-			(vpX - sideMargin * 2) / fitWidth,
-			(vpY - topInset - topGap - 16) / VCB_H
-		)
-		scale = math.clamp(tonumber(maxFit) or 1, 0.45, 1.15)
-		uiScale.Scale = scale
-	end
-
-	local scaledW = fitWidth * scale
-	local scaledH = VCB_H * scale
-	local posX = math.clamp(
-		vpX * 0.5,
-		scaledW * 0.5 + sideMargin,
-		math.max(scaledW * 0.5 + sideMargin, vpX - scaledW * 0.5 - sideMargin)
-	)
-	local posY = math.clamp(topGap, topGap, math.max(topGap, vpY - scaledH - sideMargin))
-
-	panel.AnchorPoint = Vector2.new(0.5, 0)
-	panel.Position = UDim2.new(0, posX, 0, posY + topInset)
-end
-
----------------------------------------------------------------------
--- 9.  Core state
----------------------------------------------------------------------
-local mode = nil          -- "v1" | "v2" while a bypass is active
-local executed = false
-local muted = false
-
-local function publishMute()
-	local voiceInternal = clonerefFn(softService("VoiceChatInternal"))
-	if not voiceInternal then
-		return false
-	end
-	local ok = pcall(function()
-		voiceInternal:PublishPause(muted)
-	end)
-	return ok
-end
-
-local function applyMicVisual(isMuted)
-	setIcon(micIcon, isMuted and "micoff" or "mic")
-	local tint = isMuted and S.TINT.red or S.TINT.gray
-	tween(micFace, S.SOFT, { BackgroundColor3 = tint[1] })
-	micIcon.ImageColor3 = isMuted and tint[2] or S.WHITE
-end
-
-local syncHud -- forward declaration (defined with the HUD below)
-local vcb2SetMuted -- set by Bypass V2 once its mic controller exists
-
-local function selectVersion(index)
-	version = index
-	tween(segThumb, S.QUICK, {
-		Position = (index == 1)
-			and UDim2.new(0, 3, 0, 3)
-			or UDim2.new(0.5, 1, 0, 3),
-	})
-	for key, button in pairs(segButtons) do
-		tween(button, S.QUICK, { TextColor3 = (key == index) and S.INK or S.TEXT })
-	end
-	note.Text = VCB_NOTES[index]
-end
-
-local function alreadyOn(requested)
-	if mode == requested then
-		notify("VC Bypasser", executed and "Already bypassed" or "Already running", 3)
-	else
-		notify("VC Bypasser", "Bypass " .. string.upper(mode or "?") .. " is already on. Rejoin to use the other one", 4)
-	end
-end
-
----------------------------------------------------------------------
--- 10. Mic HUD (standalone replacement for NV_MicToggleGUI)
----------------------------------------------------------------------
-local function ensureMicHud()
-	local existing = guiRoot:FindFirstChild("VCB_MicToggleGUI")
-		or PlayerGui:FindFirstChild("VCB_MicToggleGUI")
-	if existing then
-		return
-	end
-
-	local displayOrder = 49
-	pcall(function()
-		local coreGui = softService("CoreGui")
-		local topBar = coreGui and coreGui:FindFirstChild("TopBarApp")
-		if topBar and topBar:IsA("ScreenGui") then
-			displayOrder = topBar.DisplayOrder
-		end
-	end)
-
-	local micGui = create("ScreenGui", {
-		Name = "VCB_MicToggleGUI",
-		ResetOnSpawn = false,
-		DisplayOrder = displayOrder + 1,
-	})
-	attach(micGui)
-
-	local frame = create("Frame", {
-		Parent = micGui,
-		Name = "StatusFrame",
-		Position = UDim2.new(0, 165, 0, -45),
-		Size = UDim2.fromOffset(40, 40),
-		BackgroundColor3 = S.PANEL,
-		BackgroundTransparency = 0.25,
-		Active = true,
-		BorderSizePixel = 0,
-	})
-	round(frame, 20)
-	rim(frame, 0.85, 1)
-
-	local hudIcon = create("ImageLabel", {
-		Parent = frame,
-		BackgroundTransparency = 1,
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0.5, 0, 0.5, 0),
-		Size = UDim2.fromOffset(20, 20),
-		Icon = "mic",
-		ImageColor3 = S.WHITE,
-		ScaleType = Enum.ScaleType.Fit,
-	})
-
-	local hudButton = create("TextButton", {
-		Parent = frame,
-		BackgroundTransparency = 1,
-		Size = UDim2.fromScale(1, 1),
-		Text = "",
-		ZIndex = 2,
-	})
-
-	hudButton.MouseButton1Click:Connect(function()
-		muted = not muted
-		setIcon(hudIcon, muted and "micoff" or "mic")
-		setIcon(micIcon, muted and "micoff" or "mic")
-		local tint = muted and S.TINT.red or S.TINT.gray
-		tween(micFace, S.SOFT, { BackgroundColor3 = tint[1] })
-		tween(hudIcon, S.SOFT, { ImageColor3 = muted and S.DANGER or S.WHITE })
-		pcall(publishMute)
-	end)
-end
-
-syncHud = function()
-	local micGui = guiRoot:FindFirstChild("VCB_MicToggleGUI")
-		or PlayerGui:FindFirstChild("VCB_MicToggleGUI")
-	if not micGui then
-		return
-	end
-	local frame = micGui:FindFirstChild("StatusFrame")
-	local icon = frame and frame:FindFirstChildOfClass("ImageLabel")
-	if icon then
-		setIcon(icon, muted and "micoff" or "mic")
-		tween(icon, S.SOFT, { ImageColor3 = muted and S.DANGER or S.WHITE })
-	end
-end
-
----------------------------------------------------------------------
--- 11. Bypass V1
----------------------------------------------------------------------
-local MUTED_ICON = "rbxasset://textures/ui/VoiceChat/MicLight/Muted.png"
-
-local function waitMicUnmuted(timeout)
-	timeout = timeout or 45
-	local coreGui = softService("CoreGui")
-	if not coreGui then
-		return false
-	end
-
-	local micButton
-	local ok = pcall(function()
-		local topBar = coreGui:WaitForChild("TopBarApp", 5)
-		topBar = topBar and topBar:WaitForChild("TopBarApp", 5)
-		local leftFrame = topBar and topBar:WaitForChild("UnibarLeftFrame", 5)
-		local menu = leftFrame and leftFrame:WaitForChild("UnibarMenu", 5)
-		local layer2 = menu and menu:WaitForChild("2", 5)
-		local layer3 = layer2 and layer2:WaitForChild("3", 5)
-		micButton = layer3 and layer3:FindFirstChild("toggle_mic_mute", true)
-	end)
-	if not ok or not micButton then
-		return false
-	end
-
-	local function iconImage()
-		local frame = micButton:FindFirstChild("IntegrationIconFrame", true)
-		local holder = frame and frame:FindFirstChild("IntegrationIcon", true)
-		local label = holder and holder:FindFirstChild("1")
-		return label and label.Image or nil
-	end
-
-	local elapsed = 0
-	repeat
-		task.wait(1)
-		elapsed = elapsed + 1
-		local image = iconImage()
-		if image and image ~= MUTED_ICON then
-			return true
-		end
-	until elapsed >= timeout
-
-	return false
-end
-
-local function runBypassV1()
-	local voiceService = clonerefFn(softService("VoiceChatService"))
-	local voiceInternal = clonerefFn(softService("VoiceChatInternal"))
-	if not (voiceService and voiceInternal) then
-		notify("VC Bypasser", "Voice chat services are unavailable in this game", 5)
-		return false
-	end
-
-	notify("VCBypasser", "Unmute your mic to continue bypass...")
-	pcall(waitMicUnmuted, 45)
-
-	pcall(function()
-		voiceService:leaveVoice()
-	end)
-	task.wait(3)
-
-	if getconnectionsFn then
-		pcall(function()
-			local connections = getconnectionsFn(voiceInternal.StateChanged)
-			for index = 7, #connections do
-				pcall(function()
-					connections[index]:Disable()
-				end)
-			end
-		end)
-	end
-
-	task.wait(3)
-	pcall(function()
-		voiceService:joinVoice()
-	end)
-	pcall(function()
-		voiceInternal:PublishPause(muted)
-	end)
-	return true
-end
-
----------------------------------------------------------------------
--- 12. Bypass V2
----------------------------------------------------------------------
-local function runBypassV2()
-	if mode then
-		alreadyOn("v2")
-		return
-	end
-
-	mode = "v2"
-	selectVersion(2)
-	execBtn.Text = "BYPASSING..."
-
-	task.spawn(function()
-		local ok, err = pcall(function()
-			local HIT_OFFSET_X, HIT_OFFSET_Y, HIT_SIZE = 14, 13, 35
-
-			local voiceService = clonerefFn(softService("VoiceChatService"))
-			local voiceInternal = clonerefFn(softService("VoiceChatInternal"))
-			local coreGui = clonerefFn(softService("CoreGui")) or guiRoot
-
-			local existingGui = LocalPlayer:WaitForChild("PlayerGui")
-
-			if not (voiceService and voiceInternal) then
-				error("VoiceChat services are not accessible from this script")
-			end
-
-			local TALKING_ICON = "rbxasset://textures/ui/VoiceChat/MicLight/Talking0.png"
-
-			local micToggle, iconFrame, iconHolder, redDot
-
-			local function findMicNodes()
-				for _, node in ipairs(coreGui:GetDescendants()) do
-					if node.Name == "toggle_mic_mute" then
-						micToggle = node
-					elseif node.Name == "RedVoiceDot" and node:IsA("GuiObject") then
-						redDot = node
-					end
-				end
-				if micToggle then
-					iconFrame = micToggle:FindFirstChild("IntegrationIconFrame", true)
-					if iconFrame then
-						iconHolder = iconFrame:FindFirstChild("IntegrationIcon", true)
-					end
-				end
-			end
-
-			findMicNodes()
-
-			if not micToggle then
-				task.spawn(function()
-					pcall(function()
-						voiceService:joinVoice()
-					end)
-				end)
-				task.wait(1.5)
-				findMicNodes()
-			end
-
-			notify("VC Bypasser", "Unmute to continue.", 5)
-
-			local function iconImage()
-				if iconHolder and iconHolder:FindFirstChild("1") then
-					return iconHolder["1"].Image
-				end
-				return nil
-			end
-
-			local unmuted = false
-			local waited = 0
-			while not unmuted do
-				local image = iconImage()
-				if image and image ~= MUTED_ICON and image ~= "" then
-					TALKING_ICON = image
-					unmuted = true
-				end
-				if not unmuted then
-					if waited >= 60 then
-						error("timed out waiting for your mic to unmute")
-					end
-					task.wait(0.5)
-					waited = waited + 0.5
-				end
-			end
-			task.wait(1)
-
-			task.spawn(function()
-				pcall(function()
-					voiceService:leaveVoice()
-				end)
-			end)
-			task.wait(2)
-
-			if getconnectionsFn then
-				task.spawn(function()
-					pcall(function()
-						local connections = getconnectionsFn(voiceInternal.StateChanged)
-						for index, connection in ipairs(connections) do
-							if index >= 7 and connection then
-								pcall(function()
-									connection:Disable()
-								end)
-							end
-						end
-					end)
-				end)
-			end
-
-			task.wait(2)
-			task.spawn(function()
-				pcall(function()
-					voiceService:joinVoice()
-				end)
-			end)
-
-			task.wait(1)
-			findMicNodes()
-
-			if micToggle then
-				task.spawn(function()
-					for _, descendant in ipairs(micToggle:GetDescendants()) do
-						if descendant:IsA("ImageLabel") or descendant:IsA("ImageButton") then
-							descendant.ImageTransparency = 1
-						elseif descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
-							descendant.TextTransparency = 1
-						end
-					end
-				end)
-			end
-
-			local root
-			if gethuiFn then
-				local okHui, result = pcall(gethuiFn)
-				if okHui then
-					root = result
-				end
-			end
-			root = root or coreGui or existingGui
-
-			local existingController = root:FindFirstChild("CustomVoiceController")
-			if existingController then
-				existingController:Destroy()
-			end
-
-			local controller = create("ScreenGui", {
-				Name = "CustomVoiceController",
-				ResetOnSpawn = false,
-				IgnoreGuiInset = true,
-				DisplayOrder = 999999,
-				ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-			})
-			attach(controller, root)
-
-			local hitArea = create("TextButton", {
-				Parent = controller,
-				Name = "MicHitArea",
-				Size = UDim2.fromOffset(HIT_SIZE, HIT_SIZE),
-				Position = UDim2.new(0, 150 + HIT_OFFSET_X, 0, 4 + HIT_OFFSET_Y),
-				BackgroundTransparency = 1,
-				Text = "",
-				Active = true,
-				ZIndex = 10000,
-			})
-
-			local customIcon = create("ImageLabel", {
-				Parent = hitArea,
-				Name = "MicIcon",
-				Size = UDim2.fromScale(1, 1),
-				Position = UDim2.fromOffset(0, 0),
-				BackgroundTransparency = 1,
-				Image = MUTED_ICON,
-				ScaleType = Enum.ScaleType.Fit,
-				ZIndex = 10001,
-			})
-
-			local paused = false
-			pcall(function()
-				paused = voiceInternal:IsPublishPaused()
-			end)
-
-			local function applyPaused(value)
-				customIcon.Image = value and MUTED_ICON or TALKING_ICON
-				if redDot and redDot.Parent then
-					redDot.Visible = not value
-				end
-				task.spawn(function()
-					pcall(function()
-						voiceInternal:PublishPause(value)
-					end)
-				end)
-			end
-
-			hitArea.MouseButton1Click:Connect(function()
-				paused = not paused
-				applyPaused(paused)
-				muted = paused
-				applyMicVisual(paused)
-			end)
-
-			vcb2SetMuted = function(value)
-				paused = value
-				applyPaused(value)
-			end
-
-			applyPaused(true)
-			paused = true
-
-			local function micAnchor()
-				if not iconHolder or not iconHolder.Parent then
-					findMicNodes()
-				end
-				if iconHolder and iconHolder.AbsolutePosition.X > 50 then
-					return iconHolder.AbsolutePosition, iconHolder.AbsoluteSize
-				elseif micToggle and micToggle.AbsolutePosition.X > 50 then
-					return micToggle.AbsolutePosition, micToggle.AbsoluteSize
-				end
-				return nil, nil
-			end
-
-			local anchor = micAnchor()
-			if anchor and anchor.X > 0 and anchor.Y >= 0 then
-				hitArea.Position = UDim2.new(0, anchor.X + HIT_OFFSET_X, 0, anchor.Y + HIT_OFFSET_Y)
-				hitArea.Size = UDim2.fromOffset(HIT_SIZE, HIT_SIZE)
-			end
-
-			if redDot and redDot:IsA("GuiObject") then
-				redDot.Visible = not paused
-			end
-
-			voiceInternal.StateChanged:Connect(function()
-				pcall(function()
-					paused = voiceInternal:IsPublishPaused()
-				end)
-				if redDot and redDot.Parent then
-					redDot.Visible = not paused
-				end
-			end)
-		end)
-
-		if ok then
-			executed = true
-			muted = true
-			applyMicVisual(true)
-			execBtn.Text = "BYPASSED"
-			notify("VC Bypasser", "Bypass active. Use the mic button to mute and unmute.", 5)
-		else
-			mode = nil
-					execBtn.Text = "Execute Bypass"
-			notify("VC Bypasser", "Bypass failed: " .. tostring(err), 5)
-		end
-	end)
-end
-
----------------------------------------------------------------------
--- 13. Wiring
----------------------------------------------------------------------
-for index, button in pairs(segButtons) do
-	button.MouseButton1Click:Connect(function()
-		if version == index then
-			return
-		end
-		if mode then
-			notify("VC Bypasser", "A bypass is already on. Rejoin to switch versions", 3)
-			return
-		end
-		selectVersion(index)
-	end)
-end
-
-execBtn.MouseButton1Click:Connect(function()
-	if version == 2 then
-		runBypassV2()
-		return
-	end
-
-	if mode then
-		alreadyOn("v1")
-		return
-	end
-
-	mode = "v1"
-	execBtn.Text = "BYPASSING..."
-
-	task.spawn(function()
-		local ok, result = pcall(runBypassV1)
-		if ok and result == true then
-			executed = true
-			execBtn.Text = "BYPASSED"
-			notify("VCBypasser", "Bypass executed")
-			pcall(ensureMicHud)
-			pcall(syncHud)
-		else
-			mode = nil
-					execBtn.Text = "Execute Bypass"
-			if ok then
-				notify("VCBypasser", "Bypass failed: voice chat unavailable", 5)
-			else
-				notify("VCBypasser", "Bypass failed: " .. tostring(result), 5)
-			end
-		end
-	end)
-end)
-
-micBtn.MouseButton1Click:Connect(function()
-	if not executed then
-		notify("VCBypasser", "Execute bypass first")
-		return
-	end
-	muted = not muted
-	applyMicVisual(muted)
-	if mode == "v2" then
-		if vcb2SetMuted then
-			pcall(vcb2SetMuted, muted)
-		end
-		return
-	end
-	pcall(syncHud)
-	pcall(publishMute)
-end)
-
----------------------------------------------------------------------
--- 14. Show / hide
----------------------------------------------------------------------
-local function setOpen(open)
-	panel.Visible = open
-	reopenBtn.Visible = not open
-	if open then
-		task.defer(placePanelTop)
-		notify("VC Bypasser", "Unmute your mic, talk into it for 5 seconds, then click execute bypass")
-	end
-end
-
-closeBtn.MouseButton1Click:Connect(function()
-	setOpen(false)
-end)
-
-reopenBtn.MouseButton1Click:Connect(function()
-	setOpen(true)
-end)
-
-closeBtn.MouseEnter:Connect(function()
-	tween(closeBtn, S.QUICK, { BackgroundColor3 = S.TINT.red[1] })
-end)
-closeBtn.MouseLeave:Connect(function()
-	tween(closeBtn, S.QUICK, { BackgroundColor3 = S.TINT.gray[1] })
-end)
-
-track(UserInputService.InputBegan:Connect(function(input, processed)
-	if processed then
-		return
-	end
-	if input.KeyCode == Enum.KeyCode.RightShift then
-		setOpen(not panel.Visible)
-	end
-end))
-
-placePanelTop()
-
-pcall(function()
-	local camera = workspace.CurrentCamera
-	if camera then
-		track(camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
-			if panel.Visible then
-				placePanelTop()
-			end
-		end))
-	end
-end)
-
--- A bypass that already ran keeps its mic controls after PuppyAdmin stops,
--- because the disabled StateChanged handlers cannot be restored.
-return {
-	setOpen = setOpen,
-	isOpen = function() return panel.Visible end,
-	bypassActive = function() return mode ~= nil end,
-	guiRoot = guiRoot,
-	PlayerGui = PlayerGui,
-}
-end
-
-table.insert(cleanups, function()
-	for _, c in ipairs(VCB.conns) do pcall(function() c:Disconnect() end) end
-	table.clear(VCB.conns)
-	local api = VCB.api
-	if not api then return end
-	local names = { "VCBypass", "VCB_Toasts" }
-	if not api.bypassActive() then
-		table.insert(names, "VCB_MicToggleGUI")
-		table.insert(names, "CustomVoiceController")
-	end
-	for _, container in ipairs({ api.guiRoot, api.PlayerGui }) do
-		pcall(function()
-			for _, name in ipairs(names) do
-				local g = container:FindFirstChild(name)
-				if g then g:Destroy() end
-			end
-		end)
-	end
-	VCB.api = nil
-end)
 
 
 ------------------------------------------------------------------------
@@ -14043,16 +12904,16 @@ local cmds = {
     "tools",
     "moveui", "infbaseplate", "uninfbaseplate", "esp", "unesp",
     "hide", "unhide", "mute", "unmute",
-    "reanimui", "tp",
+    "tp",
     "aura", "unaura", "auras",
     "tagui", "taglist", "tagsync", "antikick", "unantikick", "antivcban",
-    "reanim", "anim",
+    "anim",
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
 
--- Novoline's short names for the commands ported from it.
--- Movement aliases come from novoline's own registrations (NOVO_MOVE).
+-- Movement aliases come from the engine's own registrations (NOVO_MOVE).
 local ALIASES = {
+    reanim = "anim", reanimui = "anim",
     wh = "esp", wallhack = "esp", unwh = "unesp", noesp = "unesp", ibp = "infbaseplate",
 }
 
@@ -14063,7 +12924,6 @@ local cmdDocs = {
     uninfbaseplate = "uninfbaseplate - Remove the endless floor",
     esp = "esp - Names, health and distance through walls (opens its panel)",
     unesp = "unesp - Turn ESP, chams, hitboxes and tracers off",
-    reanimui = "reanimui - Reanimation panel",
     tp = "tp [name] or tp [x] [y] [z] - Teleport to a player (goto) or a point (tppos)",
     hide = "hide [ui|me|all|others|name] - Hide the script UI or a character (your screen)",
     unhide = "unhide [ui|me|all|others|name] - Undo hide",
@@ -14074,12 +12934,11 @@ local cmdDocs = {
     taglist = "taglist [add|remove <tag> <users...>] [new|delete <name>] - All tags and their members; add many players at once",
     antikick = "antikick - Block client-side Kick calls on you",
     unantikick = "unantikick - Turn antikick off",
-    antivcban = "antivcban [close] - Open the VC bypass panel (V1 / V2, mic mute)",
+    antivcban = "antivcban [close] - Voice chat bypass panel (execute, then mute/unmute)",
     aura = "aura [name] [target] [color] - Apply an aura (see auras)",
     unaura = "unaura [name|all] [target] - Remove auras",
     auras = "auras - List usable auras",
-    reanim = "reanim [on|off] - Reanimate (novoline engine; same as the panel's power button)",
-    anim = "anim [play <url> [speed]|stop|pause|reverse|noclip] - Playback; library and keys are in reanimui",
+    anim = "anim - Reanimate panel: power, animation library, states, recording, copy, live, tricks, keys, speed (also: reanim, reanimui)",
     prefix = "prefix [add|remove|set] [chars] - Chat command prefixes",
     uikey = "uikey [key] - Key that shows/hides the script UI",
     settings = "settings - Toggles the settings window",
@@ -14341,52 +13200,15 @@ end
 
 -- Reanimation / animations ---------------------------------------------------------
 
-function H.reanim(a)
-    local want
-    for _, tok in ipairs(a) do
-        local l = tok:lower()
-        if l == "on" then want = true elseif l == "off" then want = false end
-    end
-    Novo.setActive(want)
-end
-
--- Library, states, keybinds and recordings live in the Reanimate panel
--- (`reanimui`); this covers playback from the command line.
-function H.anim(a)
-    local sub = a[1] and a[1]:lower()
-    local rs = Novo.panelState()
-    if not rs then return end
-    if sub == "play" then
-        local url = a[2]
-        if not url or not url:match("^https?://") then note("Anim", "anim play <keyframe URL> [speed]", RED); return end
-        local api = novoApi()
-        if not (api and Reanim.active) then note("Anim", "Reanimate first", RED); return end
-        local speed = tonumber(a[3]) or 1
-        task.spawn(function()
-            local ok, err = pcall(api.play_animation, url, speed)
-            if not ok then note("Anim", tostring(err):sub(1, 70), RED)
-            elseif type(err) == "string" then note("Anim", err:sub(1, 70), RED) end
-        end)
-    elseif sub == "stop" then
-        if type(rs.stopCurrent) == "function" then pcall(rs.stopCurrent) end
-        note("Anim", "Stopped")
-    elseif sub == "pause" then
-        if type(rs.setPause) == "function" then pcall(rs.setPause, parseToggle(a[2], rs.reanimPaused == true)) end
-        note("Anim", rs.reanimPaused and "Paused" or "Playing")
-    elseif sub == "reverse" then
-        if type(rs.setRewind) == "function" then pcall(rs.setRewind, parseToggle(a[2], rs.reanimDir == -1)) end
-        note("Anim", rs.reanimDir == -1 and "Reversed" or "Forward")
-    elseif sub == "noclip" then
-        if type(rs.setNoclip) == "function" then pcall(rs.setNoclip, parseToggle(a[2], rs.noclipOn == true)) end
-        note("Anim", "Noclip " .. (rs.noclipOn and "on" or "off"))
-    else
-        note("Anim", "anim play|stop|pause|reverse|noclip - the rest is in reanimui")
-    end
+-- anim: the Reanimate panel (power, library, states, recording, copy, live,
+-- tricks, keys, speed and transitions all live there). reanim / reanimui are
+-- aliases of it.
+function H.anim()
+    Novo.setOpen()
 end
 
 -- Panels and teleport -------------------------------------------------------------
 
-function H.reanimui() Novo.setOpen() end
 
 
 function H.antikick()
@@ -14406,16 +13228,10 @@ end
 
 function H.antivcban(a)
     local sub = a[1] and a[1]:lower()
-    if not VCB.api then
-        if sub == "close" then return end
-        local ok, api = pcall(VCB.build)
-        if not ok or type(api) ~= "table" then
-            note("Anti VC Ban", "Panel failed: " .. tostring(api):sub(1, 60), RED)
-            return
-        end
-        VCB.api = api
-    end
-    VCB.api.setOpen(sub ~= "close")
+    local p = UIAPI.panels.vcb
+    if not p then return end
+    p.Visible = sub ~= "close"
+    if UIAPI.sync then UIAPI.sync() end
 end
 
 -- tagsync          status
@@ -14644,7 +13460,7 @@ function H.tools(a)
     H[sub](a)
 end
 
--- Movement (novoline) ----------------------------------------------------------------
+-- Movement -------------------------------------------------------------------------
 
 local function showPanel(key)
     local p = UIAPI.panels[key]
@@ -14670,7 +13486,7 @@ do
     end
 end
 
--- tp keeps PuppyAdmin's two forms: a player (novoline goto) or x y z (novoline tppos).
+-- tp keeps its two forms: a player (goto) or x y z (tppos).
 function H.tp(a)
     if tonumber(a[1]) and tonumber(a[2]) and tonumber(a[3]) then
         Novo.run("tppos", a)
@@ -14681,13 +13497,13 @@ function H.tp(a)
     end
 end
 
--- clicktp [on|off]: novoline's click teleport (hold Ctrl and click).
+-- clicktp [on|off]: click teleport (hold Ctrl and click).
 function H.clicktp(a)
     local l = a[1] and a[1]:lower()
     if l == "off" or l == "0" or l == "false" then Novo.run("unclicktp", {}) else Novo.run("clicktp", {}) end
 end
 
--- novoline's rejoin kicks you first on a solo server; let antikick pass it.
+-- rejoin kicks you first on a solo server; let antikick pass it.
 function H.rejoin(a)
     AntiKick.allowUntil = os.clock() + 3
     Novo.run("rejoin", a)
@@ -14696,7 +13512,7 @@ end
 function H.moveui() UIAPI.togglePanel("move") end
 
 
--- World / visuals (novoline) -----------------------------------------------------------
+-- World / visuals --------------------------------------------------------------------
 
 function H.infbaseplate(a)
     local quiet = a[1] == "quiet"
@@ -14768,7 +13584,7 @@ function Chat.start()
 end
 
 ------------------------------------------------------------------------
--- Panels: orbit / tail / wings / reanimation (palette follows novoline.lua)
+-- Panels: orbit / tail / wings (palette shared with the Reanimate panel)
 ------------------------------------------------------------------------
 
 local PAL = {
@@ -15465,7 +14281,7 @@ function buildMovementPanel(screenGui)
     sectionTitle(body, add, "Flight")
     local S = Novo.state
     switch("Fly", function() return S.flying() and not S.superfly() and not S.on("helicopter") end, function(on) H[on and "fly" or "unfly"]({}) end)
-    switch("Superfly (opens novoline's Fly panel)", function() return S.superfly() end, function(on) H[on and "superfly" or "unsuperfly"]({}) end)
+    switch("Superfly (opens the Fly panel)", function() return S.superfly() end, function(on) H[on and "superfly" or "unsuperfly"]({}) end)
     switch("Helicopter", function() return S.on("helicopter") end, function(on) H[on and "helicopter" or "unhelicopter"]({}) end)
     switch("HatFly", function() return S.on("hatfly") end, function(on) H[on and "hatfly" or "unhatfly"]({}) end)
     local sp = uiSlider(body, "Fly speed", UDim2.fromOffset(12, add(48)), IW, {
@@ -15917,6 +14733,46 @@ local function buildTagListPanel(screenGui)
     refresh()
 end
 
+------------------------------------------------------------------------
+-- Anti VC ban panel (opened with `antivcban`)
+------------------------------------------------------------------------
+
+local function buildVcbPanel(screenGui)
+    local W, HGT = 300, 236
+    local f = uiWindow(screenGui, "vcb", "Anti VC ban", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2, 0, 80))
+    local IW = W - 32
+    local status = label(f, { Position = UDim2.fromOffset(16, 46), Size = UDim2.new(1, -32, 0, 18), Text = "", TextColor3 = PAL.DIM })
+    label(f, {
+        Position = UDim2.fromOffset(16, 68), Size = UDim2.new(1, -32, 0, 44), TextWrapped = true,
+        TextYAlignment = Enum.TextYAlignment.Top, TextSize = 12, TextColor3 = PAL.DIM,
+        Text = "Unmute your mic and talk into it for about 5 seconds, then press Execute.",
+    })
+    local exec = uiButton(f, "Execute bypass", UDim2.fromOffset(IW, 34), UDim2.fromOffset(16, 120), function() VCB.run() end)
+    local muteSw
+    muteSw = uiSwitch(f, "Mute mic", UDim2.fromOffset(16, 166), IW, true, function(on)
+        if VCB.state ~= "active" then
+            note("Anti VC Ban", "Execute the bypass first")
+            task.defer(function() muteSw.set(VCB.muted) end)
+            return
+        end
+        VCB.setMuted(on)
+    end)
+    label(f, {
+        Position = UDim2.fromOffset(16, 198), Size = UDim2.new(1, -32, 0, 28), TextWrapped = true, TextSize = 11,
+        TextColor3 = PAL.DIM, Text = "After it is active, the mic button in the top bar also mutes and unmutes.",
+    })
+
+    local function sync()
+        local s = VCB.state
+        status.Text = s == "active" and "Status: bypassed" or (s == "running" and "Status: bypassing..." or "Status: not active")
+        exec.Text = s == "active" and "Bypassed" or (s == "running" and "Bypassing..." or "Execute bypass")
+        muteSw.set(VCB.muted)
+    end
+    table.insert(VCB.listeners, sync)
+    UIAPI.syncFns.vcb = function() if f.Visible then sync() end end
+    sync()
+end
+
 local function buildPanels(screenGui)
     buildToolsPanel(screenGui)
     buildMovementPanel(screenGui)
@@ -15924,6 +14780,7 @@ local function buildPanels(screenGui)
     buildFloorPanel(screenGui)
     buildTagPanel(screenGui)
     buildTagListPanel(screenGui)
+    buildVcbPanel(screenGui)
 end
 
 ------------------------------------------------------------------------
