@@ -1538,8 +1538,8 @@ function Tags.build(player, char)
     local g = make("BillboardGui", {
         Name = "PuppyAdminTag", Adornee = head, AlwaysOnTop = true, Active = true,
         Size = UDim2.fromOffset(cardW, cardH), StudsOffset = Vector3.new(0, tonumber(def.offset) or 3, 0),
-        -- no distance cut-off: the whole tag (text, picture, backdrop) shows at any range
-        MaxDistance = math.huge, LightInfluence = 0, ResetOnSpawn = false,
+        -- the whole tag (text, picture, backdrop) shows within 20 studs of the camera
+        MaxDistance = 20, LightInfluence = 0, ResetOnSpawn = false,
     }, nil)
     pcall(function() g.ClipsDescendants = false end)
 
