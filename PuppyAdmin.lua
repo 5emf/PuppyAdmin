@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-10" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-11" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -69,6 +69,10 @@ local SETTINGS = {
     -- presence worker (presence/ in the repository), e.g.
     -- "https://puppyadmin-presence.<you>.workers.dev". Empty = only you see your own default tag.
     Presence = { url = "", beatSeconds = 20 },
+    -- Nametags: drawn up to renderDistance studs from the camera; the full tag
+    -- (text, backdrop) only while it is within fullDistance of both your camera
+    -- and your character, otherwise just the profile picture.
+    TagView = { renderDistance = 300, fullDistance = 30 },
     -- Shared auras: who wears which aura (auras.json, same repository and
     -- branch as tags) and where aura textures are downloaded from.
     Auras = {
@@ -1469,7 +1473,7 @@ end)
 -- else's tag teleports you to them (Cfg.tagClickTp).
 local Presence -- who else is running the script in this server (set up after TagSync)
 local AuraSync, Moderation -- shared auras and the script blacklist (set up further down)
-local Tags = { gui = {}, rainbow = {}, watch = {}, byUser = {}, assets = {}, pending = {}, ui = { current = nil } }  -- ui.current: tag open in the panels
+local Tags = { gui = {}, view = {}, rainbow = {}, watch = {}, byUser = {}, assets = {}, pending = {}, ui = { current = nil } }  -- ui.current: tag open in the panels
 
 local TAG_DEFAULTS = {
     text = "", sub = "", color = { 255, 255, 255 }, rainbow = false, size = 22, offset = 3, font = "GothamBold",
@@ -1590,6 +1594,7 @@ function Tags.destroy(userId)
     local g = Tags.gui[userId]
     if g then pcall(function() g:Destroy() end) end
     Tags.gui[userId] = nil
+    Tags.view[userId] = nil
     Tags.rainbow[userId] = nil
     for _, c in ipairs(Tags.watch[userId] or {}) do pcall(function() c:Disconnect() end) end
     Tags.watch[userId] = nil
@@ -1679,8 +1684,7 @@ function Tags.build(player, char)
     local g = make("BillboardGui", {
         Name = "PuppyAdminTag", Adornee = head, AlwaysOnTop = true, Active = true,
         Size = UDim2.fromOffset(cardW, cardH), StudsOffset = Vector3.new(0, tonumber(def.offset) or 3, 0),
-        -- the whole tag (text, picture, backdrop) shows within 20 studs of the camera
-        MaxDistance = 20, LightInfluence = 0, ResetOnSpawn = false,
+        MaxDistance = SETTINGS.TagView.renderDistance, LightInfluence = 0, ResetOnSpawn = false,
     }, nil)
     pcall(function() g.ClipsDescendants = false end)
 
@@ -1700,8 +1704,9 @@ function Tags.build(player, char)
         end
     end
 
+    local picture
     if pfpTex then
-        local picture = make("ImageLabel", {
+        picture = make("ImageLabel", {
             Name = "Pfp", Position = UDim2.fromOffset(padX, math.floor((cardH - pic) / 2)), Size = UDim2.fromOffset(pic, pic),
             BackgroundTransparency = 1, Image = pfpTex, ScaleType = Enum.ScaleType.Crop, ZIndex = 2,
         }, card)
@@ -1744,6 +1749,12 @@ function Tags.build(player, char)
     parentGui(g)
     Tags.gui[player.UserId] = g
     if def.rainbow then Tags.rainbow[player.UserId] = { main, sub } end
+    -- what Tags.step needs to switch between the full tag and the picture only
+    Tags.view[player.UserId] = {
+        g = g, head = head, card = card, area = area, picture = picture, pic = pic,
+        fullSize = g.Size, picPos = picture and picture.Position, cardTr = card.BackgroundTransparency,
+        backdrop = card:FindFirstChild("BackdropImage"), compact = false,
+    }
 
     -- the tag goes with the player: gone on death, or once the body leaves the
     -- world; the respawned character gets a fresh one from Watch
@@ -1768,11 +1779,54 @@ function Tags.refreshAll()
     end
 end
 
+-- Full tag or picture only. With no picture, a far tag is not drawn at all.
+function Tags.setCompact(v, on)
+    if v.compact == on then return end
+    v.compact = on
+    if on then
+        if v.picture then
+            v.g.Size = UDim2.fromOffset(v.pic + 8, v.pic + 8)
+            v.picture.Position = UDim2.fromOffset(4, 4)
+            v.card.Visible = true
+        else
+            v.card.Visible = false
+        end
+        v.area.Visible = false
+        v.card.BackgroundTransparency = 1
+        if v.backdrop then v.backdrop.Visible = false end
+    else
+        v.g.Size = v.fullSize
+        if v.picture then v.picture.Position = v.picPos end
+        v.card.Visible = true
+        v.area.Visible = true
+        v.card.BackgroundTransparency = v.cardTr
+        if v.backdrop then v.backdrop.Visible = true end
+    end
+end
+
 function Tags.step(t)
     -- `hide <player>` hides their tag too (the billboard is not under their head any more)
     for uid, g in pairs(Tags.gui) do
         local show = Hide.map[uid] == nil
         if g.Enabled ~= show then g.Enabled = show end
+    end
+    -- far from your camera or your character: picture only (2 studs of slack so it does not flicker at the edge)
+    local cam = workspace.CurrentCamera
+    local camPos = cam and cam.CFrame.Position
+    local myChar = plr.Character
+    local myRoot = myChar and (myChar:FindFirstChild("HumanoidRootPart") or myChar:FindFirstChild("Head"))
+    local myPos = myRoot and myRoot.Position
+    local near = SETTINGS.TagView.fullDistance
+    for uid, v in pairs(Tags.view) do
+        if v.head.Parent then
+            local pos = v.head.Position
+            local far = 0
+            if camPos then far = math.max(far, (pos - camPos).Magnitude) end
+            -- your own tag only goes by the camera (zooming far out)
+            if myPos and uid ~= plr.UserId then far = math.max(far, (pos - myPos).Magnitude) end
+            local limit = v.compact and (near - 2) or (near + 2)
+            Tags.setCompact(v, far > limit)
+        end
     end
     local c = Color3.fromHSV((t * 0.25) % 1, 0.9, 1)
     for uid, pair in pairs(Tags.rainbow) do
