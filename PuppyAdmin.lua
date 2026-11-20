@@ -343,6 +343,8 @@ local Cfg = {
     tags = {},         -- old format (one look per UserId); moved into tagDefs on load
     tagDefs = {},      -- named tags shared by several players (see Tags below)
     tagClickTp = true, -- clicking someone else's tag teleports you to them
+    skipIntro = false, -- start without the brand intro
+    games = {},        -- mini game best scores: game id -> number
 }
 
 local function cfgSave()
@@ -17230,7 +17232,7 @@ local function createUI()
         return b
     end
 
-    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 676), "SETTINGS")
+    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 712), "SETTINGS")
 
     fieldLabel(settingsFrame, "Chat command prefixes (comma separated, 1-3 symbols)", 45)
     local prefixBox = fieldBox(settingsFrame, 65, table.concat(Cfg.prefixes, ", "))
@@ -17262,20 +17264,38 @@ local function createUI()
         end)
     end
 
+    -- second row: owner-only panels check permission inside their commands
+    for i, p in ipairs({ { "Perf", "performance" }, { "Owner", "owner" }, { "Tags", "tagui" }, { "Games", "games" } }) do
+        actionButton(settingsFrame, p[1], UDim2.new(0, 15 + (i - 1) * 66, 0, 198), UDim2.new(0, 62, 0, 28)).MouseButton1Click:Connect(function()
+            local fn = H[p[2]]
+            if type(fn) == "function" then fn({}) end
+        end)
+    end
+    local introBtn = actionButton(settingsFrame, "", UDim2.new(0, 15 + 4 * 66, 0, 198), UDim2.new(0, 62, 0, 28))
+    introBtn.TextSize = 11
+    local function introText() introBtn.Text = Cfg.skipIntro and "Intro off" or "Intro on" end
+    introText()
+    introBtn.MouseButton1Click:Connect(function()
+        Cfg.skipIntro = not Cfg.skipIntro
+        cfgSave()
+        introText()
+        note("Intro", Cfg.skipIntro and "Skipped from the next start" or "Shown at the next start", LIGHT)
+    end)
+
     -- Theme: presets, then one row per colour role (hex, r,g,b or a colour name)
-    fieldLabel(settingsFrame, "UI theme", 200)
+    fieldLabel(settingsFrame, "UI theme", 236)
     for i, p in ipairs(Theme.presets) do
-        local b = actionButton(settingsFrame, p.name, UDim2.new(0, 15 + (i - 1) * 56, 0, 220), UDim2.new(0, 52, 0, 26))
+        local b = actionButton(settingsFrame, p.name, UDim2.new(0, 15 + (i - 1) * 56, 0, 256), UDim2.new(0, 52, 0, 26))
         b.TextSize = 11
         b.MouseButton1Click:Connect(function()
             Theme.usePreset(p.name)
             note("Theme", p.name, LIGHT)
         end)
     end
-    fieldLabel(settingsFrame, "Colors: #hex, r,g,b or a name (press Enter to apply)", 256)
+    fieldLabel(settingsFrame, "Colors: #hex, r,g,b or a name (press Enter to apply)", 292)
     local themeRows = {}
     for i, role in ipairs(Theme.roles) do
-        local y = 276 + (i - 1) * 32
+        local y = 312 + (i - 1) * 32
         make("TextLabel", {
             Size = UDim2.new(0, 110, 0, 26), Position = UDim2.new(0, 15, 0, y), BackgroundTransparency = 1,
             Text = Theme.labels[role], TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.Code, TextSize = 12,
@@ -17316,10 +17336,10 @@ local function createUI()
         end
     end)
 
-    fieldLabel(settingsFrame, "Background image: id, rbxassetid, image URL or off [visibility 0-100]", 500)
-    local imageBox = fieldBox(settingsFrame, 520, Theme.image and Theme.image.src or ((type(Cfg.theme) == "table" and type(Cfg.theme.image) == "table" and Cfg.theme.image.src) or ""))
+    fieldLabel(settingsFrame, "Background image: id, rbxassetid, image URL or off [visibility 0-100]", 536)
+    local imageBox = fieldBox(settingsFrame, 556, Theme.image and Theme.image.src or ((type(Cfg.theme) == "table" and type(Cfg.theme.image) == "table" and Cfg.theme.image.src) or ""))
     imageBox.PlaceholderText = "e.g. 1234567890 60"
-    local imageApply = actionButton(settingsFrame, "Apply", UDim2.new(1, -85, 0, 520), UDim2.new(0, 70, 0, 28))
+    local imageApply = actionButton(settingsFrame, "Apply", UDim2.new(1, -85, 0, 556), UDim2.new(0, 70, 0, 28))
     imageApply.MouseButton1Click:Connect(function()
         local args = splitArgs(imageBox.Text)
         task.spawn(function()
@@ -17330,10 +17350,10 @@ local function createUI()
     end)
 
     -- The token only ever goes into a local file; it is never shown again or put in the config.
-    fieldLabel(settingsFrame, "Tag sync: GitHub token (saved only in " .. SETTINGS.TagSync.tokenFile .. ")", 560)
-    local tokenBox = fieldBox(settingsFrame, 580, "")
+    fieldLabel(settingsFrame, "Tag sync: GitHub token (saved only in " .. SETTINGS.TagSync.tokenFile .. ")", 596)
+    local tokenBox = fieldBox(settingsFrame, 616, "")
     tokenBox.PlaceholderText = TagSync.token() and "token saved - paste a new one, or 'remove'" or "github_pat_... (never type this in chat)"
-    local tokenApply = actionButton(settingsFrame, "Save", UDim2.new(1, -85, 0, 580), UDim2.new(0, 70, 0, 28))
+    local tokenApply = actionButton(settingsFrame, "Save", UDim2.new(1, -85, 0, 616), UDim2.new(0, 70, 0, 28))
     tokenApply.MouseButton1Click:Connect(function()
         local t = tokenBox.Text
         tokenBox.Text = ""
@@ -17596,7 +17616,7 @@ end
 ------------------------------------------------------------------------
 
 Perf.since("Setup (everything before the UI)", Perf.t0)
-showBrandIntro()
+if not Cfg.skipIntro then showBrandIntro() end
 do
     local uiStart = os.clock()
     createUI()
