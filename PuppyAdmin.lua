@@ -17,6 +17,7 @@ local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
 local HttpService = game:GetService("HttpService")
 local TextChatService = game:GetService("TextChatService")
 
@@ -14156,14 +14157,14 @@ local cmds = {
     "hide", "unhide", "mute", "unmute",
     "tp",
     "aura", "unaura", "auras",
-    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "owner", "kick", "ban", "unban", "bans", "antikick", "unantikick", "antivcban",
+    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "games", "owner", "kick", "ban", "unban", "bans", "antikick", "unantikick", "antivcban",
     "reanim",
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
 
 -- Movement aliases come from the engine's own registrations (NOVO_MOVE).
 local ALIASES = {
-    anim = "reanim", reanimui = "reanim", boost = "performance", fpsboost = "performance",
+    anim = "reanim", reanimui = "reanim", boost = "performance", fpsboost = "performance", minigames = "games", arcade = "games",
     wh = "esp", wallhack = "esp", unwh = "unesp", noesp = "unesp", ibp = "infbaseplate",
 }
 
@@ -14185,6 +14186,7 @@ local cmdDocs = {
     ban = "ban <players> [reason] - Ban players from using the script; they are kicked when they run it (owners only)",
     unban = "unban <players or UserIds> - Lift a script ban (owners only)",
     bans = "bans - List players banned from the script (owners only)",
+    games = "games - Mini games: Snake, Stack Drop, Treat Chase (also: minigames, arcade)",
     performance = "performance - Performance panel: FPS unlock, anti-lag, low graphics, no fog / shadows / effects (also: boost)",
     perf = "perf - How long start-up and first-time actions took (for tuning the script)",
     tagrefresh = "tagrefresh - Load tags, auras and bans from the repository again and redraw every tag (running the script again does the same)",
@@ -14593,6 +14595,7 @@ function H.antivcban(a)
 end
 
 function H.performance() UIAPI.togglePanel("performance") end
+function H.games() UIAPI.togglePanel("games") end
 
 function H.perf()
     local lines = { "Times in milliseconds (ms). Background reads do not hold up the UI.", "" }
@@ -15068,6 +15071,7 @@ do
 
     local function recolor(inst, from, to)
         if inst.Name == "PuppyAdminSwatch" or (inst.Parent and inst.Parent.Name == "PuppyAdminSwatch") then return end
+        if inst:FindFirstAncestor("PuppyAdminGameBoard") then return end -- game cells repaint themselves
         local props = propsOf(inst)
         if not props then return end
         for _, prop in ipairs(props) do
@@ -16934,6 +16938,854 @@ local function buildPerformancePanel(screenGui)
     f:GetPropertyChangedSignal("Visible"):Connect(function() if f.Visible then UIAPI.syncFns.performance() end end)
 end
 
+------------------------------------------------------------------------
+-- Mini games (`games`): Snake, Stack Drop (falling blocks) and Treat Chase
+-- (maze chase). The game rules below are plain Lua with no Roblox calls:
+-- each game has new(rng), input(g, action), update(g, dt), draw(g, put)
+-- and hud(g). The panel only feeds input and paints a grid of cells.
+-- rng(n) returns a whole number from 1 to n.
+------------------------------------------------------------------------
+
+local MiniGames = {}
+do
+    local DIRS = { left = { -1, 0 }, right = { 1, 0 }, up = { 0, -1 }, down = { 0, 1 } }
+    local DIR_ORDER = { "up", "left", "down", "right" }
+    local OPP = { left = "right", right = "left", up = "down", down = "up" }
+    MiniGames.DIRS, MiniGames.OPP = DIRS, OPP
+
+    -- Snake -------------------------------------------------------------
+    local Snake = {
+        id = "snake", title = "Snake", cols = 20, rows = 20,
+        help = "Arrows / WASD steer. Eat the treats; walls and your own tail end the run.",
+    }
+    MiniGames.snake = Snake
+
+    function Snake.occupied(g, x, y, skipTail)
+        local n = #g.body - (skipTail and 1 or 0)
+        for i = 1, n do
+            local s = g.body[i]
+            if s.x == x and s.y == y then return true end
+        end
+        return false
+    end
+
+    function Snake.placeFood(g)
+        local free = {}
+        for y = 1, Snake.rows do
+            for x = 1, Snake.cols do
+                if not Snake.occupied(g, x, y) then free[#free + 1] = { x = x, y = y } end
+            end
+        end
+        if #free == 0 then g.food = nil; g.over = true; g.won = true; return end
+        g.food = free[g.rng(#free)]
+    end
+
+    function Snake.new(rng)
+        local g = { rng = rng, score = 0, over = false, dir = "right", queue = {}, timer = 0 }
+        g.body = { { x = 6, y = 10 }, { x = 5, y = 10 }, { x = 4, y = 10 } }
+        Snake.placeFood(g)
+        return g
+    end
+
+    function Snake.input(g, a)
+        if not DIRS[a] then return end
+        local last = g.queue[#g.queue] or g.dir
+        if a == last or a == OPP[last] or #g.queue >= 2 then return end
+        g.queue[#g.queue + 1] = a
+    end
+
+    function Snake.interval(g) return math.max(0.065, 0.13 - #g.body * 0.0015) end
+
+    function Snake.step(g)
+        if g.over then return end
+        if #g.queue > 0 then g.dir = table.remove(g.queue, 1) end
+        local d = DIRS[g.dir]
+        local h = g.body[1]
+        local nx, ny = h.x + d[1], h.y + d[2]
+        local eating = g.food ~= nil and nx == g.food.x and ny == g.food.y
+        -- the tail moves away this step unless the snake grows
+        if nx < 1 or ny < 1 or nx > Snake.cols or ny > Snake.rows or Snake.occupied(g, nx, ny, not eating) then
+            g.over = true
+            return
+        end
+        table.insert(g.body, 1, { x = nx, y = ny })
+        if eating then
+            g.score = g.score + 1
+            Snake.placeFood(g)
+        else
+            table.remove(g.body)
+        end
+    end
+
+    function Snake.update(g, dt)
+        g.timer = g.timer + dt
+        local iv = Snake.interval(g)
+        while g.timer >= iv and not g.over do
+            g.timer = g.timer - iv
+            Snake.step(g)
+        end
+    end
+
+    function Snake.draw(g, put)
+        if g.food then put(g.food.x, g.food.y, "food") end
+        for i = #g.body, 1, -1 do
+            local s = g.body[i]
+            put(s.x, s.y, i == 1 and "head" or "body")
+        end
+    end
+
+    function Snake.hud(g) return "Score " .. g.score .. "   Length " .. #g.body end
+
+    -- Stack Drop --------------------------------------------------------
+    local Stack = {
+        id = "stack", title = "Stack Drop", cols = 10, rows = 20, repeatKeys = { left = true, right = true, down = true },
+        help = "Left / right move, Up turns, Down drops faster, Space drops. Fill a row to clear it.",
+    }
+    MiniGames.stack = Stack
+    local SHAPES = {
+        { { 0, 0 }, { 1, 0 }, { 2, 0 }, { 3, 0 } },
+        { { 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 } },
+        { { 0, 0 }, { 1, 0 }, { 2, 0 }, { 1, 1 } },
+        { { 0, 0 }, { 1, 0 }, { 2, 0 }, { 0, 1 } },
+        { { 0, 0 }, { 1, 0 }, { 2, 0 }, { 2, 1 } },
+        { { 1, 0 }, { 2, 0 }, { 0, 1 }, { 1, 1 } },
+        { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 2, 1 } },
+    }
+    Stack.SHAPES = SHAPES
+    local LINE_POINTS = { 100, 300, 500, 800 }
+
+    local function width(cells)
+        local m = 0
+        for _, c in ipairs(cells) do if c[1] > m then m = c[1] end end
+        return m + 1
+    end
+
+    local function rotateCells(cells)
+        local out, minx, miny = {}, math.huge, math.huge
+        for i, c in ipairs(cells) do
+            local x, y = -c[2], c[1]
+            out[i] = { x, y }
+            if x < minx then minx = x end
+            if y < miny then miny = y end
+        end
+        for _, c in ipairs(out) do c[1] = c[1] - minx; c[2] = c[2] - miny end
+        return out
+    end
+    Stack.rotateCells = rotateCells
+
+    function Stack.nextFromBag(g)
+        if #g.bag == 0 then
+            for i = 1, #SHAPES do g.bag[i] = i end
+            for i = #g.bag, 2, -1 do
+                local j = g.rng(i)
+                g.bag[i], g.bag[j] = g.bag[j], g.bag[i]
+            end
+        end
+        return table.remove(g.bag)
+    end
+
+    function Stack.fits(g, cells, px, py)
+        for _, c in ipairs(cells) do
+            local x, y = px + c[1], py + c[2]
+            if x < 1 or x > Stack.cols or y < 1 or y > Stack.rows then return false end
+            if g.board[y][x] then return false end
+        end
+        return true
+    end
+
+    function Stack.spawn(g)
+        local kind = g.nextKind
+        g.nextKind = Stack.nextFromBag(g)
+        local cells = {}
+        for i, c in ipairs(SHAPES[kind]) do cells[i] = { c[1], c[2] } end
+        g.piece = { kind = kind, cells = cells, x = math.floor((Stack.cols - width(cells)) / 2) + 1, y = 1 }
+        if not Stack.fits(g, cells, g.piece.x, g.piece.y) then g.over = true end
+    end
+
+    function Stack.new(rng)
+        local g = { rng = rng, score = 0, lines = 0, level = 1, over = false, timer = 0, bag = {}, board = {} }
+        for y = 1, Stack.rows do g.board[y] = {} end
+        g.nextKind = Stack.nextFromBag(g)
+        Stack.spawn(g)
+        return g
+    end
+
+    function Stack.lock(g)
+        local p = g.piece
+        for _, c in ipairs(p.cells) do g.board[p.y + c[2]][p.x + c[1]] = p.kind end
+        local cleared, y = 0, Stack.rows
+        while y >= 1 do
+            local full = true
+            for x = 1, Stack.cols do
+                if not g.board[y][x] then full = false; break end
+            end
+            if full then
+                table.remove(g.board, y)
+                table.insert(g.board, 1, {})
+                cleared = cleared + 1
+            else
+                y = y - 1
+            end
+        end
+        if cleared > 0 then
+            g.score = g.score + LINE_POINTS[math.min(cleared, 4)] * g.level
+            g.lines = g.lines + cleared
+            g.level = 1 + math.floor(g.lines / 10)
+        end
+        g.timer = 0
+        Stack.spawn(g)
+    end
+
+    function Stack.input(g, a)
+        if g.over then return end
+        local p = g.piece
+        if a == "left" or a == "right" then
+            local dx = a == "left" and -1 or 1
+            if Stack.fits(g, p.cells, p.x + dx, p.y) then p.x = p.x + dx end
+        elseif a == "up" then
+            if p.kind == 2 then return end
+            local r = rotateCells(p.cells)
+            local base = p.x + math.floor((width(p.cells) - width(r)) / 2)
+            for _, k in ipairs({ 0, -1, 1, -2, 2 }) do
+                if Stack.fits(g, r, base + k, p.y) then p.cells = r; p.x = base + k; return end
+            end
+        elseif a == "down" then
+            if Stack.fits(g, p.cells, p.x, p.y + 1) then
+                p.y = p.y + 1
+                g.score = g.score + 1
+                g.timer = 0
+            else
+                Stack.lock(g)
+            end
+        elseif a == "drop" then
+            local n = 0
+            while Stack.fits(g, p.cells, p.x, p.y + 1) do p.y = p.y + 1; n = n + 1 end
+            g.score = g.score + n * 2
+            Stack.lock(g)
+        end
+    end
+
+    function Stack.interval(g) return math.max(0.08, 0.8 * 0.85 ^ (g.level - 1)) end
+
+    function Stack.update(g, dt)
+        if g.over then return end
+        g.timer = g.timer + dt
+        local iv = Stack.interval(g)
+        while g.timer >= iv and not g.over do
+            g.timer = g.timer - iv
+            local p = g.piece
+            if Stack.fits(g, p.cells, p.x, p.y + 1) then p.y = p.y + 1 else Stack.lock(g) end
+        end
+    end
+
+    function Stack.draw(g, put)
+        for y = 1, Stack.rows do
+            for x = 1, Stack.cols do
+                local k = g.board[y][x]
+                if k then put(x, y, "p" .. k) end
+            end
+        end
+        if g.over then return end
+        local p = g.piece
+        local gy = p.y
+        while Stack.fits(g, p.cells, p.x, gy + 1) do gy = gy + 1 end
+        for _, c in ipairs(p.cells) do put(p.x + c[1], gy + c[2], "ghost") end
+        for _, c in ipairs(p.cells) do put(p.x + c[1], p.y + c[2], "p" .. p.kind) end
+    end
+
+    -- the next piece, for the small preview grid (4 x 2)
+    function Stack.preview(g, put)
+        for _, c in ipairs(SHAPES[g.nextKind]) do put(c[1] + 1, c[2] + 1, "p" .. g.nextKind) end
+    end
+
+    function Stack.hud(g) return "Score " .. g.score .. "   Lines " .. g.lines .. "   Level " .. g.level end
+
+    -- Treat Chase -------------------------------------------------------
+    -- # wall, . treat, o power bone, P puppy start, C cat pen, - pen door
+    local MAZE = {
+        "###################",
+        "#o.......#.......o#",
+        "#.##.###.#.###.##.#",
+        "#.................#",
+        "#.##.#.#####.#.##.#",
+        "#....#...#...#....#",
+        "####.###...###.####",
+        "#......##-##......#",
+        "#.##.#.#CCC#.#.##.#",
+        "#.##.#.#####.#.##.#",
+        "#....#.......#....#",
+        "##.#.###.#.###.#.##",
+        "#..#.....P.....#..#",
+        "#.####.#####.####.#",
+        "#o.....#...#.....o#",
+        "#.###.##.#.##.###.#",
+        "#.................#",
+        "###################",
+    }
+    local Chase = {
+        id = "chase", title = "Treat Chase", cols = #MAZE[1], rows = #MAZE,
+        help = "Arrows / WASD steer the puppy. Eat every treat; a bone lets you chase the cats for a while.",
+    }
+    MiniGames.chase = Chase
+    Chase.MAZE = MAZE
+
+    local function key(x, y) return y * 64 + x end
+
+    function Chase.loadLevel(g)
+        g.walls, g.treats, g.left, g.pen = {}, {}, 0, {}
+        for y, row in ipairs(MAZE) do
+            g.walls[y], g.treats[y] = {}, {}
+            for x = 1, #row do
+                local ch = row:sub(x, x)
+                if ch == "#" or ch == "-" or ch == "C" then g.walls[y][x] = ch end
+                if ch == "C" then g.pen[#g.pen + 1] = { x = x, y = y } end
+                if ch == "-" then g.door = { x = x, y = y } end
+                if ch == "P" then g.start = { x = x, y = y } end
+                if ch == "." or ch == "o" then g.treats[y][x] = ch; g.left = g.left + 1 end
+            end
+        end
+        Chase.resetActors(g)
+    end
+
+    function Chase.resetActors(g)
+        g.player = { x = g.start.x, y = g.start.y, dir = nil, want = nil, timer = 0 }
+        g.power, g.combo = 0, 0
+        g.cats = {}
+        for i = 1, 3 do
+            local p = g.pen[((i - 1) % #g.pen) + 1]
+            g.cats[i] = { id = i, x = p.x, y = p.y, dir = "up", state = "pen", wait = (i - 1) * 3 + 1, timer = 0 }
+        end
+        g.freeze = 1
+    end
+
+    function Chase.new(rng)
+        local g = { rng = rng, score = 0, lives = 3, level = 1, over = false }
+        Chase.loadLevel(g)
+        return g
+    end
+
+    function Chase.playerOpen(g, x, y)
+        local row = g.walls[y]
+        return row ~= nil and x >= 1 and x <= Chase.cols and row[x] == nil
+    end
+
+    -- cats leaving or going home may use the pen and its door
+    function Chase.catOpen(g, c, x, y)
+        local row = g.walls[y]
+        if row == nil or x < 1 or x > Chase.cols then return false end
+        local w = row[x]
+        if w == nil then return true end
+        if w == "#" then return false end
+        return c.state == "leave" or c.state == "eaten"
+    end
+
+    -- first direction of a shortest path from the cat to (tx, ty)
+    local function pathDir(g, c, tx, ty)
+        local first, q, head = { [key(c.x, c.y)] = "start" }, { { c.x, c.y } }, 1
+        while head <= #q do
+            local cur = q[head]
+            head = head + 1
+            for _, dn in ipairs(DIR_ORDER) do
+                local d = DIRS[dn]
+                local nx, ny = cur[1] + d[1], cur[2] + d[2]
+                local k = key(nx, ny)
+                if first[k] == nil and Chase.catOpen(g, c, nx, ny) then
+                    local f = first[key(cur[1], cur[2])]
+                    first[k] = f == "start" and dn or f
+                    if nx == tx and ny == ty then return first[k] end
+                    q[#q + 1] = { nx, ny }
+                end
+            end
+        end
+        return nil
+    end
+    Chase.pathDir = pathDir
+
+    local function chooseDir(g, c, tx, ty, flee)
+        local opts = {}
+        for _, dn in ipairs(DIR_ORDER) do
+            local d = DIRS[dn]
+            if dn ~= OPP[c.dir] and Chase.catOpen(g, c, c.x + d[1], c.y + d[2]) then opts[#opts + 1] = dn end
+        end
+        if #opts == 0 then
+            local back = OPP[c.dir]
+            local d = DIRS[back]
+            return Chase.catOpen(g, c, c.x + d[1], c.y + d[2]) and back or nil
+        end
+        if flee or (c.id > 1 and g.rng(100) <= 15) then return opts[g.rng(#opts)] end
+        local best, bestD
+        for _, dn in ipairs(opts) do
+            local d = DIRS[dn]
+            local dx, dy = c.x + d[1] - tx, c.y + d[2] - ty
+            local dist = dx * dx + dy * dy
+            if bestD == nil or dist < bestD then best, bestD = dn, dist end
+        end
+        return best
+    end
+
+    local function catTarget(g, c)
+        local p = g.player
+        if c.id == 2 and p.dir then
+            local d = DIRS[p.dir]
+            return p.x + d[1] * 4, p.y + d[2] * 4
+        elseif c.id == 3 then
+            local dx, dy = c.x - p.x, c.y - p.y
+            if dx * dx + dy * dy < 49 then return 2, Chase.rows - 1 end
+        end
+        return p.x, p.y
+    end
+
+    local function catInterval(g, c)
+        if c.state == "eaten" then return 0.06 end
+        if c.state == "scared" then return 0.3 end
+        return math.max(0.11, 0.17 * 0.95 ^ (g.level - 1))
+    end
+
+    function Chase.moveCat(g, c)
+        local dn
+        if c.state == "leave" then
+            local tx, ty = g.door.x, g.door.y - 1
+            if c.x == tx and c.y == ty then
+                c.state = "hunt"
+            else
+                dn = pathDir(g, c, tx, ty)
+            end
+        elseif c.state == "eaten" then
+            local home = g.pen[1]
+            if c.x == home.x and c.y == home.y then
+                c.state = "leave"
+            else
+                dn = pathDir(g, c, home.x, home.y)
+            end
+        end
+        if c.state == "hunt" or c.state == "scared" then
+            local tx, ty = catTarget(g, c)
+            dn = chooseDir(g, c, tx, ty, c.state == "scared")
+        end
+        if dn then
+            local d = DIRS[dn]
+            c.x, c.y, c.dir = c.x + d[1], c.y + d[2], dn
+        end
+    end
+
+    local function collide(g)
+        local p = g.player
+        for _, c in ipairs(g.cats) do
+            if c.x == p.x and c.y == p.y then
+                if c.state == "scared" then
+                    g.combo = g.combo + 1
+                    g.score = g.score + 100 * math.floor(2 ^ g.combo)
+                    c.state = "eaten"
+                elseif c.state == "hunt" then
+                    g.lives = g.lives - 1
+                    if g.lives <= 0 then g.over = true else Chase.resetActors(g) end
+                    return true
+                end
+            end
+        end
+        return false
+    end
+    Chase.collide = collide
+
+    function Chase.movePlayer(g)
+        local p = g.player
+        if p.want then
+            local d = DIRS[p.want]
+            if Chase.playerOpen(g, p.x + d[1], p.y + d[2]) then p.dir = p.want end
+        end
+        if not p.dir then return end
+        local d = DIRS[p.dir]
+        if not Chase.playerOpen(g, p.x + d[1], p.y + d[2]) then return end
+        p.x, p.y = p.x + d[1], p.y + d[2]
+        local t = g.treats[p.y][p.x]
+        if t then
+            g.treats[p.y][p.x] = nil
+            g.left = g.left - 1
+            if t == "o" then
+                g.score = g.score + 50
+                g.power = math.max(3, 7 - (g.level - 1) * 0.5)
+                g.combo = 0
+                for _, c in ipairs(g.cats) do
+                    if c.state == "hunt" then c.state = "scared"; c.dir = OPP[c.dir] end
+                end
+            else
+                g.score = g.score + 10
+            end
+        end
+        if g.left <= 0 then
+            g.level = g.level + 1
+            g.score = g.score + 500
+            Chase.loadLevel(g)
+        end
+    end
+
+    function Chase.input(g, a)
+        if DIRS[a] then g.player.want = a end
+    end
+
+    function Chase.update(g, dt)
+        if g.over then return end
+        if g.freeze > 0 then g.freeze = g.freeze - dt; return end
+        if g.power > 0 then
+            g.power = g.power - dt
+            if g.power <= 0 then
+                g.power = 0
+                for _, c in ipairs(g.cats) do if c.state == "scared" then c.state = "hunt" end end
+            end
+        end
+        local p = g.player
+        p.timer = p.timer + dt
+        local piv = math.max(0.1, 0.15 * 0.96 ^ (g.level - 1))
+        while p.timer >= piv do
+            p.timer = p.timer - piv
+            Chase.movePlayer(g)
+            if g.freeze > 0 or collide(g) then return end
+        end
+        for _, c in ipairs(g.cats) do
+            if c.state == "pen" then
+                c.wait = c.wait - dt
+                if c.wait <= 0 then c.state = "leave" end
+            else
+                c.timer = c.timer + dt
+                local iv = catInterval(g, c)
+                while c.timer >= iv do
+                    c.timer = c.timer - iv
+                    Chase.moveCat(g, c)
+                    if collide(g) then return end
+                    iv = catInterval(g, c)
+                end
+            end
+        end
+    end
+
+    function Chase.draw(g, put)
+        for y = 1, Chase.rows do
+            for x = 1, Chase.cols do
+                local w = g.walls[y][x]
+                if w == "#" then
+                    put(x, y, "wall")
+                elseif w == "-" then
+                    put(x, y, "door")
+                else
+                    local t = g.treats[y][x]
+                    if t == "." then put(x, y, "treat") elseif t == "o" then put(x, y, "bone") end
+                end
+            end
+        end
+        local blink = g.power > 0 and g.power < 1.5 and math.floor(g.power * 6) % 2 == 0
+        for _, c in ipairs(g.cats) do
+            local kind
+            if c.state == "eaten" then kind = "eyes"
+            elseif c.state == "scared" then kind = blink and "scared2" or "scared"
+            else kind = "cat" .. c.id end
+            put(c.x, c.y, kind)
+        end
+        put(g.player.x, g.player.y, "puppy")
+    end
+
+    function Chase.hud(g) return "Score " .. g.score .. "   Lives " .. g.lives .. "   Level " .. g.level end
+
+    MiniGames.list = { Snake, Stack, Chase }
+end
+
+-- Mini games window: tabs, a cell grid per mg, keyboard (arrows / WASD,
+-- Space drops, P pauses) and on-screen buttons for touch.
+local function buildGamesPanel(screenGui)
+    local W, HGT = 360, 574
+    local f = uiWindow(screenGui, "games", "Mini games", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2, 0.5, -HGT / 2))
+    local rngObj = Random.new()
+    local function rng(n) return rngObj:NextInteger(1, n) end
+    if type(Cfg.games) ~= "table" then Cfg.games = {} end
+
+    local mg, state, status = MiniGames.list[1], nil, "idle" -- idle | play | pause | over
+    local cells, cur, nextK, cols, rows = {}, {}, {}, 0, 0
+    local pcells, pcur = {}, {}
+    local held = {}
+
+    local PIECE = {
+        Color3.fromRGB(255, 140, 200), Color3.fromRGB(255, 214, 110), Color3.fromRGB(190, 140, 255),
+        Color3.fromRGB(120, 200, 255), Color3.fromRGB(255, 160, 110), Color3.fromRGB(130, 230, 170),
+        Color3.fromRGB(255, 120, 140),
+    }
+    -- kind -> colour, transparency, dot size (nil = whole cell)
+    local function style(kind)
+        if kind == "empty" then return PAL.ELEVATED, 0.55 end
+        if kind == "head" then return PAL.ACCENT, 0 end
+        if kind == "body" then return PAL.GOOD, 0.1 end
+        if kind == "food" then return Color3.fromRGB(255, 120, 180), 0, 0.7 end
+        if kind == "ghost" then return PAL.DIM, 0.75 end
+        if kind == "wall" then return PAL.ACCENT, 0.45 end
+        if kind == "door" then return Color3.fromRGB(255, 200, 230), 0.3, 0.35 end
+        if kind == "treat" then return Color3.fromRGB(255, 230, 180), 0, 0.25 end
+        if kind == "bone" then return Color3.fromRGB(255, 255, 255), 0, 0.6 end
+        if kind == "puppy" then return Color3.fromRGB(255, 176, 90), 0 end
+        if kind == "cat1" then return Color3.fromRGB(180, 120, 255), 0 end
+        if kind == "cat2" then return Color3.fromRGB(90, 200, 255), 0 end
+        if kind == "cat3" then return Color3.fromRGB(255, 110, 120), 0 end
+        if kind == "scared" then return Color3.fromRGB(70, 90, 210), 0 end
+        if kind == "scared2" then return Color3.fromRGB(235, 235, 255), 0 end
+        if kind == "eyes" then return Color3.fromRGB(255, 255, 255), 0, 0.4 end
+        local n = tonumber(kind:match("^p(%d)$"))
+        if n then return PIECE[n] or PAL.ACCENT, 0 end
+        return PAL.ELEVATED, 0.55
+    end
+
+    local tabs = {}
+    local tabW = (W - 32 - 16) / 3
+    local hud = label(f, { Position = UDim2.fromOffset(16, 82), Size = UDim2.fromOffset(W - 32, 18), TextSize = 12, Text = "" })
+    local bestLbl = label(f, { Position = UDim2.fromOffset(16, 82), Size = UDim2.fromOffset(W - 32, 18), TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Right, TextColor3 = PAL.DIM, Text = "" })
+    local holder = make("Frame", { Name = "PuppyAdminGameBoard", Position = UDim2.fromOffset(16, 106), Size = UDim2.fromOffset(W - 32, 306),
+        BackgroundTransparency = 1 }, f)
+    local board = make("Frame", { BackgroundColor3 = Color3.fromRGB(8, 8, 8), BackgroundTransparency = 0.35, BorderSizePixel = 0 }, holder)
+    corner(board, 6)
+    local preview = make("Frame", { BackgroundTransparency = 1, Visible = false }, holder)
+    local msg = label(holder, { Size = UDim2.new(1, 0, 0, 40), Position = UDim2.new(0, 0, 0.5, -20), ZIndex = 5,
+        TextXAlignment = Enum.TextXAlignment.Center, Font = Enum.Font.GothamBold, TextSize = 16, TextStrokeTransparency = 0.4, Text = "" })
+
+    local function newCell(parent, cs, x, y)
+        local c = make("Frame", { Size = UDim2.fromOffset(cs - 1, cs - 1), Position = UDim2.fromOffset((x - 1) * cs, (y - 1) * cs),
+            BorderSizePixel = 0, BackgroundColor3 = PAL.ELEVATED, BackgroundTransparency = 0.55 }, parent)
+        corner(c, math.max(2, math.floor(cs / 4)))
+        local d = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(0.3, 0.3),
+            BorderSizePixel = 0, Visible = false }, c)
+        corner(d, 50)
+        return { frame = c, dot = d }
+    end
+
+    local function paint(cell, kind)
+        local color, tr, dot = style(kind)
+        if dot then
+            local ec, et = style("empty")
+            cell.frame.BackgroundColor3, cell.frame.BackgroundTransparency = ec, et
+            cell.dot.Visible = true
+            cell.dot.BackgroundColor3, cell.dot.BackgroundTransparency = color, tr
+            cell.dot.Size = UDim2.fromScale(dot, dot)
+        else
+            cell.frame.BackgroundColor3, cell.frame.BackgroundTransparency = color, tr
+            cell.dot.Visible = false
+        end
+    end
+
+    local function buildBoard()
+        for _, c in ipairs(cells) do c.frame:Destroy() end
+        for _, ch in ipairs(preview:GetChildren()) do ch:Destroy() end
+        cells, cur, pcells, pcur = {}, {}, {}, {}
+        cols, rows = mg.cols, mg.rows
+        local hasPreview = mg.preview ~= nil
+        local availW = W - 32 - (hasPreview and 70 or 0)
+        local cs = math.floor(math.min(availW / cols, 306 / rows))
+        local bw, bh = cs * cols, cs * rows
+        local left = math.floor((availW - bw) / 2)
+        board.Size = UDim2.fromOffset(bw + 2, bh + 2)
+        board.Position = UDim2.fromOffset(left - 1, 0)
+        for y = 1, rows do
+            for x = 1, cols do
+                local c = newCell(board, cs, x, y)
+                c.frame.Position = c.frame.Position + UDim2.fromOffset(1, 1)
+                cells[#cells + 1] = c
+            end
+        end
+        preview.Visible = hasPreview
+        if hasPreview then
+            local ps = 14
+            preview.Position = UDim2.fromOffset(left + bw + 14, 4)
+            preview.Size = UDim2.fromOffset(ps * 4, ps * 2 + 20)
+            label(preview, { Name = "Title", Size = UDim2.fromOffset(ps * 4, 16), Text = "Next", TextSize = 11, TextColor3 = PAL.DIM })
+            for y = 1, 2 do
+                for x = 1, 4 do
+                    local c = newCell(preview, ps, x, y)
+                    c.frame.Position = c.frame.Position + UDim2.fromOffset(0, 20)
+                    pcells[#pcells + 1] = c
+                end
+            end
+        end
+    end
+
+    local function render()
+        local n = cols * rows
+        for i = 1, n do nextK[i] = "empty" end
+        if state then
+            mg.draw(state, function(x, y, k)
+                if x >= 1 and x <= cols and y >= 1 and y <= rows then nextK[(y - 1) * cols + x] = k end
+            end)
+        end
+        for i = 1, n do
+            if nextK[i] ~= cur[i] and cells[i] then paint(cells[i], nextK[i]); cur[i] = nextK[i] end
+        end
+        if #pcells > 0 then
+            local pk = {}
+            for i = 1, 8 do pk[i] = "empty" end
+            if state and not state.over then
+                mg.preview(state, function(x, y, k) if x >= 1 and x <= 4 and y >= 1 and y <= 2 then pk[(y - 1) * 4 + x] = k end end)
+            end
+            for i = 1, 8 do
+                if pk[i] ~= pcur[i] then paint(pcells[i], pk[i]); pcur[i] = pk[i] end
+            end
+        end
+        hud.Text = state and mg.hud(state) or mg.title
+        bestLbl.Text = "Best " .. tostring(tonumber(Cfg.games[mg.id]) or 0)
+    end
+
+    local startBtn
+    local function setStatus(s)
+        status = s
+        for k in pairs(held) do held[k] = nil end
+        if s == "idle" then msg.Text = "Press Start"
+        elseif s == "pause" then msg.Text = "Paused"
+        elseif s == "over" then
+            local best = tonumber(Cfg.games[mg.id]) or 0
+            local score = state and math.floor(state.score) or 0
+            if score > best then
+                Cfg.games[mg.id] = score
+                cfgSave()
+                msg.Text = (state.won and "Board full! " or "Game over - ") .. "new best " .. score
+            else
+                msg.Text = (state and state.won and "Board full! " or "Game over - ") .. "score " .. score
+            end
+        else msg.Text = "" end
+        if startBtn then startBtn.Text = s == "play" and "Pause" or (s == "pause" and "Resume" or "Start") end
+    end
+
+    local function newGame()
+        state = mg.new(rng)
+        setStatus("play")
+        render()
+    end
+
+    local function paintTabs()
+        for _, t in ipairs(tabs) do
+            t.btn.BackgroundColor3 = t.mg == mg and PAL.ELEVATED or PAL.CARD
+            t.btn.TextColor3 = t.mg == mg and PAL.TEXT or PAL.DIM
+        end
+    end
+
+    local function selectGame(g)
+        mg = g
+        state = nil
+        paintTabs()
+        buildBoard()
+        setStatus("idle")
+        render()
+    end
+
+    local helpLbl
+    for i, g in ipairs(MiniGames.list) do
+        local b = uiButton(f, g.title, UDim2.fromOffset(tabW, 28), UDim2.fromOffset(16 + (i - 1) * (tabW + 8), 46), function()
+            selectGame(g)
+            helpLbl.Text = g.help
+        end)
+        tabs[i] = { btn = b, mg = g }
+    end
+
+    local function act(a)
+        if status ~= "play" or not state then return end
+        mg.input(state, a)
+        render()
+    end
+
+    local bw = (W - 32 - 8) / 2
+    startBtn = uiButton(f, "Start", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16, 420), function()
+        if status == "play" then setStatus("pause")
+        elseif status == "pause" then setStatus("play")
+        else newGame() end
+    end)
+    uiButton(f, "Restart", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16 + bw + 8, 420), newGame)
+    local pads = { { "Left", "left" }, { "Up", "up" }, { "Down", "down" }, { "Right", "right" }, { "Drop", "drop" } }
+    local pw = (W - 32 - 4 * 6) / 5
+    for i, p in ipairs(pads) do
+        uiButton(f, p[1], UDim2.fromOffset(pw, 30), UDim2.fromOffset(16 + (i - 1) * (pw + 6), 458), function() act(p[2]) end)
+    end
+    helpLbl = label(f, { Position = UDim2.fromOffset(16, 496), Size = UDim2.fromOffset(W - 32, 34), TextWrapped = true, TextSize = 11,
+        TextColor3 = PAL.DIM, TextYAlignment = Enum.TextYAlignment.Top, Text = mg.help })
+    label(f, { Position = UDim2.fromOffset(16, 532), Size = UDim2.fromOffset(W - 32, 30), TextWrapped = true, TextSize = 10,
+        TextColor3 = PAL.DIM, TextYAlignment = Enum.TextYAlignment.Top,
+        Text = "While a mg runs, arrows / WASD / Space go to the mg, not your character. P pauses." })
+
+    -- keyboard: only while this window is open; keys pass through to the
+    -- character unless a mg is being played
+    local KEYMAP = {
+        [Enum.KeyCode.Left] = "left", [Enum.KeyCode.A] = "left", [Enum.KeyCode.Right] = "right", [Enum.KeyCode.D] = "right",
+        [Enum.KeyCode.Up] = "up", [Enum.KeyCode.W] = "up", [Enum.KeyCode.Down] = "down", [Enum.KeyCode.S] = "down",
+        [Enum.KeyCode.Space] = "drop",
+    }
+    local ACTION = "PuppyAdminGames"
+    local bound = false
+    local function onKey(_, inputState, input)
+        local kc = input.KeyCode
+        if kc == Enum.KeyCode.P then
+            if inputState ~= Enum.UserInputState.Begin then return Enum.ContextActionResult.Sink end
+            if status == "play" then setStatus("pause"); return Enum.ContextActionResult.Sink end
+            if status == "pause" then setStatus("play"); return Enum.ContextActionResult.Sink end
+            return Enum.ContextActionResult.Pass
+        end
+        if status ~= "play" then return Enum.ContextActionResult.Pass end
+        local a = KEYMAP[kc]
+        if not a then return Enum.ContextActionResult.Pass end
+        if inputState == Enum.UserInputState.Begin then
+            act(a)
+            if mg.repeatKeys and mg.repeatKeys[a] then held[a] = os.clock() + 0.17 end
+        elseif inputState == Enum.UserInputState.End or inputState == Enum.UserInputState.Cancel then
+            held[a] = nil
+        end
+        return Enum.ContextActionResult.Sink
+    end
+    local keys = { Enum.KeyCode.P }
+    for kc in pairs(KEYMAP) do keys[#keys + 1] = kc end
+    local function bind(on)
+        if on == bound then return end
+        bound = on
+        if on then
+            pcall(function() ContextActionService:BindActionAtPriority(ACTION, onKey, false, 3000, table.unpack(keys)) end)
+        else
+            pcall(function() ContextActionService:UnbindAction(ACTION) end)
+        end
+    end
+
+    local loop
+    local function stopLoop()
+        if loop then loop:Disconnect(); loop = nil end
+    end
+    local function startLoop()
+        if loop then return end
+        loop = RunService.Heartbeat:Connect(function(dt)
+            if status ~= "play" or not state then return end
+            dt = math.min(dt, 0.1)
+            local now = os.clock()
+            for a, t in pairs(held) do
+                if now >= t then held[a] = now + 0.05; mg.input(state, a) end
+            end
+            mg.update(state, dt)
+            if state.over then setStatus("over") end
+            render()
+        end)
+        table.insert(conns, loop)
+    end
+
+    f:GetPropertyChangedSignal("Visible"):Connect(function()
+        if f.Visible then
+            bind(true)
+            startLoop()
+            render()
+        else
+            if status == "play" then setStatus("pause") end
+            bind(false)
+            stopLoop()
+        end
+    end)
+    table.insert(conns, UserInputService.WindowFocusReleased:Connect(function()
+        if status == "play" then setStatus("pause") end
+    end))
+    table.insert(Theme.listeners, function()
+        cur, pcur = {}, {}
+        paintTabs()
+        render()
+    end)
+    table.insert(cleanups, function() bind(false); stopLoop() end)
+
+    selectGame(mg)
+end
+
 local function buildPanels(screenGui)
     local B = UIAPI.builders
     B.tools = function() buildToolsPanel(screenGui) end
@@ -16946,6 +17798,7 @@ local function buildPanels(screenGui)
     B.reanim = function() buildReanimPanel(screenGui) end
     B.owner = function() buildOwnerPanel(screenGui) end
     B.performance = function() buildPerformancePanel(screenGui) end
+    B.games = function() buildGamesPanel(screenGui) end
 end
 
 ------------------------------------------------------------------------
