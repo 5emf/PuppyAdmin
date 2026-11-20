@@ -40,6 +40,12 @@ local SETTINGS = {
     KillCharacterOnStop = true,      -- V3 behaviour of `stop` (`kill` never touches the character)
     DisableHandleCollision = true,   -- tail/wings only: handles stop pushing characters
     ConfigFile = "puppyadmin.json",
+    -- Shared tags (see TagSync). Readers need the repository to be public.
+    TagSync = {
+        owner = "5emf", repo = "PuppyAdmin", branch = "main", path = "tags.json",
+        tokenFile = "PuppyAdmin/tagsync_token.txt", -- only on the machine that may write
+        pollSeconds = 60, pushDelay = 4,
+    },
 }
 
 local S = {
@@ -1436,9 +1442,11 @@ do
     Tags.reindex()
 end
 
-function Tags.save()
+-- fromRemote: the change came from the repository, so it is not pushed back.
+function Tags.save(fromRemote)
     Tags.reindex()
     cfgSave()
+    if not fromRemote and Tags.onChange then Tags.onChange() end
 end
 
 function Tags.destroy(userId)
@@ -1712,6 +1720,271 @@ local function canEditTags()
     end
     return false
 end
+
+------------------------------------------------------------------------
+-- Tag sync: every player running the script shows the tags kept in the
+-- repository (SETTINGS.TagSync.path on SETTINGS.TagSync.branch).
+--   * Everyone reads it: at startup and every pollSeconds.
+--   * Only someone with a GitHub token writes it: each tag change commits
+--     the whole tag list (changes within a few seconds become one commit).
+-- The token is read from SETTINGS.TagSync.tokenFile in the executor
+-- workspace. It is never in the script or in puppyadmin.json, so sharing
+-- either does not share write access. Use a fine-grained token limited to
+-- this one repository with Contents: read and write.
+------------------------------------------------------------------------
+
+local TagSync = { status = "starting", lastJson = nil, pushQueued = false, warnedReadOnly = false }
+
+do
+    local CFG = SETTINGS.TagSync
+    local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+    local function b64encode(data)
+        local out = {}
+        for i = 1, #data, 3 do
+            local a, b, c = data:byte(i, i + 2)
+            local n = a * 65536 + (b or 0) * 256 + (c or 0)
+            local c1 = math.floor(n / 262144) % 64
+            local c2 = math.floor(n / 4096) % 64
+            local c3 = math.floor(n / 64) % 64
+            local c4 = n % 64
+            out[#out + 1] = B64:sub(c1 + 1, c1 + 1) .. B64:sub(c2 + 1, c2 + 1)
+                .. (b and B64:sub(c3 + 1, c3 + 1) or "=") .. (c and B64:sub(c4 + 1, c4 + 1) or "=")
+        end
+        return table.concat(out)
+    end
+
+    local function b64decode(data)
+        data = data:gsub("[^%w%+/=]", "")
+        local map = {}
+        for i = 1, 64 do map[B64:byte(i)] = i - 1 end
+        local out = {}
+        for i = 1, #data, 4 do
+            local a, b, c, d = data:byte(i, i + 3)
+            local n = (map[a] or 0) * 262144 + (map[b] or 0) * 4096 + (map[c] or 0) * 64 + (map[d] or 0)
+            out[#out + 1] = string.char(math.floor(n / 65536) % 256)
+            if c and c ~= 61 then out[#out + 1] = string.char(math.floor(n / 256) % 256) end
+            if d and d ~= 61 then out[#out + 1] = string.char(n % 256) end
+        end
+        return table.concat(out)
+    end
+
+    local function httpRequest(opts)
+        local fn = (type(request) == "function" and request) or (type(http_request) == "function" and http_request)
+            or (type(syn) == "table" and type(syn.request) == "function" and syn.request)
+            or (type(fluxus) == "table" and type(fluxus.request) == "function" and fluxus.request)
+            or (type(http) == "table" and type(http.request) == "function" and http.request)
+        if not fn then return nil, "executor has no request()" end
+        local ok, res = pcall(fn, opts)
+        if not ok then return nil, tostring(res) end
+        if type(res) ~= "table" then return nil, "no response" end
+        return res
+    end
+
+    local function apiUrl()
+        return "https://api.github.com/repos/" .. CFG.owner .. "/" .. CFG.repo .. "/contents/" .. CFG.path
+    end
+
+    function TagSync.token()
+        if not (isfile and readfile) then return nil end
+        local ok, t = pcall(function() return isfile(CFG.tokenFile) and readfile(CFG.tokenFile) end)
+        t = ok and type(t) == "string" and t:match("^%s*(%S+)%s*$") or nil
+        return t
+    end
+
+    function TagSync.setToken(t)
+        t = tostring(t or ""):match("^%s*(%S*)%s*$")
+        if not writefile then return false, "executor has no writefile" end
+        pcall(function()
+            if isfolder and makefolder and not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
+        end)
+        if t == "" then
+            if delfile then pcall(delfile, CFG.tokenFile) else pcall(writefile, CFG.tokenFile, "") end
+            return true, "Token removed - tag sync is read-only"
+        end
+        if not (t:match("^github_pat_[%w_]+$") or t:match("^gh[pousr]_[%w]+$")) then
+            return false, "That does not look like a GitHub token"
+        end
+        local ok = pcall(writefile, CFG.tokenFile, t)
+        if not ok then return false, "Could not write " .. CFG.tokenFile end
+        return true, "Token saved to " .. CFG.tokenFile
+    end
+
+    local function headers(token)
+        local h = {
+            ["Accept"] = "application/vnd.github+json",
+            ["X-GitHub-Api-Version"] = "2022-11-28",
+            ["User-Agent"] = "PuppyAdmin-TagSync",
+        }
+        if token then h["Authorization"] = "Bearer " .. token end
+        return h
+    end
+
+    local function clampStr(v, n) return type(v) == "string" and v:sub(1, n) or nil end
+    local function clampNum(v, lo, hi, d) v = tonumber(v); if not v or v ~= v then return d end return math.clamp(v, lo, hi) end
+    local function rgb(v, d)
+        if type(v) ~= "table" then return d end
+        return { clampNum(v[1], 0, 255, d[1]), clampNum(v[2], 0, 255, d[2]), clampNum(v[3], 0, 255, d[3]) }
+    end
+
+    -- The file is shown on everyone's screen, so only known fields and sane
+    -- values get through; anything else is dropped.
+    function TagSync.sanitize(list)
+        if type(list) ~= "table" then return nil end
+        local out = {}
+        for i = 1, math.min(#list, 200) do
+            local d = list[i]
+            if type(d) == "table" and type(d.name) == "string" then
+                local bd = type(d.backdrop) == "table" and d.backdrop or {}
+                local pf = type(d.pfp) == "table" and d.pfp or {}
+                local members = {}
+                if type(d.members) == "table" then
+                    for j = 1, math.min(#d.members, 500) do
+                        local m = tostring(d.members[j])
+                        if m:match("^%d+$") and #m <= 20 then members[#members + 1] = m end
+                    end
+                end
+                out[#out + 1] = Tags.normalize({
+                    name = clampStr(d.name, 30), text = clampStr(d.text, 40) or "", sub = clampStr(d.sub, 40) or "",
+                    color = rgb(d.color, { 255, 255, 255 }), rainbow = d.rainbow == true,
+                    size = clampNum(d.size, 8, 48, 22), offset = clampNum(d.offset, 0, 12, 3),
+                    font = clampStr(d.font, 40) or "GothamBold",
+                    backdrop = {
+                        on = bd.on == true, color = rgb(bd.color, { 18, 18, 22 }), transparency = clampNum(bd.transparency, 0, 1, 0.35),
+                        image = clampStr(bd.image, 300) or "", imageTransparency = clampNum(bd.imageTransparency, 0, 1, 0.15),
+                        round = bd.round ~= false,
+                    },
+                    pfp = {
+                        mode = (pf.mode == "avatar" or pf.mode == "custom") and pf.mode or "none",
+                        image = clampStr(pf.image, 300) or "", round = pf.round ~= false,
+                    },
+                    members = members,
+                })
+            end
+        end
+        return out
+    end
+
+    local function encodeTags()
+        return HttpService:JSONEncode(Cfg.tagDefs)
+    end
+
+    -- Replaces the local tags with the repository's (no push back).
+    local function apply(text)
+        local ok, decoded = pcall(function() return HttpService:JSONDecode(text) end)
+        local list = ok and TagSync.sanitize(decoded)
+        if not list then return false end
+        local js = HttpService:JSONEncode(list)
+        if js == TagSync.lastJson then return true end
+        -- same content as what is already here (e.g. our own last push): nothing to redo
+        if js == HttpService:JSONEncode(TagSync.sanitize(Cfg.tagDefs) or {}) then TagSync.lastJson = js; return true end
+        TagSync.lastJson = js
+        Cfg.tagDefs = list
+        if Tags.ui.current and not table.find(Cfg.tagDefs, Tags.ui.current) then Tags.ui.current = nil end
+        Tags.save(true)
+        Tags.refreshAll()
+        if UIAPI.syncFns.taglist then pcall(UIAPI.syncFns.taglist) end
+        return true
+    end
+
+    -- With a token: the contents API (always current, gives the sha to write
+    -- against). Without: the raw file (cached by GitHub for a few minutes).
+    function TagSync.fetch()
+        local token = TagSync.token()
+        if token then
+            local res, err = httpRequest({ Url = apiUrl() .. "?ref=" .. CFG.branch, Method = "GET", Headers = headers(token) })
+            if not res then return false, err end
+            if res.StatusCode == 404 then return true, nil, nil end
+            if res.StatusCode ~= 200 then return false, "GitHub said " .. tostring(res.StatusCode) end
+            local ok, meta = pcall(function() return HttpService:JSONDecode(res.Body) end)
+            if not ok or type(meta) ~= "table" or type(meta.content) ~= "string" then return false, "unexpected reply" end
+            return true, b64decode(meta.content), meta.sha
+        end
+        local url = "https://raw.githubusercontent.com/" .. CFG.owner .. "/" .. CFG.repo .. "/" .. CFG.branch .. "/" .. CFG.path
+        local ok, body = pcall(function() return game:HttpGet(url .. "?t=" .. tostring(os.time())) end)
+        if not ok then
+            -- a missing file comes back as an error on most executors
+            return true, nil, nil
+        end
+        if type(body) ~= "string" or body:sub(1, 1) ~= "[" then return true, nil, nil end
+        return true, body, nil
+    end
+
+    function TagSync.pull()
+        local ok, text, sha = TagSync.fetch()
+        if not ok then TagSync.status = "read failed: " .. tostring(text); return false, TagSync.status end
+        if not text then TagSync.status = "no tags file in the repository yet"; return true, TagSync.status end
+        if not apply(text) then TagSync.status = "tags file is not valid"; return false, TagSync.status end
+        TagSync.status = "up to date (" .. #Cfg.tagDefs .. " tags)"
+        return true, TagSync.status, sha
+    end
+
+    function TagSync.push()
+        local token = TagSync.token()
+        if not token then return false, "no token - add one in Settings" end
+        local body = encodeTags()
+        for attempt = 1, 2 do
+            local ok, text, sha = TagSync.fetch()
+            if not ok then return false, "read failed: " .. tostring(text) end
+            if text == body then TagSync.lastJson = body; return true, "already up to date" end
+            local payload = HttpService:JSONEncode({
+                message = "Update tags (" .. #Cfg.tagDefs .. ") from PuppyAdmin",
+                content = b64encode(body), branch = CFG.branch, sha = sha,
+            })
+            local h = headers(token)
+            h["Content-Type"] = "application/json"
+            local res, err = httpRequest({ Url = apiUrl(), Method = "PUT", Headers = h, Body = payload })
+            if not res then return false, err end
+            if res.StatusCode == 200 or res.StatusCode == 201 then
+                TagSync.lastJson = body
+                return true, "pushed " .. #Cfg.tagDefs .. " tags"
+            end
+            if res.StatusCode == 401 or res.StatusCode == 403 then
+                return false, "GitHub refused the token (" .. res.StatusCode .. ") - needs Contents: read and write on " .. CFG.repo
+            end
+            -- 409 / 422: someone else wrote in between; read the new sha and try once more
+            if attempt == 2 then return false, "GitHub said " .. tostring(res.StatusCode) end
+        end
+        return false, "push failed"
+    end
+
+    -- Called by Tags.save after every local change.
+    function TagSync.changed()
+        if not TagSync.token() then
+            if not TagSync.warnedReadOnly then
+                TagSync.warnedReadOnly = true
+                note("Tags", "Saved on this device only - add a GitHub token in Settings to share tags", GREY)
+            end
+            return
+        end
+        if TagSync.pushQueued then return end
+        TagSync.pushQueued = true
+        task.delay(CFG.pushDelay, function()
+            TagSync.pushQueued = false
+            if genv.PuppyAdminActive ~= true then return end
+            local ok, msg = TagSync.push()
+            TagSync.status = msg
+            note("Tag sync", msg, ok and LIGHT or RED)
+        end)
+    end
+
+    function TagSync.start()
+        task.spawn(function()
+            -- an editor without a token keeps their local tags (they could not share edits anyway)
+            local readOnlyEditor = canEditTags() and not TagSync.token()
+            if not readOnlyEditor or #Cfg.tagDefs == 0 then TagSync.pull() end
+            while genv.PuppyAdminActive == true do
+                task.wait(CFG.pollSeconds)
+                if genv.PuppyAdminActive ~= true then break end
+                if not TagSync.pushQueued and not (canEditTags() and not TagSync.token()) then pcall(TagSync.pull) end
+            end
+        end)
+    end
+end
+
+Tags.onChange = TagSync.changed
+TagSync.start()
+
 
 ------------------------------------------------------------------------
 -- Anti-kick: blocks Kick calls made on you from scripts running on your client.
@@ -13579,7 +13852,7 @@ local cmds = {
     "hide", "unhide", "mute", "unmute",
     "reanimui", "tp",
     "aura", "unaura", "auras",
-    "tagui", "taglist", "antikick", "unantikick", "antivcban",
+    "tagui", "taglist", "tagsync", "antikick", "unantikick", "antivcban",
     "reanim", "anim",
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
@@ -13604,6 +13877,7 @@ local cmdDocs = {
     mute = "mute [name|all|others] - Silence a player's chat and sounds (your side)",
     unmute = "unmute [name|all|others] - Undo mute",
     tagui = "tagui - Nametag editor: text, colors, backdrop, profile picture (allowlisted users only)",
+    tagsync = "tagsync [pull|push] - Shared tags in the repository (token goes in Settings, never in chat)",
     taglist = "taglist [add|remove <tag> <users...>] [new|delete <name>] - All tags and their members; add many players at once",
     antikick = "antikick - Block client-side Kick calls on you",
     unantikick = "unantikick - Turn antikick off",
@@ -13949,6 +14223,28 @@ function H.antivcban(a)
         VCB.api = api
     end
     VCB.api.setOpen(sub ~= "close")
+end
+
+-- tagsync          status
+-- tagsync pull     load the repository's tags now
+-- tagsync push     write your tags to the repository now (needs the token in Settings)
+function H.tagsync(a)
+    local sub = a[1] and a[1]:lower()
+    if sub == "pull" then
+        task.spawn(function()
+            local ok, msg = TagSync.pull()
+            note("Tag sync", msg, ok and LIGHT or RED)
+        end)
+    elseif sub == "push" then
+        if not canEditTags() then note("Tags", "Not authorized to edit nametags", RED); return end
+        task.spawn(function()
+            local ok, msg = TagSync.push()
+            note("Tag sync", msg, ok and LIGHT or RED)
+        end)
+    else
+        local c = SETTINGS.TagSync
+        note("Tag sync", (TagSync.token() and "read + write" or "read only") .. " - " .. c.owner .. "/" .. c.repo .. ":" .. c.path .. " - " .. tostring(TagSync.status))
+    end
 end
 
 function H.tagui()
@@ -15696,7 +15992,7 @@ local function createUI()
         return b
     end
 
-    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 616), "SETTINGS")
+    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 676), "SETTINGS")
 
     fieldLabel(settingsFrame, "Chat command prefixes (comma separated, 1-3 symbols)", 45)
     local prefixBox = fieldBox(settingsFrame, 65, table.concat(Cfg.prefixes, ", "))
@@ -15793,6 +16089,25 @@ local function createUI()
             note("Theme", msg, ok and LIGHT or RED)
             if Theme.image then imageBox.Text = Theme.image.src elseif ok then imageBox.Text = "" end
         end)
+    end)
+
+    -- The token only ever goes into a local file; it is never shown again or put in the config.
+    fieldLabel(settingsFrame, "Tag sync: GitHub token (saved only in " .. SETTINGS.TagSync.tokenFile .. ")", 560)
+    local tokenBox = fieldBox(settingsFrame, 580, "")
+    tokenBox.PlaceholderText = TagSync.token() and "token saved - paste a new one, or 'remove'" or "github_pat_... (never type this in chat)"
+    local tokenApply = actionButton(settingsFrame, "Save", UDim2.new(1, -85, 0, 580), UDim2.new(0, 70, 0, 28))
+    tokenApply.MouseButton1Click:Connect(function()
+        local t = tokenBox.Text
+        tokenBox.Text = ""
+        local ok, msg = TagSync.setToken(t:lower() == "remove" and "" or t)
+        note("Tag sync", msg, ok and LIGHT or RED)
+        tokenBox.PlaceholderText = TagSync.token() and "token saved - paste a new one, or 'remove'" or "github_pat_... (never type this in chat)"
+        if ok and TagSync.token() then
+            task.spawn(function()
+                local okPull, status = TagSync.pull()
+                note("Tag sync", status, okPull and LIGHT or RED)
+            end)
+        end
     end)
 
     local killBtn = actionButton(settingsFrame, "KILL SCRIPT", UDim2.new(0, 15, 1, -45), UDim2.new(1, -30, 0, 32), Color3.fromRGB(130, 35, 35))
