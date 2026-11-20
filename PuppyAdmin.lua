@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-19" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-20" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -9009,7 +9009,7 @@ function UIAPI.buildGameBoyPanel(screenGui)
             for _, ext in ipairs({ "ogg", "mp3" }) do
                 local ids, ok = {}, true
                 for _, name in ipairs(files) do
-                    ids[name] = urlImageAsset(SETTINGS.Auras.assetBase .. "assets/gb/" .. name .. "." .. ext, "gbsnd")
+                    ids[name] = urlImageAsset(SETTINGS.Auras.assetBase .. "assets/gb/v2/" .. name .. "." .. ext, "gbsnd")
                     if not ids[name] then ok = false; why = name .. "." .. ext .. " did not download"; break end
                 end
                 if ok then
@@ -9052,6 +9052,15 @@ function UIAPI.buildGameBoyPanel(screenGui)
             note("Game Boy", "No sound: " .. why, RED)
         end)
     end
+    -- Some executors play custom audio once even when Looped is set: restart a
+    -- tone that stopped, and jump back before the end (the files are whole
+    -- wave cycles, so the jump lands on the same point of the wave).
+    local function keepPlaying(snd)
+        if not snd.IsPlaying then snd:Play() end
+        local len = snd.TimeLength
+        if len > 1 and snd.TimePosition > len - 0.25 then snd.TimePosition = 0 end
+    end
+
     local function muteSound()
         if not SND.ready then return end
         for _, set in ipairs(SND.sounds) do
@@ -9067,6 +9076,7 @@ function UIAPI.buildGameBoyPanel(screenGui)
             if a.power and c.on and level > 0 then key, speed = soundKey(n, c) end
             for name, snd in pairs(SND.sounds[n]) do
                 if name == key then
+                    keepPlaying(snd)
                     snd.PlaybackSpeed = speed
                     snd.Volume = c.vol * a.master * level * CHANNEL_GAIN
                 elseif snd.Volume ~= 0 then
@@ -9084,6 +9094,7 @@ function UIAPI.buildGameBoyPanel(screenGui)
                 if running then return end
                 local beep = SND.sounds[1] and SND.sounds[1].sq2_lo
                 if not beep then return end
+                keepPlaying(beep)
                 beep.PlaybackSpeed = 4 -- 441 Hz
                 beep.Volume = Cfg.gbVolume * CHANNEL_GAIN
                 task.delay(0.35, function() if not running then beep.Volume = 0 end end)
