@@ -15523,6 +15523,109 @@ local function uiBox(parent, pos, size, placeholder, text)
     }, c)
 end
 
+-- Dropdown: a button showing the current choice; clicking opens a list
+-- under it. options is a list of labels or a function returning one (for
+-- lists that change). onSelect(index, label) runs when the user picks.
+-- The list lives in the ScreenGui so scrolling frames do not clip it.
+local openDropdown -- the one list open right now { owner, frame }
+local function uiDropdown(parent, prefix, size, pos, options, index, onSelect)
+    local obj = { index = index or 1 }
+    local function list() return type(options) == "function" and options() or options end
+    local b = uiButton(parent, "", size, pos, function() end)
+    b.TextXAlignment = Enum.TextXAlignment.Left
+    make("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 22) }, b)
+    local arrow = label(b, { Size = UDim2.fromOffset(16, 16), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 16, 0.5, 0),
+        Text = "▾", TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = PAL.DIM, TextSize = 12 })
+    local function show()
+        local l = list()
+        b.Text = (prefix or "") .. tostring(l[obj.index] or "-")
+    end
+    function obj.set(i) obj.index = i or 1; show() end
+    function obj.get() return obj.index end
+    function obj.value() return list()[obj.index] end
+    obj.refresh = show
+    obj.button = b
+
+    local function close()
+        if openDropdown and openDropdown.owner == obj then
+            openDropdown.frame:Destroy()
+            openDropdown = nil
+        end
+    end
+    obj.close = close
+
+    b.MouseButton1Click:Connect(function()
+        if openDropdown then
+            local same = openDropdown.owner == obj
+            openDropdown.frame:Destroy()
+            openDropdown = nil
+            if same then return end
+        end
+        local sg = b:FindFirstAncestorOfClass("ScreenGui")
+        if not sg then return end
+        local l = list()
+        local rowH, maxRows = 26, 7
+        local h = math.min(#l, maxRows) * rowH + 6
+        local abs, base = b.AbsolutePosition, sg.AbsolutePosition
+        local below = abs.Y + b.AbsoluteSize.Y + 4
+        local y = below - base.Y
+        if below + h > sg.AbsoluteSize.Y + base.Y then y = abs.Y - h - 4 - base.Y end -- not enough room: open upwards
+        -- a click anywhere outside the list lands on this and closes it (mouse and touch)
+        local holder = make("Frame", { Name = "PuppyAdminDropdown", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 199 }, sg)
+        local catcher = make("TextButton", {
+            Size = UDim2.new(1, 0, 1, 120), Position = UDim2.fromOffset(0, -60), BackgroundTransparency = 1,
+            Text = "", AutoButtonColor = false, ZIndex = 199,
+        }, holder)
+        local frame = make("ScrollingFrame", {
+            Name = "List", Size = UDim2.fromOffset(math.max(120, b.AbsoluteSize.X), h),
+            Position = UDim2.fromOffset(abs.X - base.X, y), BackgroundColor3 = PAL.PANEL, BackgroundTransparency = 0.02,
+            BorderSizePixel = 0, ZIndex = 200, ScrollBarThickness = 3, ScrollBarImageColor3 = PAL.DIM,
+            CanvasSize = UDim2.fromOffset(0, #l * rowH + 6), Active = true,
+        }, holder)
+        corner(frame, 8)
+        stroke(frame, PAL.STROKE, 1, 0)
+        make("UIPadding", { PaddingTop = UDim.new(0, 3), PaddingLeft = UDim.new(0, 3), PaddingRight = UDim.new(0, 3) }, frame)
+        make("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }, frame)
+        for i, text in ipairs(l) do
+            local item = make("TextButton", {
+                Size = UDim2.new(1, -4, 0, rowH), BackgroundColor3 = i == obj.index and PAL.ELEVATED or PAL.CARD,
+                BackgroundTransparency = i == obj.index and 0 or 1, BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 201,
+                Text = tostring(text), TextColor3 = i == obj.index and PAL.TEXT or PAL.DIM, Font = Enum.Font.GothamSemibold,
+                TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = i,
+            }, frame)
+            corner(item, 6)
+            make("UIPadding", { PaddingLeft = UDim.new(0, 8) }, item)
+            item.MouseEnter:Connect(function() item.BackgroundTransparency = 0; item.TextColor3 = PAL.TEXT end)
+            item.MouseLeave:Connect(function()
+                if i ~= obj.index then item.BackgroundTransparency = 1; item.TextColor3 = PAL.DIM end
+            end)
+            item.MouseButton1Click:Connect(function()
+                obj.index = i
+                show()
+                close()
+                if onSelect then onSelect(i, text) end
+            end)
+        end
+        if obj.index > maxRows then frame.CanvasPosition = Vector2.new(0, (obj.index - maxRows) * rowH) end
+        openDropdown = { owner = obj, frame = holder }
+        catcher.MouseButton1Click:Connect(close)
+        catcher.MouseButton2Click:Connect(close)
+    end)
+    -- the list closes when its button disappears (window closed, tab switched)
+    b:GetPropertyChangedSignal("AbsolutePosition"):Connect(close)
+    b.AncestryChanged:Connect(close)
+    show()
+    return obj
+end
+
+-- Escape closes the open list
+table.insert(conns, UserInputService.InputBegan:Connect(function(input)
+    if openDropdown and input.KeyCode == Enum.KeyCode.Escape then
+        openDropdown.frame:Destroy()
+        openDropdown = nil
+    end
+end))
+
 ------------------------------------------------------------------------
 -- Orbit / tail / wings panels
 ------------------------------------------------------------------------
@@ -15613,17 +15716,18 @@ function buildToolsPanel(screenGui)
     slider("Curl", { min = -90, max = 180, step = 5, value = S.tail.curlDeg, format = function(v) return string.format("%d deg", v) end,
         onChange = function(v) S.tail.curlDeg = v end }, function() return S.tail.curlDeg end)
     local sy = add(36)
-    local splitBtn
-    splitBtn = uiButton(body, "", UDim2.new(1, -24, 0, 28), UDim2.fromOffset(12, sy), function()
-        -- cycles auto -> 1 -> 2 ... -> number of tools -> auto
-        local n = #slots
-        if S.tailCount == nil then S.tailCount = 1
-        elseif S.tailCount >= math.max(1, n) then S.tailCount = nil
-        else S.tailCount = S.tailCount + 1 end
+    -- auto, then 1 .. number of tools
+    local function tailChoices()
+        local l = { "auto" }
+        for i = 1, math.max(1, #slots) do l[#l + 1] = tostring(i) end
+        return l
+    end
+    local splitDd = uiDropdown(body, "Tail tools when combined: ", UDim2.new(1, -24, 0, 28), UDim2.fromOffset(12, sy), tailChoices, 1, function(i)
+        S.tailCount = i > 1 and (i - 1) or nil
         assignRoles()
         UIAPI.sync()
     end)
-    table.insert(syncers, function() splitBtn.Text = "Tail tools when combined: " .. (S.tailCount and tostring(S.tailCount) or "auto") end)
+    table.insert(syncers, function() splitDd.set(S.tailCount and (S.tailCount + 1) or 1) end)
 
     sectionTitle(body, add, "Wings")
     switch("Enabled", function() return S.wingsOn end, function(on) setLayout("wings", on) end)
@@ -15642,13 +15746,12 @@ function buildToolsPanel(screenGui)
     slider("Netless velocity", { min = 0, max = 400, step = 5, value = SETTINGS.VelocityY, format = function(v) return string.format("%d", v) end,
         onChange = function(v) SETTINGS.VelocityY = v end }, function() return SETTINGS.VelocityY end)
     local ay = add(36)
-    local axisBtn
-    axisBtn = uiButton(body, "", UDim2.new(1, -24, 0, 28), UDim2.fromOffset(12, ay), function()
-        local i = table.find(AXIS_ORDER, S.axis) or 0
-        S.axis = AXIS_ORDER[i % #AXIS_ORDER + 1]
-        UIAPI.sync()
-    end)
-    table.insert(syncers, function() axisBtn.Text = "Handle axis: " .. S.axis end)
+    local axisDd = uiDropdown(body, "Handle axis: ", UDim2.new(1, -24, 0, 28), UDim2.fromOffset(12, ay), AXIS_ORDER,
+        table.find(AXIS_ORDER, S.axis) or 1, function(i)
+            S.axis = AXIS_ORDER[i]
+            UIAPI.sync()
+        end)
+    table.insert(syncers, function() axisDd.set(table.find(AXIS_ORDER, S.axis) or 1) end)
     local ty = add(36)
     local targetBox = uiBox(body, UDim2.fromOffset(12, ty), UDim2.new(1, -170, 0, 28), "Player to wear them on")
     uiButton(body, "Target", UDim2.fromOffset(66, 28), UDim2.new(1, -152, 0, ty), function()
@@ -15841,10 +15944,8 @@ local function buildTagPanel(screenGui)
     local offSl = uiSlider(body, "Height above head", UDim2.fromOffset(12, add(48)), IW, {
         min = 0, max = 12, step = 0.5, value = 3, format = function(v) return string.format("%.1f", v) end,
     })
-    local fontBtn
-    fontBtn = uiButton(body, "Font: " .. TAG_FONTS[1], UDim2.fromOffset(IW, 28), UDim2.fromOffset(12, add(36)), function()
-        fontIdx = fontIdx % #TAG_FONTS + 1
-        fontBtn.Text = "Font: " .. TAG_FONTS[fontIdx]
+    local fontDd = uiDropdown(body, "Font: ", UDim2.fromOffset(IW, 28), UDim2.fromOffset(12, add(36)), TAG_FONTS, 1, function(i)
+        fontIdx = i
     end)
 
     sectionTitle(body, add, "Backdrop")
@@ -15860,10 +15961,10 @@ local function buildTagPanel(screenGui)
     local bdRoundSw = uiSwitch(body, "Rounded corners", UDim2.fromOffset(12, add(32)), IW, true, function() end)
 
     sectionTitle(body, add, "Profile picture")
-    local pfpBtn
-    pfpBtn = uiButton(body, "Picture: " .. PFP_MODES[1][2], UDim2.fromOffset(IW, 28), UDim2.fromOffset(12, add(36)), function()
-        pfpIdx = pfpIdx % #PFP_MODES + 1
-        pfpBtn.Text = "Picture: " .. PFP_MODES[pfpIdx][2]
+    local pfpLabels = {}
+    for i, m in ipairs(PFP_MODES) do pfpLabels[i] = m[2] end
+    local pfpDd = uiDropdown(body, "Picture: ", UDim2.fromOffset(IW, 28), UDim2.fromOffset(12, add(36)), pfpLabels, 1, function(i)
+        pfpIdx = i
     end)
     local pfpImageBox = uiBox(body, UDim2.fromOffset(12, add(34)), UDim2.fromOffset(IW, 28), "Custom picture: id, rbxassetid or image URL")
     local pfpRoundSw = uiSwitch(body, "Round picture", UDim2.fromOffset(12, add(32)), IW, true, function() end)
@@ -15888,7 +15989,7 @@ local function buildTagPanel(screenGui)
         sizeSl.set(tonumber(d.size) or 22)
         offSl.set(tonumber(d.offset) or 3)
         fontIdx = table.find(TAG_FONTS, d.font) or 1
-        fontBtn.Text = "Font: " .. TAG_FONTS[fontIdx]
+        fontDd.set(fontIdx)
         bdSw.set(d.backdrop.on == true)
         bdColorBox.Text = rgbText(d.backdrop.color)
         bdAlphaSl.set(tonumber(d.backdrop.transparency) or 0.35)
@@ -15897,7 +15998,7 @@ local function buildTagPanel(screenGui)
         bdRoundSw.set(d.backdrop.round ~= false)
         pfpIdx = 1
         for i, m in ipairs(PFP_MODES) do if m[1] == d.pfp.mode then pfpIdx = i end end
-        pfpBtn.Text = "Picture: " .. PFP_MODES[pfpIdx][2]
+        pfpDd.set(pfpIdx)
         pfpImageBox.Text = d.pfp.image or ""
         pfpRoundSw.set(d.pfp.round ~= false)
         clickSw.set(Cfg.tagClickTp == true)
@@ -16280,18 +16381,18 @@ local function buildReanimPanel(screenGui)
                 if refreshLibrary then refreshLibrary(true) end
             end)
         end).TextSize = 10
-        local srcBtn
-        srcBtn = uiButton(page, SOURCES[1][2], UDim2.fromOffset(112, 28), UDim2.fromOffset(16 + IW - 112, 0), function()
-            source = source % #SOURCES + 1
-            srcBtn.Text = SOURCES[source][2]
+        local srcLabels = {}
+        for i, src in ipairs(SOURCES) do srcLabels[i] = src[2] end
+        local srcDd = uiDropdown(page, "", UDim2.fromOffset(112, 28), UDim2.fromOffset(16 + IW - 112, 0), srcLabels, 1, function(i)
+            source = i
             refreshLibrary()
         end)
-        srcBtn.TextSize = 11
+        srcDd.button.TextSize = 11
         local importBox = uiBox(page, UDim2.fromOffset(16, 34), UDim2.fromOffset(IW - 142, 28), "Import: animation/emote ID or keyframe link")
         -- after an import: show Your animations, searched to the new entry
         local function showImported(name)
             source = 1
-            srcBtn.Text = SOURCES[source][2]
+            srcDd.set(1)
             search.Text = name or ""
             if refreshLibrary then refreshLibrary(true) end
         end
@@ -16784,10 +16885,8 @@ local function buildOwnerPanel(screenGui)
 
     sectionTitle(body, add, "Auras")
     local auraIdx = 1
-    local auraBtn
-    auraBtn = uiButton(body, "Aura: " .. tostring(Aura.order[1]), UDim2.fromOffset(IW, 28), UDim2.fromOffset(12, add(36)), function()
-        auraIdx = auraIdx % #Aura.order + 1
-        auraBtn.Text = "Aura: " .. tostring(Aura.order[auraIdx])
+    uiDropdown(body, "Aura: ", UDim2.fromOffset(IW, 28), UDim2.fromOffset(12, add(36)), function() return Aura.order end, 1, function(i)
+        auraIdx = i
     end)
     y = add(38)
     uiButton(body, "Give aura", UDim2.fromOffset(half, 30), UDim2.fromOffset(12, y), function()
