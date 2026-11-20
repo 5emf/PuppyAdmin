@@ -12321,6 +12321,7 @@ function Novo.ensure()
     if logConn then logConn:Disconnect() end
     if typeof(_G._reanimPanel) == "Instance" then Novo.stylePanel(_G._reanimPanel) end
     task.delay(2, function() pcall(Novo.purgeBuiltins) end)
+    pcall(Novo.hookRecordings)
     task.delay(8, function() pcall(Novo.purgeBuiltins) end)
     if captured then warn("[PuppyAdmin] reanimation panel: " .. captured) end
     if not okInit or typeof(_G._reanimPanel) ~= "Instance" then
@@ -12469,6 +12470,80 @@ local function importLink(url)
     end
     return true, base, path
 end
+
+-- Recordings: the engine keeps a finished "Record motion" take only in its
+-- three-slot recent list (PuppyAdmin/recorded, oldest deleted). Every take is
+-- now also copied into Your animations (PuppyAdmin/custom/Recorded) and added
+-- to the list right away.
+local function addToYourAnimations(name, path, category)
+    local rs = _G._nv_reanimState
+    if type(rs) ~= "table" or type(rs.reanimAddItem) ~= "function" or type(rs.customItems) ~= "table" then return end
+    for _, it in ipairs(rs.customItems) do if it.url == path then return end end
+    pcall(rs.reanimAddItem, name, path, rs.customItems, category)
+    if rs.localAnimCache then rs.localAnimCache[path] = nil end
+end
+
+function Novo.hookRecordings()
+    local rs = _G._nv_reanimState
+    if type(rs) ~= "table" or rs._puppyRecHook or type(rs.addRecordingToCustom) ~= "function" then return end
+    rs._puppyRecHook, rs._puppyAdded = true, {}
+    local original = rs.refreshRecordedList
+    rs.refreshRecordedList = function(...)
+        if type(original) == "function" then pcall(original, ...) end
+        local rec = type(rs.recentRecordings) == "table" and rs.recentRecordings[1]
+        if type(rec) ~= "table" or type(rec.path) ~= "string" or rs._puppyAdded[rec.path] then return end
+        rs._puppyAdded[rec.path] = true -- before adding: adding refreshes the list again
+        pcall(rs.addRecordingToCustom, rec)
+        local dest = tostring(rs.REANIM_RECORDED_CUSTOM_DIR or "PuppyAdmin/custom/Recorded") .. "/" .. tostring(rec.name)
+            .. (rec.path:match("%.%w+$") or ".json")
+        if isfile and pcall(isfile, dest) and isfile(dest) then addToYourAnimations(rec.name, dest, "Recorded") end
+    end
+    -- takes from before this session: mark them so only new ones are copied
+    for _, rec in ipairs(type(rs.recentRecordings) == "table" and rs.recentRecordings or {}) do
+        if type(rec) == "table" and type(rec.path) == "string" then rs._puppyAdded[rec.path] = true end
+    end
+end
+
+-- Copy another player's animation into Your animations (the original panel's
+-- keyframe recorder). One recording at a time, up to a minute.
+Novo.copyRec = nil
+function Novo.startCopy(target)
+    local K = _G._nv_keyframeRecorder
+    if type(K) ~= "table" or type(K.start) ~= "function" then return false, "Recorder not ready - open the panel again in a moment" end
+    if Novo.copyRec and Novo.copyRec.active then return false, "Already recording " .. Novo.copyRec.player.DisplayName end
+    local s, err = K.start(target)
+    if not s then return false, tostring(err or "Could not start") end
+    Novo.copyRec = s
+    s.onStop = function(sess)
+        local okB, kfs = pcall(sess.build)
+        if not okB or type(kfs) ~= "table" or #kfs < 2 then note("Reanim", "Recording of " .. sess.player.DisplayName .. " was too short", RED); return end
+        local name = (sess.player.Name .. " " .. os.date("%H-%M-%S")):gsub("[^%w %-_]", "")
+        local rec, why = K.save(name, kfs, { rig = sess.rig })
+        if not rec or type(rec.path) ~= "string" then note("Reanim", "Could not save: " .. tostring(why), RED); return end
+        local okR, src = pcall(readfile, rec.path)
+        if not okR or type(src) ~= "string" then note("Reanim", "Saved to " .. rec.path .. " but could not read it back", RED); return end
+        pcall(function()
+            if not isfolder("PuppyAdmin/custom") then makefolder("PuppyAdmin/custom") end
+            if not isfolder("PuppyAdmin/custom/Copied") then makefolder("PuppyAdmin/custom/Copied") end
+        end)
+        local dest = "PuppyAdmin/custom/Copied/" .. tostring(rec.name or name) .. ".lua"
+        if not pcall(writefile, dest, src) then note("Reanim", "Could not write " .. dest, RED); return end
+        addToYourAnimations(tostring(rec.name or name), dest, "Copied")
+        note("Reanim", "Saved " .. tostring(rec.name or name) .. " - in Library > Your animations", LIGHT)
+    end
+    return true
+end
+
+function Novo.stopCopy()
+    local s = Novo.copyRec
+    if not (s and s.active) then return false end
+    s.stop()
+    return true
+end
+table.insert(cleanups, function()
+    local s = Novo.copyRec
+    if s and s.active then s.onStop = nil; pcall(s.stop) end
+end)
 
 -- There is no built-in library any more: favourites, idle/walk/jump picks and
 -- keys that still point at old library links (http) are cleared. Imported
@@ -15788,6 +15863,23 @@ local function buildReanimPanel(screenGui)
             if api and api.mimic_stop then pcall(api.mimic_stop, "Mimic off") end
         end)
         local copyLbl = label(body, { Position = UDim2.fromOffset(12, add(24)), Size = UDim2.fromOffset(IW, 20), Text = "", TextColor3 = PAL.DIM, TextSize = 11 })
+        sectionTitle(body, add, "Record their animation")
+        y = add(38)
+        uiButton(body, "Record them", UDim2.fromOffset((IW - 8) / 2, 30), UDim2.fromOffset(12, y), function()
+            local p = target()
+            if not p then return end
+            local ok, err = Novo.startCopy(p)
+            if ok then note("Reanim", "Recording " .. p.DisplayName .. " (up to 1 minute)", LIGHT) else note("Reanim", err, RED) end
+        end)
+        uiButton(body, "Stop & save", UDim2.fromOffset((IW - 8) / 2, 30), UDim2.fromOffset(12 + (IW + 8) / 2, y), function()
+            if not Novo.stopCopy() then note("Reanim", "Not recording anyone") end
+        end)
+        local recLbl = label(body, { Position = UDim2.fromOffset(12, add(24)), Size = UDim2.fromOffset(IW, 20), Text = "", TextColor3 = PAL.DIM, TextSize = 11 })
+        table.insert(syncers, function()
+            local s = Novo.copyRec
+            recLbl.Text = (s and s.active) and string.format("Recording %s - %ds", s.player.DisplayName, math.floor(s.elapsed or 0))
+                or "Saved recordings go to Library > Your animations"
+        end)
         label(body, { Position = UDim2.fromOffset(12, add(44)), Size = UDim2.fromOffset(IW, 40), TextWrapped = true, TextSize = 11,
             TextColor3 = PAL.DIM, Text = "Sync plays their current moves on your reanimated body. Mimic follows their movement and pose." })
         table.insert(syncers, function()
