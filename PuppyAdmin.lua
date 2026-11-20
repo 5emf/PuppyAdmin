@@ -7213,7 +7213,7 @@ cloned_humanoid=cloned_char.Humanoid if real_humanoid and real_humanoid.Parent
 then real_humanoid.Health=real_humanoid.MaxHealth end for _,dt2 in{0.1,0.5,1}do
 task.delay(dt2,function()if real_humanoid and real_humanoid.Parent and stalkie.
 flags.reanimated then real_humanoid.Health=real_humanoid.MaxHealth end end)end
-pcall(function()real_humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead,false)
+pcall(function()real_humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead,false)stalkie._puppyDeadOff=real_humanoid --[[PuppyAdmin patch]]
 end)pcall(function()real_humanoid.HealthChanged:Connect(function(hp)if stalkie.
 flags.reanimated and real_humanoid and real_humanoid.Parent and hp<real_humanoid
 .MaxHealth then real_humanoid.Health=real_humanoid.MaxHealth end end)end)if
@@ -7317,7 +7317,7 @@ FindFirstChildWhichIsA('AccessoryWeld')if weld and weld.Part1 and weld.Part1.
 Parent then pcall(function()handle.CFrame=weld.Part1.CFrame*weld.C1*weld.C0:
 Inverse()end)end end end end end)end if pg2 then for _,gui in pg2:GetChildren()
 do if gui:IsA('ScreenGui')and _guisFlipped2[gui]then gui.ResetOnSpawn=true end
-end end end stalkie.real_chars[player]=nil if stalkie.destroyBehavior~=nil then
+end end end stalkie.real_chars[player]=nil --[[PuppyAdmin patch: give the real body its Dead state back]] if stalkie._puppyDeadOff then local _dh=stalkie._puppyDeadOff stalkie._puppyDeadOff=nil pcall(function()_dh:SetStateEnabled(Enum.HumanoidStateType.Dead,true)end)end if stalkie.destroyBehavior~=nil then
 pcall(sethiddenproperty,stalkie.services.workspace,
 'PlayerCharacterDestroyBehavior',stalkie.destroyBehavior)stalkie.destroyBehavior
 =nil end if stalkie.callbacks.on_deactivate then pcall(stalkie.callbacks.
@@ -10562,14 +10562,14 @@ reg('tweenspeed',
 clamp(tonumber(a[2])or 60,5,500)_nvL.notify('TweenGoto','Speed '..extra.speed)
 end)
 reg('clicktp',
-'Hold Ctrl and click to teleport there','',{'ctp','clickteleport'},function()if
+'Click anywhere to teleport there','',{'ctp','clickteleport'},function()if
 extra.jump then _nvL.notify('ClickTP','Already on')return end local mouse=_nvL.
 lp:GetMouse()local input=game:GetService('UserInputService')extra.jump=input.
 InputBegan:Connect(function(press,handled)local root=body()if handled or press.
-UserInputType~=Enum.UserInputType.MouseButton1 or not root then return end if
-input:IsKeyDown(Enum.KeyCode.LeftControl)and mouse.Target then root.CFrame=
+UserInputType~=Enum.UserInputType.MouseButton1 or not root then return end if mouse.Target then --[[PuppyAdmin patch: no Ctrl needed]]
+ root.CFrame=
 CFrame.new(mouse.Hit.Position+Vector3.new(0,3,0))*root.CFrame.Rotation end end)
-_nvL.notify('ClickTP','Hold Ctrl and click')end)
+_nvL.notify('ClickTP','Click to teleport')end)
 reg('unclicktp',
 'Stop click teleport','',{'unctp'},function()if extra.jump then extra.jump:
 Disconnect()extra.jump=nil end _nvL.notify('ClickTP','Off')end)
@@ -12114,13 +12114,14 @@ local function novoLoadApi()
     return api
 end
 
--- open: true / false, or nil to toggle.
+-- open: true / false, or nil to toggle. Shows the script's Reanimation window;
+-- the engine's own panel is built (it hosts the logic) but kept hidden.
 function Novo.setOpen(open)
-    if not Novo.ensure() then return end
-    local panel = _G._reanimPanel
+    local panel = UIAPI.panels.reanim
+    if not panel then return end
     if open == nil then open = not panel.Visible end
     panel.Visible = open
-    if open then novoLoadApi() end
+    if UIAPI.sync then UIAPI.sync() end
 end
 
 -- Goes through the panel's power button logic (3 s cooldown, R6 warning,
@@ -12141,6 +12142,50 @@ function Novo.setActive(on)
     if not rs then return end
     if on == nil then on = not rs.reanimActive end
     if (rs.reanimActive == true) ~= on then rs.toggleReanim() end
+end
+
+-- Reset button: while reanimated, reset ends reanimation first and then kills
+-- your real body normally (the clone cannot die, so Roblox's own reset left
+-- you stuck). Roblox's reset comes back on kill / stop.
+do
+    local StarterGui = game:GetService("StarterGui")
+    local resetEvent = Instance.new("BindableEvent")
+    local function endReanimation()
+        if not Reanim.active then return end
+        local rs = _G._nv_reanimState
+        if type(rs) == "table" and rs.reanimActive and type(rs.toggleReanim) == "function" then
+            rs.reanimLastUsed = 0
+            pcall(rs.toggleReanim)
+        else
+            local api = novoApi()
+            if api then pcall(api.reanimate, false) end
+        end
+        local t0 = os.clock()
+        while Reanim.active and os.clock() - t0 < 4 do task.wait(0.1) end
+        task.wait(0.2)
+    end
+    Novo.endReanimation = endReanimation
+    table.insert(conns, resetEvent.Event:Connect(function()
+        task.spawn(function()
+            endReanimation()
+            local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+            if hum then
+                pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true) end)
+                hum.Health = 0
+            end
+        end)
+    end))
+    task.spawn(function()
+        for _ = 1, 20 do
+            if genv.PuppyAdminActive ~= true then return end
+            if pcall(function() StarterGui:SetCore("ResetButtonCallback", resetEvent) end) then return end
+            task.wait(0.5)
+        end
+    end)
+    table.insert(cleanups, function()
+        pcall(function() StarterGui:SetCore("ResetButtonCallback", true) end)
+        pcall(function() resetEvent:Destroy() end)
+    end)
 end
 
 do
@@ -12180,7 +12225,7 @@ local NOVO_MOVE = {
     { name = "balloonfloat", args = "", desc = "Float up slowly holding a balloon", aliases = { "balloon" } },
     { name = "cframefly", args = "<speed>", desc = "Fly by moving your position directly, gets past some anticheats", aliases = { "cfly" } },
     { name = "clearwaypoints", args = "", desc = "Delete all saved waypoints", aliases = { "cwp" } },
-    { name = "clicktp", args = "", desc = "Hold Ctrl and click to teleport there", aliases = { "ctp", "clickteleport" } },
+    { name = "clicktp", args = "", desc = "Click anywhere to teleport there", aliases = { "ctp", "clickteleport" } },
     { name = "climb", args = "", desc = "Climb any wall you walk into", aliases = { "wallclimb" } },
     { name = "clip", args = "", desc = "Disable noclip", aliases = {} },
     { name = "dash", args = "<power>", desc = "Press X to dash forward", aliases = { "dashkey" } },
@@ -12960,13 +13005,13 @@ local cmds = {
     "tp",
     "aura", "unaura", "auras",
     "tagui", "taglist", "tagsync", "antikick", "unantikick", "antivcban",
-    "anim",
+    "reanim",
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
 
 -- Movement aliases come from the engine's own registrations (NOVO_MOVE).
 local ALIASES = {
-    reanim = "anim", reanimui = "anim",
+    anim = "reanim", reanimui = "reanim",
     wh = "esp", wallhack = "esp", unwh = "unesp", noesp = "unesp", ibp = "infbaseplate",
 }
 
@@ -12991,7 +13036,7 @@ local cmdDocs = {
     aura = "aura [name] [target] [color] - Apply an aura (see auras)",
     unaura = "unaura [name|all] [target] - Remove auras",
     auras = "auras - List usable auras",
-    anim = "anim [on|off] - Reanimate panel (power, library, states, recording, copy, live, tricks, keys, speed); on/off toggles reanimation. Also: reanim, reanimui",
+    reanim = "reanim [on|off] - Reanimation panel (power, library, idle/walk/jump, recording, tricks, copy, speed); on/off toggles reanimation. Also: anim, reanimui",
     prefix = "prefix [add|remove|set] [chars] - Chat command prefixes",
     uikey = "uikey [key] - Key that shows/hides the script UI",
     settings = "settings - Toggles the settings window",
@@ -13253,10 +13298,10 @@ end
 
 -- Reanimation / animations ---------------------------------------------------------
 
--- anim: the Reanimate panel (power, library, states, recording, copy, live,
--- tricks, keys, speed and transitions all live there). `anim on` / `anim off`
--- press its power button. reanim / reanimui are aliases of it.
-function H.anim(a)
+-- reanim: the Reanimation panel (power, library, states, recording, copy,
+-- live, tricks, speed and transitions all live there). `reanim on` / `reanim off`
+-- press its power button. anim / reanimui are aliases of it.
+function H.reanim(a)
     local l = a[1] and a[1]:lower()
     if l == "on" or l == "off" then
         Novo.setActive(l == "on")
@@ -13555,7 +13600,7 @@ function H.tp(a)
     end
 end
 
--- clicktp [on|off]: click teleport (hold Ctrl and click).
+-- clicktp [on|off]: click anywhere to teleport there.
 function H.clicktp(a)
     local l = a[1] and a[1]:lower()
     if l == "off" or l == "0" or l == "false" then Novo.run("unclicktp", {}) else Novo.run("clicktp", {}) end
@@ -14831,6 +14876,293 @@ local function buildVcbPanel(screenGui)
     sync()
 end
 
+------------------------------------------------------------------------
+-- Reanimation panel (opened with `reanim`). Built with the script's own UI
+-- pieces, so it follows the theme in Settings like every other window. It
+-- drives the reanimation engine's state (_G._nv_reanimState): the engine's
+-- original panel is still created, hidden, because its logic (library
+-- loader, idle/walk/jump loop, recorder, live mode, sync, tricks) runs there.
+------------------------------------------------------------------------
+
+local function buildReanimPanel(screenGui)
+    local W, HGT = 380, 580
+    local f = uiWindow(screenGui, "reanim", "Reanimation", UDim2.fromOffset(W, HGT), UDim2.new(0.5, 30, 0.5, -HGT / 2))
+    local IW = W - 40
+    local function RS() return _G._nv_reanimState end
+    local function call(name, ...)
+        local rs = RS()
+        local fn = type(rs) == "table" and rs[name]
+        if type(fn) ~= "function" then note("Reanim", "Not ready yet - open again in a moment", RED); return nil end
+        local ok, res = pcall(fn, ...)
+        if not ok then note("Reanim", tostring(res):sub(1, 80), RED) end
+        return res
+    end
+    local function ready() return type(RS()) == "table" end
+
+    local statusLbl = label(f, { Position = UDim2.fromOffset(16, 44), Size = UDim2.new(1, -160, 0, 18), Text = "Starting...", TextColor3 = PAL.DIM })
+    local playingLbl = label(f, { Position = UDim2.fromOffset(16, 62), Size = UDim2.new(1, -160, 0, 16), Text = "", TextColor3 = PAL.DIM, TextSize = 11 })
+    local power = uiButton(f, "Reanimate", UDim2.fromOffset(128, 30), UDim2.new(1, -144, 0, 44), function()
+        if not ready() then note("Reanim", "Not ready yet - open again in a moment", RED); return end
+        local rs = RS()
+        Novo.setActive(not rs.reanimActive)
+    end)
+
+    -- tabs ------------------------------------------------------------------
+    local TABS = { "Main", "Library", "States", "Tricks", "Copy" }
+    local pages, tabBtns, current = {}, {}, nil
+    local tabW = math.floor((W - 32 - 4 * (#TABS - 1)) / #TABS)
+    local function showTab(name)
+        current = name
+        for n, pg in pairs(pages) do pg.Visible = n == name end
+        for n, b in pairs(tabBtns) do b.BackgroundColor3 = n == name and PAL.ELEVATED or PAL.CARD end
+    end
+    for i, name in ipairs(TABS) do
+        tabBtns[name] = uiButton(f, name, UDim2.fromOffset(tabW, 26), UDim2.fromOffset(16 + (i - 1) * (tabW + 4), 86), function() showTab(name) end)
+        tabBtns[name].TextSize = 11
+        pages[name] = make("Frame", {
+            Name = name, Position = UDim2.fromOffset(0, 118), Size = UDim2.new(1, 0, 1, -118),
+            BackgroundTransparency = 1, Visible = false,
+        }, f)
+    end
+    local syncers = {}
+    local function switch(body, add, text, get, set)
+        local s = uiSwitch(body, text, UDim2.fromOffset(12, add(32)), IW, false, function(on) if ready() then set(on) end end)
+        table.insert(syncers, function() local ok, v = pcall(get); if ok then s.set(v == true) end end)
+        return s
+    end
+
+    -- Main --------------------------------------------------------------------
+    do
+        local body, add = scrollBody(pages.Main, 0)
+        sectionTitle(body, add, "Playback")
+        local y = add(38)
+        uiButton(body, "Stop animation", UDim2.fromOffset((IW - 8) / 2, 30), UDim2.fromOffset(12, y), function() call("stopCurrent") end)
+        local recBtn = uiButton(body, "Record motion", UDim2.fromOffset((IW - 8) / 2, 30), UDim2.fromOffset(12 + (IW + 8) / 2, y), function() call("toggleRecording") end)
+        table.insert(syncers, function() local rs = RS(); recBtn.Text = (rs and rs.recordActive) and "Stop recording" or "Record motion" end)
+        switch(body, add, "Pause", function() return RS().reanimPaused end, function(on) call("setPause", on) end)
+        switch(body, add, "Reverse", function() return RS().reanimDir == -1 end, function(on) call("setRewind", on) end)
+        local speed = uiSlider(body, "Speed", UDim2.fromOffset(12, add(48)), IW, {
+            min = 0.1, max = 3, step = 0.1, value = 1, format = function(v) return string.format("%.1fx", v) end,
+            onChange = function(v) if ready() then call("setReanimSpeedStep", math.floor(v * 10 + 0.5)) end end,
+        })
+        table.insert(syncers, function() local rs = RS(); if rs and not speed.isDragging() then speed.set(tonumber(rs.reanimSpeed) or 1) end end)
+        switch(body, add, "Smooth transitions", function() return RS().blendOn end, function(on) call("setBlend", on, nil) end)
+        sectionTitle(body, add, "Body")
+        switch(body, add, "Noclip while reanimated", function() return RS().noclipOn end, function(on) call("setNoclip", on) end)
+        switch(body, add, "Live mode (move limbs with the mouse)", function() return RS().liveActive end, function(on)
+            local rs = RS()
+            if (rs.liveActive == true) ~= on then call("toggleLive") end
+        end)
+        sectionTitle(body, add, "Play from a link")
+        local urlBox = uiBox(body, UDim2.fromOffset(12, add(34)), UDim2.fromOffset(IW - 78, 28), "Keyframe animation URL")
+        uiButton(body, "Play", UDim2.fromOffset(70, 28), UDim2.fromOffset(12 + IW - 70, add(0) - 34), function()
+            local url = urlBox.Text:match("^%s*(.-)%s*$")
+            if not url:match("^https?://") then note("Reanim", "Enter an http(s) link", RED); return end
+            local api = novoApi()
+            if not (api and Reanim.active) then note("Reanim", "Reanimate first", RED); return end
+            task.spawn(function()
+                local ok, err = pcall(api.play_animation, url, tonumber(RS() and RS().reanimSpeed) or 1)
+                if not ok then note("Reanim", tostring(err):sub(1, 80), RED)
+                elseif type(err) == "string" then note("Reanim", err:sub(1, 80), RED) end
+            end)
+        end)
+    end
+
+    -- Library -----------------------------------------------------------------
+    local refreshLibrary
+    do
+        local page = pages.Library
+        local source = 1
+        local SOURCES = { { "globalItems", "All animations" }, { "favsItems", "Favorites" }, { "customItems", "Your animations" } }
+        local search = uiBox(page, UDim2.fromOffset(16, 0), UDim2.fromOffset(IW - 120, 28), "Search")
+        local srcBtn
+        srcBtn = uiButton(page, SOURCES[1][2], UDim2.fromOffset(112, 28), UDim2.fromOffset(16 + IW - 112, 0), function()
+            source = source % #SOURCES + 1
+            srcBtn.Text = SOURCES[source][2]
+            refreshLibrary()
+        end)
+        srcBtn.TextSize = 11
+        local hint = label(page, { Position = UDim2.fromOffset(16, 32), Size = UDim2.new(1, -32, 0, 14), TextSize = 10, TextColor3 = PAL.DIM,
+            Text = "Click to play.  I / W / J use it for idle, walk or jump." })
+        local list = make("ScrollingFrame", {
+            Position = UDim2.fromOffset(16, 50), Size = UDim2.new(1, -32, 1, -58), BackgroundColor3 = PAL.CARD,
+            BackgroundTransparency = 0.4, BorderSizePixel = 0, ScrollBarThickness = 2, ScrollBarImageColor3 = PAL.DIM,
+            CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        }, page)
+        corner(list, 8)
+        make("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+        make("UIPadding", { PaddingTop = UDim.new(0, 3), PaddingLeft = UDim.new(0, 3) }, list)
+        local MAX_ROWS = 150
+        local lastSig
+        local function setState(slot, item)
+            local rs = RS()
+            if not rs or type(rs.stateAnims) ~= "table" then return end
+            rs.stateAnims[slot] = { name = item.name, url = item.url }
+            call("saveStateAnims")
+            call("startStateLoop")
+            note("Reanim", slot .. " = " .. item.name, LIGHT)
+            for _, fn in ipairs(syncers) do pcall(fn) end
+        end
+        refreshLibrary = function(force)
+            local rs = RS()
+            local items = type(rs) == "table" and rs[SOURCES[source][1]] or {}
+            local q = search.Text:lower()
+            local sig = SOURCES[source][1] .. "|" .. q .. "|" .. #items .. "|" .. tostring(rs and rs.reanimCurrentName)
+            if sig == lastSig and not force then return end
+            lastSig = sig
+            for _, c in ipairs(list:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
+            local shown = 0
+            for _, item in ipairs(items) do
+                if type(item) == "table" and not item.isHeader and type(item.name) == "string"
+                    and (q == "" or item.name:lower():find(q, 1, true)) then
+                    shown = shown + 1
+                    if shown > MAX_ROWS then break end
+                    local playing = rs.reanimCurrentName == item.name
+                    local row = make("TextButton", {
+                        Size = UDim2.new(1, -6, 0, 26), BackgroundColor3 = playing and PAL.ELEVATED or PAL.CARD,
+                        BackgroundTransparency = 0.2, BorderSizePixel = 0, AutoButtonColor = false, LayoutOrder = shown,
+                        Text = item.name, TextColor3 = playing and PAL.ACCENT or PAL.TEXT, Font = Enum.Font.Gotham, TextSize = 12,
+                        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+                    }, list)
+                    corner(row, 6)
+                    make("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 92) }, row)
+                    row.MouseButton1Click:Connect(function()
+                        if rs.reanimCurrentName == item.name then call("stopCurrent") else call("playAnim", item.name, item.url) end
+                        task.delay(0.3, function() refreshLibrary(true) end)
+                    end)
+                    for k, slot in ipairs({ "idle", "walk", "jump" }) do
+                        local b = make("TextButton", {
+                            Size = UDim2.fromOffset(24, 20), AnchorPoint = Vector2.new(1, 0.5),
+                            Position = UDim2.new(1, 88 - (3 - k) * 28, 0.5, 0), BackgroundColor3 = PAL.ELEVATED,
+                            BackgroundTransparency = 0.2, BorderSizePixel = 0, AutoButtonColor = false,
+                            Text = slot:sub(1, 1):upper(), TextColor3 = PAL.DIM, Font = Enum.Font.GothamBold, TextSize = 11,
+                        }, row)
+                        corner(b, 5)
+                        b.MouseButton1Click:Connect(function() setState(slot, item) end)
+                    end
+                end
+            end
+            if shown == 0 then
+                label(list, { Size = UDim2.new(1, -6, 0, 26), Text = (#items == 0 and "Loading the library..." or "Nothing matches"),
+                    TextColor3 = PAL.DIM, TextSize = 12, LayoutOrder = 1 })
+            end
+            hint.Text = (shown > MAX_ROWS and ("Showing the first " .. MAX_ROWS .. " - search to narrow.  ") or "")
+                .. "Click to play.  I / W / J use it for idle, walk or jump."
+        end
+        search:GetPropertyChangedSignal("Text"):Connect(function() refreshLibrary() end)
+        table.insert(syncers, function() refreshLibrary() end)
+    end
+
+    -- States ------------------------------------------------------------------
+    do
+        local body, add = scrollBody(pages.States, 0)
+        sectionTitle(body, add, "Played by themselves while reanimated")
+        for _, slot in ipairs({ "idle", "walk", "jump" }) do
+            local y = add(36)
+            local lbl = label(body, { Position = UDim2.fromOffset(12, y), Size = UDim2.fromOffset(IW - 80, 28), Text = "" })
+            uiButton(body, "Clear", UDim2.fromOffset(70, 28), UDim2.fromOffset(12 + IW - 70, y), function()
+                local rs = RS()
+                if not rs then return end
+                rs.stateAnims[slot] = nil
+                call("saveStateAnims")
+                call("startStateLoop")
+            end)
+            table.insert(syncers, function()
+                local rs = RS()
+                local a = rs and rs.stateAnims and rs.stateAnims[slot]
+                lbl.Text = slot:sub(1, 1):upper() .. slot:sub(2) .. ":  " .. (a and a.name or "none")
+            end)
+        end
+        label(body, { Position = UDim2.fromOffset(12, add(40)), Size = UDim2.fromOffset(IW, 36), TextWrapped = true, TextSize = 11,
+            TextColor3 = PAL.DIM, Text = "Pick them in Library with the I / W / J buttons. Anything you play yourself takes over until you stop it." })
+    end
+
+    -- Tricks ------------------------------------------------------------------
+    do
+        local body, add = scrollBody(pages.Tricks, 0)
+        local held = {}
+        local function trick(text, field, setter)
+            switch(body, add, text, function() local v = RS()[field]; if v == nil then return held[setter] end return v end,
+                function(on) held[setter] = on; call(setter, on) end)
+        end
+        sectionTitle(body, add, "Body tricks (reanimated)")
+        trick("Lean torso with the camera", "torsoOn", "setTorso")
+        trick("Free head (looks where you look)", "headFree", "setHeadFree")
+        trick("Flying limbs", "flyOn", "setFly")
+        trick("Long legs", "legsOn", "setLegs")
+        trick("Spider", "spiderOn", "setSpider")
+    end
+
+    -- Copy --------------------------------------------------------------------
+    do
+        local body, add = scrollBody(pages.Copy, 0)
+        sectionTitle(body, add, "Copy another player")
+        local who = uiBox(body, UDim2.fromOffset(12, add(36)), UDim2.fromOffset(IW, 28), "Player name or display name")
+        local function target()
+            for _, p in ipairs(resolveTargets(who.Text)) do
+                if p ~= plr then return p end
+            end
+            note("Reanim", "No player matches", RED)
+            return nil
+        end
+        local y = add(38)
+        uiButton(body, "Sync to them", UDim2.fromOffset((IW - 8) / 2, 30), UDim2.fromOffset(12, y), function()
+            local p = target()
+            if p then call("setSyncTarget", p); call("startSync") end
+        end)
+        uiButton(body, "Stop sync", UDim2.fromOffset((IW - 8) / 2, 30), UDim2.fromOffset(12 + (IW + 8) / 2, y), function()
+            call("stopSync", "Sync off")
+        end)
+        y = add(38)
+        uiButton(body, "Mimic them", UDim2.fromOffset((IW - 8) / 2, 30), UDim2.fromOffset(12, y), function()
+            local p, api = target(), novoApi()
+            if p and api and api.mimic_start then local ok, err = pcall(api.mimic_start, p); if not ok then note("Reanim", tostring(err):sub(1, 80), RED) end end
+        end)
+        uiButton(body, "Stop mimic", UDim2.fromOffset((IW - 8) / 2, 30), UDim2.fromOffset(12 + (IW + 8) / 2, y), function()
+            local api = novoApi()
+            if api and api.mimic_stop then pcall(api.mimic_stop, "Mimic off") end
+        end)
+        local copyLbl = label(body, { Position = UDim2.fromOffset(12, add(24)), Size = UDim2.fromOffset(IW, 20), Text = "", TextColor3 = PAL.DIM, TextSize = 11 })
+        label(body, { Position = UDim2.fromOffset(12, add(44)), Size = UDim2.fromOffset(IW, 40), TextWrapped = true, TextSize = 11,
+            TextColor3 = PAL.DIM, Text = "Sync plays their current moves on your reanimated body. Mimic follows their movement and pose." })
+        table.insert(syncers, function()
+            local rs, api = RS(), novoApi()
+            local syncing = rs and type(rs.isSyncing) == "function" and rs.isSyncing()
+            local mimic = api and api.mimic_active and api.mimic_active()
+            copyLbl.Text = "Sync: " .. (syncing and ("on" .. (rs.syncTarget and (" - " .. rs.syncTarget.DisplayName) or "")) or "off")
+                .. "    Mimic: " .. (mimic and "on" or "off")
+        end)
+    end
+
+    -- status ------------------------------------------------------------------
+    local function sync()
+        local rs = RS()
+        if type(rs) ~= "table" then
+            statusLbl.Text = Novo.failed and ("Unavailable: " .. Novo.failed:sub(1, 40)) or "Starting..."
+            return
+        end
+        local active = rs.reanimActive == true
+        statusLbl.Text = active and "Status: reanimated" or "Status: not reanimated"
+        playingLbl.Text = rs.reanimCurrentName and ("Playing: " .. tostring(rs.reanimCurrentName)) or ""
+        power.Text = active and "Stop reanim" or "Reanimate"
+        for _, fn in ipairs(syncers) do pcall(fn) end
+    end
+    UIAPI.syncFns.reanim = function() if f.Visible then sync() end end
+    f:GetPropertyChangedSignal("Visible"):Connect(function()
+        if not f.Visible then return end
+        task.spawn(function()
+            Novo.ensure()
+            if typeof(_G._reanimPanel) == "Instance" then _G._reanimPanel.Visible = false end
+            novoLoadApi()
+            while f.Visible and genv.PuppyAdminActive do
+                pcall(sync)
+                task.wait(0.5)
+            end
+        end)
+    end)
+    showTab("Main")
+end
+
 local function buildPanels(screenGui)
     buildToolsPanel(screenGui)
     buildMovementPanel(screenGui)
@@ -14839,6 +15171,7 @@ local function buildPanels(screenGui)
     buildTagPanel(screenGui)
     buildTagListPanel(screenGui)
     buildVcbPanel(screenGui)
+    buildReanimPanel(screenGui)
 end
 
 ------------------------------------------------------------------------
@@ -15396,8 +15729,13 @@ shutdown = function(killCharacter)
     task.delay(3.5, function() notifGui:Destroy() end)
 
     if killCharacter then
-        local hum = chr:FindFirstChildOfClass("Humanoid")
-        if hum then hum.Health = 0 end
+        -- the body must be able to die (reanimation turns Dead off while it runs)
+        local body = plr.Character or chr
+        local hum = body and body:FindFirstChildOfClass("Humanoid")
+        if hum then
+            pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true) end)
+            hum.Health = 0
+        end
     end
 end
 
