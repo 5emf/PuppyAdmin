@@ -21,7 +21,11 @@ local HttpService = game:GetService("HttpService")
 local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
-if genv.PuppyAdminActive == true then return end
+if genv.PuppyAdminActive == true then
+    -- already running: executing again refreshes tags (and auras / moderation)
+    if type(genv.PuppyAdminRefresh) == "function" then pcall(genv.PuppyAdminRefresh) end
+    return
+end
 genv.PuppyAdminActive = true
 
 local plr = Players.LocalPlayer
@@ -1445,6 +1449,7 @@ end)
 -- container (not under the head) so they can be clicked: clicking someone
 -- else's tag teleports you to them (Cfg.tagClickTp).
 local Presence -- who else is running the script in this server (set up after TagSync)
+local AuraSync, Moderation -- shared auras and the script blacklist (set up further down)
 local Tags = { gui = {}, rainbow = {}, watch = {}, byUser = {}, assets = {}, pending = {}, ui = { current = nil } }  -- ui.current: tag open in the panels
 
 local TAG_DEFAULTS = {
@@ -2151,7 +2156,9 @@ do
         task.spawn(function()
             -- an editor without a token keeps their local tags (they could not share edits anyway)
             local readOnlyEditor = canEditTags() and not TagSync.token()
-            if not readOnlyEditor or #Cfg.tagDefs == 0 then TagSync.pull() end
+            if not readOnlyEditor or #Cfg.tagDefs == 0 then TagSync.pull(true) end
+            -- every execution draws every tag again once the repository copy is in
+            Tags.refreshAll()
             while genv.PuppyAdminActive == true do
                 task.wait(CFG.pollSeconds)
                 if genv.PuppyAdminActive ~= true then break end
@@ -2162,6 +2169,32 @@ do
 end
 
 Tags.onChange = TagSync.changed
+
+-- Tag billboards left by a run that did not shut down cleanly
+-- (they live in the GUI container, not under the head).
+for _, container in ipairs({ (function() local ok, g = pcall(function() return gethui and gethui() end); return ok and g or nil end)(),
+    CoreGui, plr:FindFirstChildOfClass("PlayerGui") }) do
+    pcall(function()
+        for _, d in ipairs(container:GetChildren()) do
+            if d.Name == "PuppyAdminTag" and d:IsA("BillboardGui") then d:Destroy() end
+        end
+    end)
+end
+
+-- Re-reads tags.json (and later auras / moderation) and rebuilds every tag.
+-- Runs on `tagrefresh` and whenever the script is executed again while running.
+function Tags.refreshFromRepo(quiet)
+    task.spawn(function()
+        local ok, msg = TagSync.pull(true)
+        if AuraSync and AuraSync.pull then pcall(AuraSync.pull, true) end
+        if Moderation and Moderation.pull then pcall(Moderation.pull, true) end
+        Tags.refreshAll()
+        if not quiet then note("Tags", ok and ("Refreshed - " .. tostring(msg)) or tostring(msg), ok and LIGHT or RED) end
+    end)
+end
+genv.PuppyAdminRefresh = function() Tags.refreshFromRepo(false) end
+table.insert(cleanups, function() genv.PuppyAdminRefresh = nil end)
+
 TagSync.start()
 
 ------------------------------------------------------------------------
@@ -2261,7 +2294,7 @@ Presence.start()
 -- it (aura / unaura), and only a device with the GitHub token writes it.
 ------------------------------------------------------------------------
 
-local AuraSync = { etag = nil, lastJson = nil, queued = false, status = "starting", shared = {} }
+AuraSync = { etag = nil, lastJson = nil, queued = false, status = "starting", shared = {} }
 
 do
     local CFG = SETTINGS.Auras
@@ -2476,7 +2509,7 @@ table.insert(cleanups, function() AntiKick.on = false end)
 -- Like everything client-side, someone who edits the script can remove it.
 ------------------------------------------------------------------------
 
-local Moderation = { etag = nil, entries = {}, handled = {}, startedAt = os.time(), status = "starting", queued = false }
+Moderation = { etag = nil, entries = {}, handled = {}, startedAt = os.time(), status = "starting", queued = false }
 
 do
     local PATH = "moderation.json"
@@ -13721,7 +13754,7 @@ local cmds = {
     "hide", "unhide", "mute", "unmute",
     "tp",
     "aura", "unaura", "auras",
-    "tagui", "taglist", "tagsync", "owner", "kick", "ban", "unban", "bans", "antikick", "unantikick", "antivcban",
+    "tagui", "taglist", "tagsync", "tagrefresh", "owner", "kick", "ban", "unban", "bans", "antikick", "unantikick", "antivcban",
     "reanim",
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
@@ -13750,6 +13783,7 @@ local cmdDocs = {
     ban = "ban <players> [reason] - Ban players from using the script; they are kicked when they run it (owners only)",
     unban = "unban <players or UserIds> - Lift a script ban (owners only)",
     bans = "bans - List players banned from the script (owners only)",
+    tagrefresh = "tagrefresh - Load tags, auras and bans from the repository again and redraw every tag (running the script again does the same)",
     tagsync = "tagsync [pull|push] - Shared tags in the repository (token goes in Settings, never in chat)",
     taglist = "taglist [add|remove <tag> <users...>] [new|delete <name>] - All tags and their members; add many players at once",
     antikick = "antikick - Block client-side Kick calls on you",
@@ -14152,6 +14186,10 @@ function H.antivcban(a)
     if not p then return end
     p.Visible = sub ~= "close"
     if UIAPI.sync then UIAPI.sync() end
+end
+
+function H.tagrefresh()
+    Tags.refreshFromRepo(false)
 end
 
 -- tagsync          status
