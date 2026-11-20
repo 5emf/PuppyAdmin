@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-26" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-27" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -4516,7 +4516,7 @@ local cmdDocs = {
     blacklist = "blacklist - Owners: blacklist menu (everyone banned from the script, unban, add) (also: bl, banlist)",
     doom = "doom - Doom (1993): plays your WAD from the PuppyAdmin/doom folder",
     gameboy = "gameboy - Game Boy emulator: plays .gb / .zip games from your PuppyAdmin/roms folder (also: gb, emulator)",
-    games = "games - Mini games: Snake, Stack Drop, Treat Chase (also: minigames, arcade)",
+    games = "games - Mini games: Snake, Stack Drop, Treat Chase, Star Pup, plus Game Boy and Doom (also: minigames, arcade)",
     performance = "performance - Performance panel: FPS unlock, anti-lag, low graphics, no fog / shadows / effects (also: boost)",
     perf = "perf - How long start-up and first-time actions took (for tuning the script)",
     tagrefresh = "tagrefresh - Load tags, auras and bans from the repository again and redraw every tag (running the script again does the same)",
@@ -7944,7 +7944,7 @@ do
 
     -- Stack Drop --------------------------------------------------------
     local Stack = {
-        id = "stack", title = "Stack Drop", cols = 10, rows = 20, repeatKeys = { left = true, right = true, down = true },
+        id = "stack", title = "Stack Drop", tab = "Stack", cols = 10, rows = 20, repeatKeys = { left = true, right = true, down = true },
         help = "Left / right move, R or Up rotates, Down drops faster, Space drops. Fill a row to clear it.",
     }
     MiniGames.stack = Stack
@@ -8129,7 +8129,8 @@ do
         "###################",
     }
     local Chase = {
-        id = "chase", title = "Treat Chase", cols = #MAZE[1], rows = #MAZE, sprites = true,
+        id = "chase", title = "Treat Chase", tab = "Chase", cols = #MAZE[1], rows = #MAZE, sprites = true,
+        sheet = "assets/games/treat_chase.png",
         help = "Arrows / WASD steer the puppy. Eat every treat; a bone turns the cats blue so you can chase them. Grab the drumstick for bonus points.",
     }
     MiniGames.chase = Chase
@@ -8522,7 +8523,298 @@ do
 
     function Chase.hud(g) return "Score " .. g.score .. "   Lives " .. g.lives .. "   Level " .. g.level end
 
-    MiniGames.list = { Snake, Stack, Chase }
+
+    -- Star StarPup (fixed shooter) ----------------------------------------------
+    -- A puppy in a rocket at the bottom; a fleet of space fleas marches side
+    -- to side, steps down at each edge, speeds up as it shrinks and shoots
+    -- back. Doghouse shields wear away; a flea queen saucer crosses the top.
+    -- Positions are in cells (fractional); shields are cells of the grid.
+    local StarPup = {
+        id = "starpup", title = "Star StarPup", tab = "Star StarPup", cols = 24, rows = 22, sprites = true, hold = true,
+        help = "Left / right move (hold), Space or Up fires. Shoot the flea fleet before it lands; the saucer is a bonus.",
+        sheet = "assets/games/star_pup.png",
+    }
+    MiniGames.starpup = StarPup
+    local P = {
+        playerY = 20.6, playerSpeed = 11, shotSpeed = 26, bombSpeed = 9,
+        fleetCols = 8, fleetRows = 5, gapX = 2.2, gapY = 1.6, top = 3, stepDown = 0.8,
+        shieldRow = 17, rowPoints = { 30, 20, 20, 10, 10 }, extraLifeAt = 1500,
+    }
+    StarPup.P = P
+    local SHIELD = { "01110", "11111", "11011" } -- doghouse shape (5 wide), four of them
+
+    function StarPup.wave(g)
+        g.fleet = {}
+        local startX = (StarPup.cols - (P.fleetCols - 1) * P.gapX) / 2
+        local dropBy = math.min(g.waveNo - 1, 4) * 0.8
+        for r = 1, P.fleetRows do
+            for c = 1, P.fleetCols do
+                g.fleet[#g.fleet + 1] = {
+                    x = startX + (c - 1) * P.gapX, y = P.top + (r - 1) * P.gapY + dropBy,
+                    kind = r == 1 and 3 or (r <= 3 and 2 or 1), row = r, alive = true,
+                }
+            end
+        end
+        g.fleetDir, g.fleetTimer, g.frame = 1, 0, 0
+        g.bombs, g.shot, g.saucer = {}, nil, nil
+        g.saucerTimer = 12 + g.rng(10)
+        g.bombTimer = 1
+        g.pause = 1.2
+    end
+
+    function StarPup.new(rng)
+        local g = { rng = rng, score = 0, lives = 3, over = false, waveNo = 1, popups = {}, clock = 0, nextLife = P.extraLifeAt }
+        g.player = { x = StarPup.cols / 2, left = false, right = false, dead = 0 }
+        -- shields: grid cells
+        g.shield = {}
+        for i = 1, 4 do
+            local sx = math.floor((i - 0.5) * StarPup.cols / 4 - 2.5)
+            for dy, row in ipairs(SHIELD) do
+                for dx = 1, #row do
+                    if row:sub(dx, dx) == "1" then g.shield[(P.shieldRow + dy - 1) * 64 + sx + dx] = true end
+                end
+            end
+        end
+        StarPup.wave(g)
+        return g
+    end
+
+    local function addScore(g, n, x, y)
+        g.score = g.score + n
+        if x then g.popups[#g.popups + 1] = { x = x, y = y, text = tostring(n), t = 0.8, life = 0.8 } end
+        if g.score >= g.nextLife then
+            g.nextLife = g.nextLife + P.extraLifeAt
+            g.lives = g.lives + 1
+            g.popups[#g.popups + 1] = { x = g.player.x, y = P.playerY - 1, text = "1UP", t = 1, life = 1 }
+        end
+    end
+
+    function StarPup.input(g, a, down)
+        if down == nil then down = true end
+        local p = g.player
+        if a == "left" then p.left = down
+        elseif a == "right" then p.right = down
+        elseif (a == "drop" or a == "up" or a == "rotate") and down then
+            if not g.shot and p.dead <= 0 and g.pause <= 0 then g.shot = { x = p.x, y = P.playerY - 0.8 } end
+        end
+    end
+    function StarPup.releaseAll(g) g.player.left, g.player.right = false, false end
+
+    local function aliveCount(g)
+        local n = 0
+        for _, f in ipairs(g.fleet) do if f.alive then n = n + 1 end end
+        return n
+    end
+
+    -- a shot or bomb hitting a shield cell removes it (and the shot)
+    local function hitShield(g, x, y)
+        local k = math.floor(y) * 64 + math.floor(x) + 1
+        if g.shield[k] then g.shield[k] = nil; return true end
+        return false
+    end
+
+    function StarPup.update(g, dt)
+        g.clock = g.clock + dt
+        for i = #g.popups, 1, -1 do
+            local pp = g.popups[i]
+            pp.t = pp.t - dt
+            if pp.t <= 0 then table.remove(g.popups, i) end
+        end
+        if g.over then return end
+        local p = g.player
+        if p.dead > 0 then
+            p.dead = p.dead - dt
+            if p.dead <= 0 then
+                if g.lives <= 0 then g.over = true return end
+                g.bombs = {}
+                g.pause = 1
+            end
+            return
+        end
+        if g.pause > 0 then g.pause = g.pause - dt; return end
+
+        -- player
+        local dir = (p.right and 1 or 0) - (p.left and 1 or 0)
+        p.x = math.clamp(p.x + dir * P.playerSpeed * dt, 1, StarPup.cols - 1)
+
+        -- player shot
+        local s = g.shot
+        if s then
+            s.y = s.y - P.shotSpeed * dt
+            if s.y < 0.5 then g.shot = nil
+            elseif hitShield(g, s.x, s.y) then g.shot = nil
+            else
+                for _, f in ipairs(g.fleet) do
+                    if f.alive and math.abs(f.x - s.x) < 0.8 and math.abs(f.y - s.y) < 0.6 then
+                        f.alive = false
+                        f.boom = 0.25
+                        addScore(g, P.rowPoints[f.row], f.x, f.y)
+                        g.shot = nil
+                        break
+                    end
+                end
+                local u = g.saucer
+                if g.shot and u and math.abs(u.x - s.x) < 1.2 and math.abs(u.y - s.y) < 0.7 then
+                    local pts = ({ 50, 100, 150, 300 })[g.rng(4)]
+                    addScore(g, pts, u.x, u.y)
+                    g.saucer = nil
+                    g.shot = nil
+                end
+            end
+        end
+
+        -- fleet: one step every interval, faster as it shrinks and on later waves
+        local left = aliveCount(g)
+        if left == 0 then
+            g.waveNo = g.waveNo + 1
+            addScore(g, 100 * (g.waveNo - 1))
+            StarPup.wave(g)
+            return
+        end
+        local interval = math.max(0.05, (0.08 + 0.55 * left / (P.fleetCols * P.fleetRows)) * 0.92 ^ (g.waveNo - 1))
+        g.fleetTimer = g.fleetTimer + dt
+        if g.fleetTimer >= interval then
+            g.fleetTimer = 0
+            g.frame = 1 - g.frame
+            local minX, maxX = math.huge, -math.huge
+            for _, f in ipairs(g.fleet) do
+                if f.alive then minX = math.min(minX, f.x); maxX = math.max(maxX, f.x) end
+            end
+            local step = 0.5 * g.fleetDir
+            if (g.fleetDir > 0 and maxX + step > StarPup.cols - 1) or (g.fleetDir < 0 and minX + step < 1) then
+                g.fleetDir = -g.fleetDir
+                for _, f in ipairs(g.fleet) do f.y = f.y + P.stepDown end
+            else
+                for _, f in ipairs(g.fleet) do f.x = f.x + step end
+            end
+            -- a flea reaching the shields eats them; reaching the puppy ends the game
+            for _, f in ipairs(g.fleet) do
+                if f.alive then
+                    for dx = -1, 1 do g.shield[math.floor(f.y) * 64 + math.floor(f.x) + 1 + dx] = nil end
+                    if f.y >= P.playerY - 0.5 then g.over = true; p.dead = 1 return end
+                end
+            end
+        end
+        for _, f in ipairs(g.fleet) do
+            if f.boom then f.boom = f.boom - dt; if f.boom <= 0 then f.boom = nil end end
+        end
+
+        -- bombs from the lowest flea of a random column
+        g.bombTimer = g.bombTimer - dt
+        if g.bombTimer <= 0 then
+            g.bombTimer = math.max(0.35, 1.3 - g.waveNo * 0.1) * (0.6 + g.rng(80) / 100)
+            local cols = {}
+            for _, f in ipairs(g.fleet) do
+                if f.alive then
+                    local key = math.floor(f.x * 10 + 0.5)
+                    if not cols[key] or cols[key].y < f.y then cols[key] = f end
+                end
+            end
+            local list = {}
+            for _, f in pairs(cols) do list[#list + 1] = f end
+            if #list > 0 and #g.bombs < 3 + g.waveNo then
+                -- favour the column above the puppy now and then
+                local pick = list[g.rng(#list)]
+                if g.rng(3) == 1 then
+                    for _, f in ipairs(list) do if math.abs(f.x - p.x) < math.abs(pick.x - p.x) then pick = f end end
+                end
+                g.bombs[#g.bombs + 1] = { x = pick.x, y = pick.y + 0.6 }
+            end
+        end
+        for i = #g.bombs, 1, -1 do
+            local b = g.bombs[i]
+            b.y = b.y + P.bombSpeed * (1 + (g.waveNo - 1) * 0.08) * dt
+            if b.y > StarPup.rows then table.remove(g.bombs, i)
+            elseif hitShield(g, b.x, b.y) then table.remove(g.bombs, i)
+            elseif math.abs(b.x - p.x) < 0.8 and math.abs(b.y - P.playerY) < 0.6 then
+                table.remove(g.bombs, i)
+                g.lives = g.lives - 1
+                p.dead = 1.4
+                g.shot = nil
+                return
+            elseif g.shot and math.abs(b.x - g.shot.x) < 0.4 and math.abs(b.y - g.shot.y) < 0.6 then
+                table.remove(g.bombs, i)
+                g.shot = nil
+            end
+        end
+
+        -- saucer
+        if g.saucer then
+            local u = g.saucer
+            u.x = u.x + u.dir * 5 * dt
+            if u.x < -1 or u.x > StarPup.cols + 1 then g.saucer = nil end
+        else
+            g.saucerTimer = g.saucerTimer - dt
+            if g.saucerTimer <= 0 and left > 6 then
+                g.saucerTimer = 15 + g.rng(12)
+                local fromLeft = g.rng(2) == 1
+                g.saucer = { x = fromLeft and -1 or StarPup.cols + 1, y = 1.4, dir = fromLeft and 1 or -1 }
+            end
+        end
+    end
+
+    -- grid: shields and the ground line; without sprites, the pieces as cells too
+    function StarPup.draw(g, put, sprites)
+        for k in pairs(g.shield) do
+            local y = math.floor(k / 64)
+            local x = k - y * 64
+            put(x, y + 1, "shield")
+        end
+        for x = 1, StarPup.cols do put(x, StarPup.rows, "ground") end
+        if sprites then return end
+        for _, f in ipairs(g.fleet) do
+            if f.alive then put(math.floor(f.x) + 1, math.floor(f.y) + 1, "flea" .. f.kind) end
+        end
+        if g.player.dead <= 0 then put(math.floor(g.player.x) + 1, math.floor(P.playerY) + 1, "pup") end
+        if g.shot then put(math.floor(g.shot.x) + 1, math.floor(g.shot.y) + 1, "shot") end
+        for _, b in ipairs(g.bombs) do put(math.floor(b.x) + 1, math.floor(b.y) + 1, "bomb") end
+        if g.saucer and g.saucer.x >= 0 and g.saucer.x < StarPup.cols then put(math.floor(g.saucer.x) + 1, math.floor(g.saucer.y) + 1, "saucer") end
+    end
+
+    -- sprite list: kind, x / y in cells (centre, already +0.5 like the cell renderer), frame, scale
+    function StarPup.actors(g)
+        local list = {}
+        for _, f in ipairs(g.fleet) do
+            if f.alive then
+                list[#list + 1] = { kind = "flea" .. f.kind, x = f.x + 0.5, y = f.y + 0.5, frame = g.frame, scale = 1.25 }
+            elseif f.boom then
+                list[#list + 1] = { kind = "boom", x = f.x + 0.5, y = f.y + 0.5, scale = 1.3 }
+            end
+        end
+        if g.saucer then list[#list + 1] = { kind = "saucer", x = g.saucer.x + 0.5, y = g.saucer.y + 0.5, scale = 1.6 } end
+        if g.shot then list[#list + 1] = { kind = "shot", x = g.shot.x + 0.5, y = g.shot.y + 0.5, scale = 0.9 } end
+        for _, b in ipairs(g.bombs) do list[#list + 1] = { kind = "bomb", x = b.x + 0.5, y = b.y + 0.5, frame = math.floor(g.clock * 8) % 2, scale = 0.9 } end
+        local p = g.player
+        if p.dead > 0 then
+            list[#list + 1] = { kind = "pupboom", x = p.x + 0.5, y = P.playerY + 0.5, scale = 1.5, frame = math.floor(g.clock * 8) % 2 }
+        else
+            list[#list + 1] = { kind = "pup", x = p.x + 0.5, y = P.playerY + 0.5, scale = 1.5 }
+        end
+        return list
+    end
+
+    -- sheet layout (64 px cells, assets/games/star_pup.png):
+    -- row 0: flea1 a/b, flea2 a/b, flea3 a/b, saucer, pup;  row 1: shot, bomb a/b, boom, pupboom a/b
+    local PUP_CELLS = {
+        flea1 = { 0, 0 }, flea2 = { 2, 0 }, flea3 = { 4, 0 }, saucer = { 6, 0 }, pup = { 7, 0 },
+        shot = { 0, 1 }, bomb = { 1, 1 }, boom = { 3, 1 }, pupboom = { 4, 1 },
+    }
+    function StarPup.spriteCell(a)
+        local c = PUP_CELLS[a.kind] or PUP_CELLS.boom
+        local animated = a.kind == "flea1" or a.kind == "flea2" or a.kind == "flea3" or a.kind == "bomb" or a.kind == "pupboom"
+        return c[1] + (animated and (a.frame or 0) or 0), c[2]
+    end
+
+    function StarPup.banner(g)
+        if g.over then return nil end
+        if g.player.dead > 0 and g.lives > 0 then return nil end
+        if g.pause > 0 then return "Wave " .. g.waveNo end
+        return nil
+    end
+
+    function StarPup.hud(g) return "Score " .. g.score .. "   Lives " .. g.lives .. "   Wave " .. g.waveNo end
+
+    MiniGames.list = { Snake, Stack, Chase, StarPup }
 end
 return MiniGames
 end)()
@@ -8541,7 +8833,7 @@ local function buildGamesPanel(screenGui)
     local pcells, pcur = {}, {}
     local held = {}
     -- sprite layer (games with actors, e.g. Treat Chase): pooled images over the board
-    local sheetAsset, spriteLayer, cellSize = nil, nil, 1
+    local sheets, spriteLayer, cellSize = {}, nil, 1 -- game id -> sprite sheet content id
     local sprites, popLbls = {}, {}
 
     local PIECE = {
@@ -8559,6 +8851,15 @@ local function buildGamesPanel(screenGui)
         if kind == "ghost" then return PAL.DIM, 0.75 end
         if kind == "wall" then return PAL.ACCENT, 0.45 end
         if kind == "wallflash" then return Color3.fromRGB(255, 255, 255), 0.15 end
+        if kind == "shield" then return Color3.fromRGB(150, 210, 120), 0.05 end
+        if kind == "ground" then return Color3.fromRGB(120, 200, 110), 0.5 end
+        if kind == "flea1" then return Color3.fromRGB(120, 220, 110), 0 end
+        if kind == "flea2" then return Color3.fromRGB(230, 110, 210), 0 end
+        if kind == "flea3" then return Color3.fromRGB(110, 210, 240), 0 end
+        if kind == "pup" then return Color3.fromRGB(230, 70, 80), 0 end
+        if kind == "shot" then return Color3.fromRGB(255, 250, 200), 0, 0.4 end
+        if kind == "bomb" then return Color3.fromRGB(255, 120, 60), 0, 0.4 end
+        if kind == "saucer" then return Color3.fromRGB(240, 90, 160), 0 end
         if kind == "snack" then return Color3.fromRGB(230, 140, 60), 0, 0.7 end
         if kind == "door" then return Color3.fromRGB(255, 200, 230), 0.3, 0.35 end
         if kind == "treat" then return Color3.fromRGB(255, 230, 180), 0, 0.25 end
@@ -8576,7 +8877,7 @@ local function buildGamesPanel(screenGui)
     end
 
     local tabs = {}
-    local tabW = (W - 32 - 32) / 5
+    local tabW = (W - 32 - 5 * 6) / 6
     local hud = label(f, { Position = UDim2.fromOffset(16, 82), Size = UDim2.fromOffset(W - 32, 18), TextSize = 12, Text = "" })
     local bestLbl = label(f, { Position = UDim2.fromOffset(16, 82), Size = UDim2.fromOffset(W - 32, 18), TextSize = 12,
         TextXAlignment = Enum.TextXAlignment.Right, TextColor3 = PAL.DIM, Text = "" })
@@ -8657,6 +8958,7 @@ local function buildGamesPanel(screenGui)
     local DIR_INDEX = { right = 0, left = 1, up = 2, down = 3 }
     local FIXED = { scared = { 4, 2 }, scared2 = { 5, 2 }, eyes = { 6, 2 }, snack = { 7, 2 }, treat = { 0, 3 }, bone = { 1, 3 } }
     local function spriteCell(a)
+        if mg.spriteCell then return mg.spriteCell(a) end
         local d = DIR_INDEX[a.dir or "right"] or 0
         if a.kind == "puppy" then return d * 2 + (a.frame or 0), 0 end
         local n = tonumber(a.kind:match("^cat(%d)$"))
@@ -8670,7 +8972,7 @@ local function buildGamesPanel(screenGui)
 
     local function drawActors()
         if not spriteLayer then return end
-        local list = (state and sheetAsset) and mg.actors(state) or {}
+        local list = (state and sheets[mg.id]) and mg.actors(state) or {}
         for i, a in ipairs(list) do
             local img = sprites[i]
             if not img then
@@ -8683,7 +8985,7 @@ local function buildGamesPanel(screenGui)
             local size = cellSize * 1.35 * (a.scale or 1)
             local rot = 0
             if a.dying then size = size * math.max(0, 1 - a.dying); rot = a.dying * 720 end
-            img.Image = sheetAsset
+            img.Image = sheets[mg.id]
             img.ImageRectOffset = Vector2.new(col * 64, row * 64)
             img.Size = UDim2.fromOffset(size, size)
             img.Rotation = rot
@@ -8716,7 +9018,7 @@ local function buildGamesPanel(screenGui)
         if state then
             mg.draw(state, function(x, y, k)
                 if x >= 1 and x <= cols and y >= 1 and y <= rows then nextK[(y - 1) * cols + x] = k end
-            end, mg.sprites == true and sheetAsset ~= nil)
+            end, mg.sprites == true and sheets[mg.id] ~= nil)
         end
         drawActors()
         if status == "play" then msg.Text = (state and mg.banner and mg.banner(state)) or "" end
@@ -8741,6 +9043,7 @@ local function buildGamesPanel(screenGui)
     local function setStatus(s)
         status = s
         for k in pairs(held) do held[k] = nil end
+        if state and mg.releaseAll then mg.releaseAll(state) end
         if s == "idle" then msg.Text = "Press Start"
         elseif s == "pause" then msg.Text = "Paused"
         elseif s == "over" then
@@ -8781,22 +9084,24 @@ local function buildGamesPanel(screenGui)
 
     local helpLbl
     for i, g in ipairs(MiniGames.list) do
-        local b = uiButton(f, g.title, UDim2.fromOffset(tabW, 28), UDim2.fromOffset(16 + (i - 1) * (tabW + 8), 46), function()
+        local b = uiButton(f, g.tab or g.title, UDim2.fromOffset(tabW, 28), UDim2.fromOffset(16 + (i - 1) * (tabW + 6), 46), function()
             selectGame(g)
             helpLbl.Text = g.help
         end)
+        b.TextSize = 11
         tabs[i] = { btn = b, mg = g }
     end
-    uiButton(f, "Game Boy", UDim2.fromOffset(tabW, 28), UDim2.fromOffset(16 + #MiniGames.list * (tabW + 8), 46), function()
+    uiButton(f, "Game Boy", UDim2.fromOffset(tabW, 28), UDim2.fromOffset(16 + #MiniGames.list * (tabW + 6), 46), function()
         H.gameboy()
     end).TextSize = 11
-    uiButton(f, "Doom", UDim2.fromOffset(tabW, 28), UDim2.fromOffset(16 + (#MiniGames.list + 1) * (tabW + 8), 46), function()
+    uiButton(f, "Doom", UDim2.fromOffset(tabW, 28), UDim2.fromOffset(16 + (#MiniGames.list + 1) * (tabW + 6), 46), function()
         H.doom()
-    end)
+    end).TextSize = 11
 
-    local function act(a)
+    -- down = false only for games with hold = true (key / button released)
+    local function act(a, down)
         if status ~= "play" or not state then return end
-        mg.input(state, a)
+        mg.input(state, a, down ~= false)
         render()
     end
 
@@ -8810,7 +9115,12 @@ local function buildGamesPanel(screenGui)
     local pads = { { "Left", "left" }, { "Up", "up" }, { "Down", "down" }, { "Right", "right" }, { "Rotate", "rotate" }, { "Drop", "drop" } }
     local pw = (W - 32 - (#pads - 1) * 6) / #pads
     for i, p in ipairs(pads) do
-        uiButton(f, p[1], UDim2.fromOffset(pw, 30), UDim2.fromOffset(16 + (i - 1) * (pw + 6), 458), function() act(p[2]) end)
+        local b = uiButton(f, p[1], UDim2.fromOffset(pw, 30), UDim2.fromOffset(16 + (i - 1) * (pw + 6), 458), function()
+            if not mg.hold then act(p[2]) end
+        end)
+        -- hold games: pressed while the finger / button is down
+        b.InputBegan:Connect(function(input) if mg.hold and isPointer(input) then act(p[2], true) end end)
+        b.InputEnded:Connect(function(input) if mg.hold and isPointer(input) then act(p[2], false) end end)
     end
     helpLbl = label(f, { Position = UDim2.fromOffset(16, 496), Size = UDim2.fromOffset(W - 32, 34), TextWrapped = true, TextSize = 11,
         TextColor3 = PAL.DIM, TextYAlignment = Enum.TextYAlignment.Top, Text = mg.help })
@@ -8843,6 +9153,7 @@ local function buildGamesPanel(screenGui)
             if mg.repeatKeys and mg.repeatKeys[a] then held[a] = os.clock() + 0.17 end
         elseif inputState == Enum.UserInputState.End or inputState == Enum.UserInputState.Cancel then
             held[a] = nil
+            if mg.hold then act(a, false) end
         end
         return Enum.ContextActionResult.Sink
     end
@@ -8899,13 +9210,17 @@ local function buildGamesPanel(screenGui)
     end)
     table.insert(cleanups, function() bind(false); stopLoop() end)
 
-    -- Treat Chase sprites (downloaded once; until then the pieces are coloured cells)
+    -- sprite sheets (downloaded once; until then the pieces are coloured cells)
     task.spawn(function()
-        local a = urlImageAsset(SETTINGS.Auras.assetBase .. "assets/games/treat_chase.png", "games")
-        if not a then return end
-        sheetAsset = a
-        cur = {}
-        render()
+        for _, g in ipairs(MiniGames.list) do
+            if g.sheet then
+                local a = urlImageAsset(SETTINGS.Auras.assetBase .. g.sheet, "games")
+                if a then
+                    sheets[g.id] = a
+                    if mg == g then cur = {}; render() end
+                end
+            end
+        end
     end)
 
     selectGame(mg)
