@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-12" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-13" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -7892,7 +7892,7 @@ do
     -- Stack Drop --------------------------------------------------------
     local Stack = {
         id = "stack", title = "Stack Drop", cols = 10, rows = 20, repeatKeys = { left = true, right = true, down = true },
-        help = "Left / right move, Up turns, Down drops faster, Space drops. Fill a row to clear it.",
+        help = "Left / right move, R or Up rotates, Down drops faster, Space drops. Fill a row to clear it.",
     }
     MiniGames.stack = Stack
     local SHAPES = {
@@ -7995,7 +7995,7 @@ do
         if a == "left" or a == "right" then
             local dx = a == "left" and -1 or 1
             if Stack.fits(g, p.cells, p.x + dx, p.y) then p.x = p.x + dx end
-        elseif a == "up" then
+        elseif a == "up" or a == "rotate" then
             if p.kind == 2 then return end
             local r = rotateCells(p.cells)
             local base = p.x + math.floor((width(p.cells) - width(r)) / 2)
@@ -8474,7 +8474,7 @@ end
 return MiniGames
 end)()
 
--- Mini games window: tabs, a cell grid per mg, keyboard (arrows / WASD,
+-- Mini games window: tabs, a cell grid per game, keyboard (arrows / WASD,
 -- Space drops, P pauses) and on-screen buttons for touch.
 local function buildGamesPanel(screenGui)
     local W, HGT = 360, 574
@@ -8748,8 +8748,8 @@ local function buildGamesPanel(screenGui)
         else newGame() end
     end)
     uiButton(f, "Restart", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16 + bw + 8, 420), newGame)
-    local pads = { { "Left", "left" }, { "Up", "up" }, { "Down", "down" }, { "Right", "right" }, { "Drop", "drop" } }
-    local pw = (W - 32 - 4 * 6) / 5
+    local pads = { { "Left", "left" }, { "Up", "up" }, { "Down", "down" }, { "Right", "right" }, { "Rotate", "rotate" }, { "Drop", "drop" } }
+    local pw = (W - 32 - (#pads - 1) * 6) / #pads
     for i, p in ipairs(pads) do
         uiButton(f, p[1], UDim2.fromOffset(pw, 30), UDim2.fromOffset(16 + (i - 1) * (pw + 6), 458), function() act(p[2]) end)
     end
@@ -8757,14 +8757,14 @@ local function buildGamesPanel(screenGui)
         TextColor3 = PAL.DIM, TextYAlignment = Enum.TextYAlignment.Top, Text = mg.help })
     label(f, { Position = UDim2.fromOffset(16, 532), Size = UDim2.fromOffset(W - 32, 30), TextWrapped = true, TextSize = 10,
         TextColor3 = PAL.DIM, TextYAlignment = Enum.TextYAlignment.Top,
-        Text = "While a mg runs, arrows / WASD / Space go to the mg, not your character. P pauses." })
+        Text = "While a game runs, arrows / WASD / Space / R go to the game, not your character. P pauses." })
 
     -- keyboard: only while this window is open; keys pass through to the
-    -- character unless a mg is being played
+    -- character unless a game is being played
     local KEYMAP = {
         [Enum.KeyCode.Left] = "left", [Enum.KeyCode.A] = "left", [Enum.KeyCode.Right] = "right", [Enum.KeyCode.D] = "right",
         [Enum.KeyCode.Up] = "up", [Enum.KeyCode.W] = "up", [Enum.KeyCode.Down] = "down", [Enum.KeyCode.S] = "down",
-        [Enum.KeyCode.Space] = "drop",
+        [Enum.KeyCode.Space] = "drop", [Enum.KeyCode.R] = "rotate",
     }
     local ACTION = "PuppyAdminGames"
     local bound = false
