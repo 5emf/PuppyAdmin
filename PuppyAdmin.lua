@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-16" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-17" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -9512,7 +9512,7 @@ local function createUI()
         return b
     end
 
-    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 816), "SETTINGS")
+    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 816), "SETTINGS  -  build " .. tostring(genv.PuppyAdminBuild))
 
     fieldLabel(settingsFrame, "Chat command prefixes (comma separated, 1-3 symbols)", 45)
     local prefixBox = fieldBox(settingsFrame, 65, table.concat(Cfg.prefixes, ", "))
@@ -9976,6 +9976,7 @@ end
 
 Perf.since("Setup (everything before the UI)", Perf.t0)
 genv.PuppyAdminShutdown = function() shutdown(false) end
+task.delay(1, function() note("Puppy Admin", "Build " .. tostring(genv.PuppyAdminBuild) .. " loaded", GREY) end)
 if not Cfg.skipIntro then showBrandIntro() end
 do
     local uiStart = os.clock()
