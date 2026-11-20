@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-8" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-9" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -7524,6 +7524,8 @@ end
 -- rng(n) returns a whole number from 1 to n.
 ------------------------------------------------------------------------
 
+-- built inside a function: it has its own local-variable budget (the main chunk is near Lua's 200 limit)
+local MiniGames = (function()
 local MiniGames = {}
 do
     local DIRS = { left = { -1, 0 }, right = { 1, 0 }, up = { 0, -1 }, down = { 0, 1 } }
@@ -7801,16 +7803,38 @@ do
         "###################",
     }
     local Chase = {
-        id = "chase", title = "Treat Chase", cols = #MAZE[1], rows = #MAZE,
-        help = "Arrows / WASD steer the puppy. Eat every treat; a bone lets you chase the cats for a while.",
+        id = "chase", title = "Treat Chase", cols = #MAZE[1], rows = #MAZE, sprites = true,
+        help = "Arrows / WASD steer the puppy. Eat every treat; a bone turns the cats blue so you can chase them. Grab the drumstick for bonus points.",
     }
     MiniGames.chase = Chase
     Chase.MAZE = MAZE
 
+    -- Cats take turns heading for their own corner (calm) and hunting the puppy;
+    -- seconds per phase, the last one lasts for the rest of the level.
+    -- BONUS_AT: treats eaten when a drumstick appears
+    local K = {
+        PHASES = { 7, 20, 7, 20, 5 }, CORNERS = { { 19, 0 }, { 1, 0 }, { 1, 19 } },
+        DEATH_TIME = 1.4, CLEAR_TIME = 1.8, READY_TIME = 1.6, BONUS_AT = { [50] = true, [110] = true },
+    }
+
     local function key(x, y) return y * 64 + x end
 
+    local function popup(g, x, y, text)
+        g.popups[#g.popups + 1] = { x = x, y = y, text = text, t = 1, life = 1 }
+    end
+
+    local function addScore(g, n, x, y)
+        g.score = g.score + n
+        if x then popup(g, x, y, tostring(n)) end
+        if g.score >= g.nextLife then
+            g.nextLife = g.nextLife + 10000
+            g.lives = g.lives + 1
+            popup(g, g.player.x, g.player.y, "1UP")
+        end
+    end
+
     function Chase.loadLevel(g)
-        g.walls, g.treats, g.left, g.pen = {}, {}, 0, {}
+        g.walls, g.treats, g.left, g.pen, g.eaten = {}, {}, 0, {}, 0
         for y, row in ipairs(MAZE) do
             g.walls[y], g.treats[y] = {}, {}
             for x = 1, #row do
@@ -7822,22 +7846,24 @@ do
                 if ch == "." or ch == "o" then g.treats[y][x] = ch; g.left = g.left + 1 end
             end
         end
+        g.bonus = nil
         Chase.resetActors(g)
     end
 
     function Chase.resetActors(g)
-        g.player = { x = g.start.x, y = g.start.y, dir = nil, want = nil, timer = 0 }
+        g.player = { x = g.start.x, y = g.start.y, ox = g.start.x, oy = g.start.y, dir = nil, want = nil, timer = 0, face = "left", moving = false }
         g.power, g.combo = 0, 0
+        g.phase, g.phaseT = 1, K.PHASES[1]
         g.cats = {}
         for i = 1, 3 do
             local p = g.pen[((i - 1) % #g.pen) + 1]
-            g.cats[i] = { id = i, x = p.x, y = p.y, dir = "up", state = "pen", wait = (i - 1) * 3 + 1, timer = 0 }
+            g.cats[i] = { id = i, x = p.x, y = p.y, ox = p.x, oy = p.y, dir = "up", state = "pen", wait = (i - 1) * 3 + 1, timer = 0 }
         end
-        g.freeze = 1
+        g.freeze = K.READY_TIME
     end
 
     function Chase.new(rng)
-        local g = { rng = rng, score = 0, lives = 3, level = 1, over = false }
+        local g = { rng = rng, score = 0, lives = 3, level = 1, over = false, popups = {}, nextLife = 10000, clock = 0 }
         Chase.loadLevel(g)
         return g
     end
@@ -7890,7 +7916,7 @@ do
             local d = DIRS[back]
             return Chase.catOpen(g, c, c.x + d[1], c.y + d[2]) and back or nil
         end
-        if flee or (c.id > 1 and g.rng(100) <= 15) then return opts[g.rng(#opts)] end
+        if flee or (c.id > 1 and g.rng(100) <= 10) then return opts[g.rng(#opts)] end
         local best, bestD
         for _, dn in ipairs(opts) do
             local d = DIRS[dn]
@@ -7901,18 +7927,22 @@ do
         return best
     end
 
+    function Chase.calm(g) return g.phase <= #K.PHASES and g.phase % 2 == 1 end
+
     local function catTarget(g, c)
+        if Chase.calm(g) then return K.CORNERS[c.id][1], K.CORNERS[c.id][2] end
         local p = g.player
         if c.id == 2 and p.dir then
             local d = DIRS[p.dir]
             return p.x + d[1] * 4, p.y + d[2] * 4
         elseif c.id == 3 then
             local dx, dy = c.x - p.x, c.y - p.y
-            if dx * dx + dy * dy < 49 then return 2, Chase.rows - 1 end
+            if dx * dx + dy * dy < 49 then return K.CORNERS[3][1], K.CORNERS[3][2] end
         end
         return p.x, p.y
     end
 
+    local function playerInterval(g) return math.max(0.1, 0.15 * 0.96 ^ (g.level - 1)) end
     local function catInterval(g, c)
         if c.state == "eaten" then return 0.06 end
         if c.state == "scared" then return 0.3 end
@@ -7920,11 +7950,12 @@ do
     end
 
     function Chase.moveCat(g, c)
+        c.ox, c.oy = c.x, c.y
         local dn
         if c.state == "leave" then
             local tx, ty = g.door.x, g.door.y - 1
             if c.x == tx and c.y == ty then
-                c.state = "hunt"
+                c.state = g.power > 0 and "scared" or "hunt"
             else
                 dn = pathDir(g, c, tx, ty)
             end
@@ -7937,8 +7968,16 @@ do
             end
         end
         if c.state == "hunt" or c.state == "scared" then
-            local tx, ty = catTarget(g, c)
-            dn = chooseDir(g, c, tx, ty, c.state == "scared")
+            if c.reverse then
+                c.reverse = nil
+                local back = OPP[c.dir]
+                local d = DIRS[back]
+                if Chase.catOpen(g, c, c.x + d[1], c.y + d[2]) then dn = back end
+            end
+            if not dn then
+                local tx, ty = catTarget(g, c)
+                dn = chooseDir(g, c, tx, ty, c.state == "scared")
+            end
         end
         if dn then
             local d = DIRS[dn]
@@ -7946,17 +7985,18 @@ do
         end
     end
 
+    -- true when the round stopped (the puppy was caught)
     local function collide(g)
         local p = g.player
         for _, c in ipairs(g.cats) do
             if c.x == p.x and c.y == p.y then
                 if c.state == "scared" then
                     g.combo = g.combo + 1
-                    g.score = g.score + 100 * math.floor(2 ^ g.combo)
+                    addScore(g, 100 * math.floor(2 ^ g.combo), c.x, c.y)
                     c.state = "eaten"
                 elseif c.state == "hunt" then
-                    g.lives = g.lives - 1
-                    if g.lives <= 0 then g.over = true else Chase.resetActors(g) end
+                    g.dying = K.DEATH_TIME
+                    p.ox, p.oy, p.timer = p.x, p.y, 0
                     return true
                 end
             end
@@ -7967,34 +8007,38 @@ do
 
     function Chase.movePlayer(g)
         local p = g.player
+        p.ox, p.oy = p.x, p.y
         if p.want then
             local d = DIRS[p.want]
             if Chase.playerOpen(g, p.x + d[1], p.y + d[2]) then p.dir = p.want end
         end
+        p.moving = false
         if not p.dir then return end
         local d = DIRS[p.dir]
         if not Chase.playerOpen(g, p.x + d[1], p.y + d[2]) then return end
-        p.x, p.y = p.x + d[1], p.y + d[2]
+        p.x, p.y, p.face, p.moving = p.x + d[1], p.y + d[2], p.dir, true
         local t = g.treats[p.y][p.x]
         if t then
             g.treats[p.y][p.x] = nil
             g.left = g.left - 1
+            g.eaten = g.eaten + 1
             if t == "o" then
-                g.score = g.score + 50
+                addScore(g, 50)
                 g.power = math.max(3, 7 - (g.level - 1) * 0.5)
                 g.combo = 0
                 for _, c in ipairs(g.cats) do
-                    if c.state == "hunt" then c.state = "scared"; c.dir = OPP[c.dir] end
+                    if c.state == "hunt" then c.state = "scared"; c.reverse = true end
                 end
             else
-                g.score = g.score + 10
+                addScore(g, 10)
             end
+            if K.BONUS_AT[g.eaten] then g.bonus = { x = g.start.x, y = g.start.y, t = 9 } end
         end
-        if g.left <= 0 then
-            g.level = g.level + 1
-            g.score = g.score + 500
-            Chase.loadLevel(g)
+        if g.bonus and g.bonus.x == p.x and g.bonus.y == p.y then
+            addScore(g, 100 * (g.level + 1), p.x, p.y)
+            g.bonus = nil
         end
+        if g.left <= 0 then g.clearing = K.CLEAR_TIME end
     end
 
     function Chase.input(g, a)
@@ -8002,22 +8046,61 @@ do
     end
 
     function Chase.update(g, dt)
+        g.clock = g.clock + dt
+        for i = #g.popups, 1, -1 do
+            local pp = g.popups[i]
+            pp.t = pp.t - dt
+            if pp.t <= 0 then table.remove(g.popups, i) end
+        end
         if g.over then return end
+        if g.dying then
+            g.dying = g.dying - dt
+            if g.dying <= 0 then
+                g.dying = nil
+                g.lives = g.lives - 1
+                if g.lives <= 0 then g.over = true else Chase.resetActors(g) end
+            end
+            return
+        end
+        if g.clearing then
+            g.clearing = g.clearing - dt
+            if g.clearing <= 0 then
+                g.clearing = nil
+                g.level = g.level + 1
+                addScore(g, 500)
+                Chase.loadLevel(g)
+            end
+            return
+        end
         if g.freeze > 0 then g.freeze = g.freeze - dt; return end
+
         if g.power > 0 then
             g.power = g.power - dt
             if g.power <= 0 then
                 g.power = 0
                 for _, c in ipairs(g.cats) do if c.state == "scared" then c.state = "hunt" end end
             end
+        elseif g.phase <= #K.PHASES then
+            -- the phase clock pauses while the cats are scared
+            g.phaseT = g.phaseT - dt
+            if g.phaseT <= 0 then
+                g.phase = g.phase + 1
+                g.phaseT = K.PHASES[g.phase] or math.huge
+                for _, c in ipairs(g.cats) do if c.state == "hunt" then c.reverse = true end end
+            end
         end
+        if g.bonus then
+            g.bonus.t = g.bonus.t - dt
+            if g.bonus.t <= 0 then g.bonus = nil end
+        end
+
         local p = g.player
         p.timer = p.timer + dt
-        local piv = math.max(0.1, 0.15 * 0.96 ^ (g.level - 1))
+        local piv = playerInterval(g)
         while p.timer >= piv do
             p.timer = p.timer - piv
             Chase.movePlayer(g)
-            if g.freeze > 0 or collide(g) then return end
+            if g.clearing or collide(g) then return end
         end
         for _, c in ipairs(g.cats) do
             if c.state == "pen" then
@@ -8036,35 +8119,87 @@ do
         end
     end
 
-    function Chase.draw(g, put)
+    local function catKind(g, c)
+        if c.state == "eaten" then return "eyes" end
+        if c.state == "scared" then
+            local blink = g.power < 1.5 and math.floor(g.power * 6) % 2 == 0
+            return blink and "scared2" or "scared"
+        end
+        return "cat" .. c.id
+    end
+
+    -- Static cells (walls, door, treats). With sprites off, actors are drawn as cells too.
+    function Chase.draw(g, put, sprites)
+        local flash = g.clearing and math.floor(g.clearing * 6) % 2 == 0
         for y = 1, Chase.rows do
             for x = 1, Chase.cols do
                 local w = g.walls[y][x]
                 if w == "#" then
-                    put(x, y, "wall")
+                    put(x, y, flash and "wallflash" or "wall")
                 elseif w == "-" then
                     put(x, y, "door")
                 else
                     local t = g.treats[y][x]
-                    if t == "." then put(x, y, "treat") elseif t == "o" then put(x, y, "bone") end
+                    if t == "." then put(x, y, "treat")
+                    elseif t == "o" and not sprites then put(x, y, "bone") end
                 end
             end
         end
-        local blink = g.power > 0 and g.power < 1.5 and math.floor(g.power * 6) % 2 == 0
-        for _, c in ipairs(g.cats) do
-            local kind
-            if c.state == "eaten" then kind = "eyes"
-            elseif c.state == "scared" then kind = blink and "scared2" or "scared"
-            else kind = "cat" .. c.id end
-            put(c.x, c.y, kind)
-        end
+        if sprites then return end
+        if g.bonus then put(g.bonus.x, g.bonus.y, "snack") end
+        for _, c in ipairs(g.cats) do put(c.x, c.y, catKind(g, c)) end
         put(g.player.x, g.player.y, "puppy")
+    end
+
+    -- Moving pieces for the sprite layer: kind, x / y in cells (fractional while
+    -- moving), facing ("right" / "left" / "up" / "down"), frame (0 / 1), and for the
+    -- puppy `dying` (0..1, how far the caught animation is). Drawn bottom to top.
+    function Chase.actors(g)
+        local list = {}
+        for y = 1, Chase.rows do
+            for x = 1, Chase.cols do
+                if g.treats[y][x] == "o" then
+                    -- power bones pulse
+                    list[#list + 1] = { kind = "bone", x = x, y = y, scale = 0.9 + 0.15 * math.sin(g.clock * 6) }
+                end
+            end
+        end
+        if g.bonus then list[#list + 1] = { kind = "snack", x = g.bonus.x, y = g.bonus.y, scale = 1.1 } end
+        local hidden = g.dying ~= nil or g.clearing ~= nil
+        if not hidden then
+            for _, c in ipairs(g.cats) do
+                local f = c.state == "pen" and 0 or math.min(1, c.timer / catInterval(g, c))
+                local bob = c.state == "pen" and math.sin(g.clock * 5 + c.id) * 0.15 or 0
+                list[#list + 1] = {
+                    kind = catKind(g, c), dir = c.dir,
+                    x = c.ox + (c.x - c.ox) * f, y = c.oy + (c.y - c.oy) * f + bob,
+                }
+            end
+        end
+        local p = g.player
+        local f = (p.moving and not g.dying) and math.min(1, p.timer / playerInterval(g)) or 1
+        list[#list + 1] = {
+            kind = "puppy", dir = p.face,
+            x = p.ox + (p.x - p.ox) * f, y = p.oy + (p.y - p.oy) * f,
+            frame = (p.moving and g.freeze <= 0 and not g.dying) and (math.floor(g.clock * 10) % 2) or 0,
+            dying = g.dying and (1 - g.dying / K.DEATH_TIME) or nil,
+        }
+        return list
+    end
+
+    function Chase.banner(g)
+        if g.over then return nil end
+        if g.clearing then return "Level " .. g.level .. " clear!" end
+        if g.freeze > 0 and not g.dying then return g.level > 1 and ("Level " .. g.level .. " - Ready!") or "Ready!" end
+        return nil
     end
 
     function Chase.hud(g) return "Score " .. g.score .. "   Lives " .. g.lives .. "   Level " .. g.level end
 
     MiniGames.list = { Snake, Stack, Chase }
 end
+return MiniGames
+end)()
 
 -- Mini games window: tabs, a cell grid per mg, keyboard (arrows / WASD,
 -- Space drops, P pauses) and on-screen buttons for touch.
@@ -8079,6 +8214,9 @@ local function buildGamesPanel(screenGui)
     local cells, cur, nextK, cols, rows = {}, {}, {}, 0, 0
     local pcells, pcur = {}, {}
     local held = {}
+    -- sprite layer (games with actors, e.g. Treat Chase): pooled images over the board
+    local sheetAsset, spriteLayer, cellSize = nil, nil, 1
+    local sprites, popLbls = {}, {}
 
     local PIECE = {
         Color3.fromRGB(255, 140, 200), Color3.fromRGB(255, 214, 110), Color3.fromRGB(190, 140, 255),
@@ -8087,12 +8225,15 @@ local function buildGamesPanel(screenGui)
     }
     -- kind -> colour, transparency, dot size (nil = whole cell)
     local function style(kind)
-        if kind == "empty" then return PAL.ELEVATED, 0.55 end
+        -- maze paths stay faint so the walls and pieces stand out
+        if kind == "empty" then return PAL.ELEVATED, mg.sprites and 0.88 or 0.55 end
         if kind == "head" then return PAL.ACCENT, 0 end
         if kind == "body" then return PAL.GOOD, 0.1 end
         if kind == "food" then return Color3.fromRGB(255, 120, 180), 0, 0.7 end
         if kind == "ghost" then return PAL.DIM, 0.75 end
         if kind == "wall" then return PAL.ACCENT, 0.45 end
+        if kind == "wallflash" then return Color3.fromRGB(255, 255, 255), 0.15 end
+        if kind == "snack" then return Color3.fromRGB(230, 140, 60), 0, 0.7 end
         if kind == "door" then return Color3.fromRGB(255, 200, 230), 0.3, 0.35 end
         if kind == "treat" then return Color3.fromRGB(255, 230, 180), 0, 0.25 end
         if kind == "bone" then return Color3.fromRGB(255, 255, 255), 0, 0.6 end
@@ -8146,6 +8287,8 @@ local function buildGamesPanel(screenGui)
     end
 
     local function buildBoard()
+        if spriteLayer then spriteLayer:Destroy(); spriteLayer = nil end
+        sprites, popLbls = {}, {}
         for _, c in ipairs(cells) do c.frame:Destroy() end
         for _, ch in ipairs(preview:GetChildren()) do ch:Destroy() end
         cells, cur, pcells, pcur = {}, {}, {}, {}
@@ -8157,12 +8300,16 @@ local function buildGamesPanel(screenGui)
         local left = math.floor((availW - bw) / 2)
         board.Size = UDim2.fromOffset(bw + 2, bh + 2)
         board.Position = UDim2.fromOffset(left - 1, 0)
+        cellSize = cs
         for y = 1, rows do
             for x = 1, cols do
                 local c = newCell(board, cs, x, y)
                 c.frame.Position = c.frame.Position + UDim2.fromOffset(1, 1)
                 cells[#cells + 1] = c
             end
+        end
+        if mg.actors then
+            spriteLayer = make("Frame", { Name = "Sprites", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 6 }, board)
         end
         preview.Visible = hasPreview
         if hasPreview then
@@ -8180,14 +8327,73 @@ local function buildGamesPanel(screenGui)
         end
     end
 
+    -- sheet cell (column, row) of an actor; layout in assets/games/treat_chase.png (64 px cells)
+    local DIR_INDEX = { right = 0, left = 1, up = 2, down = 3 }
+    local FIXED = { scared = { 4, 2 }, scared2 = { 5, 2 }, eyes = { 6, 2 }, snack = { 7, 2 }, treat = { 0, 3 }, bone = { 1, 3 } }
+    local function spriteCell(a)
+        local d = DIR_INDEX[a.dir or "right"] or 0
+        if a.kind == "puppy" then return d * 2 + (a.frame or 0), 0 end
+        local n = tonumber(a.kind:match("^cat(%d)$"))
+        if n then
+            local idx = (n - 1) * 4 + d
+            return idx % 8, 1 + math.floor(idx / 8)
+        end
+        local fx = FIXED[a.kind] or FIXED.treat
+        return fx[1], fx[2]
+    end
+
+    local function drawActors()
+        if not spriteLayer then return end
+        local list = (state and sheetAsset) and mg.actors(state) or {}
+        for i, a in ipairs(list) do
+            local img = sprites[i]
+            if not img then
+                img = make("ImageLabel", {
+                    BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), ImageRectSize = Vector2.new(64, 64), ZIndex = 7,
+                }, spriteLayer)
+                sprites[i] = img
+            end
+            local col, row = spriteCell(a)
+            local size = cellSize * 1.35 * (a.scale or 1)
+            local rot = 0
+            if a.dying then size = size * math.max(0, 1 - a.dying); rot = a.dying * 720 end
+            img.Image = sheetAsset
+            img.ImageRectOffset = Vector2.new(col * 64, row * 64)
+            img.Size = UDim2.fromOffset(size, size)
+            img.Rotation = rot
+            img.Position = UDim2.fromOffset(1 + (a.x - 0.5) * cellSize, 1 + (a.y - 0.5) * cellSize)
+            img.Visible = true
+        end
+        for i = #list + 1, #sprites do sprites[i].Visible = false end
+        -- score pop-ups rise and fade
+        local pops = state and state.popups or {}
+        for i, pp in ipairs(pops) do
+            local l = popLbls[i]
+            if not l then
+                l = label(spriteLayer, { AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(60, 16), ZIndex = 8,
+                    TextXAlignment = Enum.TextXAlignment.Center, Font = Enum.Font.GothamBold, TextSize = 12,
+                    TextColor3 = Color3.fromRGB(255, 221, 150), TextStrokeTransparency = 0.3 })
+                popLbls[i] = l
+            end
+            local k = 1 - pp.t / pp.life
+            l.Text = pp.text
+            l.Position = UDim2.fromOffset(1 + (pp.x - 0.5) * cellSize, 1 + (pp.y - 0.5 - k) * cellSize)
+            l.TextTransparency = math.max(0, k * 1.2 - 0.2)
+            l.Visible = true
+        end
+        for i = #pops + 1, #popLbls do popLbls[i].Visible = false end
+    end
+
     local function render()
         local n = cols * rows
         for i = 1, n do nextK[i] = "empty" end
         if state then
             mg.draw(state, function(x, y, k)
                 if x >= 1 and x <= cols and y >= 1 and y <= rows then nextK[(y - 1) * cols + x] = k end
-            end)
+            end, mg.sprites == true and sheetAsset ~= nil)
         end
+        drawActors()
+        if status == "play" then msg.Text = (state and mg.banner and mg.banner(state)) or "" end
         for i = 1, n do
             if nextK[i] ~= cur[i] and cells[i] then paint(cells[i], nextK[i]); cur[i] = nextK[i] end
         end
@@ -8360,6 +8566,15 @@ local function buildGamesPanel(screenGui)
         render()
     end)
     table.insert(cleanups, function() bind(false); stopLoop() end)
+
+    -- Treat Chase sprites (downloaded once; until then the pieces are coloured cells)
+    task.spawn(function()
+        local a = urlImageAsset(SETTINGS.Auras.assetBase .. "assets/games/treat_chase.png", "games")
+        if not a then return end
+        sheetAsset = a
+        cur = {}
+        render()
+    end)
 
     selectGame(mg)
 end
