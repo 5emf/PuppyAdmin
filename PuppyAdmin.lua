@@ -1889,7 +1889,7 @@ end
 -- this one repository with Contents: read and write.
 ------------------------------------------------------------------------
 
-local TagSync = { status = "starting", lastJson = nil, pushQueued = false, warnedReadOnly = false, etag = nil }
+local TagSync = { status = "starting", lastJson = nil, pushQueued = false, warnedReadOnly = false, etag = nil, apiBlockedUntil = 0 }
 
 do
     local CFG = SETTINGS.TagSync
@@ -2066,9 +2066,14 @@ do
         local token = TagSync.token()
         local h = headers(token)
         if st.etag and not fresh then h["If-None-Match"] = st.etag end
-        local res = httpRequest({ Url = apiUrl(path) .. "?ref=" .. CFG.branch, Method = "GET", Headers = h })
+        local res
+        -- without a token GitHub allows 60 API reads an hour: once refused, read the raw file until the reset
+        if token or os.time() >= TagSync.apiBlockedUntil then
+            res = httpRequest({ Url = apiUrl(path) .. "?ref=" .. CFG.branch, Method = "GET", Headers = h })
+        end
         if res then
             local code = tonumber(res.StatusCode) or 0
+            if not token and (code == 403 or code == 429) then TagSync.blockApi(res) end
             if code == 304 then return true, "unchanged", nil end
             if code == 404 then st.etag = nil; return true, nil, nil end
             if code == 200 then
@@ -2085,8 +2090,43 @@ do
         end
         local url = "https://raw.githubusercontent.com/" .. CFG.owner .. "/" .. CFG.repo .. "/" .. CFG.branch .. "/" .. path
         local ok, body = pcall(function() return game:HttpGet(url .. "?t=" .. tostring(os.time())) end)
-        if not ok or type(body) ~= "string" or body:sub(1, 1) ~= "[" then return true, nil, nil end
+        local first = type(body) == "string" and body:match("^%s*(.)")
+        if not ok or (first ~= "[" and first ~= "{") then return true, nil, nil end
         return true, body, nil
+    end
+
+    function TagSync.blockApi(res)
+        local reset = tonumber(header(res, "X-RateLimit-Reset"))
+        local now = os.time()
+        TagSync.apiBlockedUntil = (reset and reset > now and reset - now < 3600) and reset or now + 600
+    end
+
+    -- One request for the whole repository root: returns ok, { [name] = sha } |
+    -- "unchanged". A 304 (nothing changed anywhere) is free with a token. ok is
+    -- false when the API cannot be used right now (no request(), rate limit).
+    function TagSync.listRoot(st)
+        local token = TagSync.token()
+        if not token and os.time() < TagSync.apiBlockedUntil then return false, "rate limited" end
+        local h = headers(token)
+        if st.etag then h["If-None-Match"] = st.etag end
+        local res, err = httpRequest({ Url = apiUrl("") .. "?ref=" .. CFG.branch, Method = "GET", Headers = h })
+        if not res then return false, err end
+        local code = tonumber(res.StatusCode) or 0
+        if code == 304 then return true, "unchanged" end
+        if code == 200 then
+            local okJ, list = pcall(function() return HttpService:JSONDecode(res.Body) end)
+            if okJ and type(list) == "table" then
+                local shas = {}
+                for _, e in ipairs(list) do
+                    if type(e) == "table" and type(e.name) == "string" and type(e.sha) == "string" then shas[e.name] = e.sha end
+                end
+                st.etag = header(res, "ETag")
+                return true, shas
+            end
+            return false, "listing is not valid"
+        end
+        if not token and (code == 403 or code == 429) then TagSync.blockApi(res) end
+        return false, "GitHub said " .. tostring(code)
     end
 
     -- Commits body as path (creates it when missing). Returns ok, message.
@@ -2166,12 +2206,14 @@ do
             Perf.since("First tags read (background)", fetchStart)
             -- every execution draws every tag again once the repository copy is in
             Tags.refreshAll()
-            while genv.PuppyAdminActive == true do
-                task.wait(CFG.pollSeconds)
-                if genv.PuppyAdminActive ~= true then break end
-                if not TagSync.pushQueued and not (canEditTags() and not TagSync.token()) then pcall(TagSync.pull) end
-            end
+            -- later reads come from RepoSync (one check for every shared file)
         end)
+    end
+
+    -- false while a local change waits to be pushed, or for an editor without
+    -- a token (their local tags would be replaced by the repository copy)
+    function TagSync.canPull()
+        return not TagSync.pushQueued and not (canEditTags() and not TagSync.token())
     end
 end
 
@@ -2452,11 +2494,6 @@ do
         local fetchStart = os.clock()
         pcall(AuraSync.pull, true)
         Perf.since("First auras read (background)", fetchStart)
-        while genv.PuppyAdminActive == true do
-            task.wait(SETTINGS.TagSync.pollSeconds)
-            if genv.PuppyAdminActive ~= true then break end
-            if not AuraSync.queued then pcall(AuraSync.pull) end
-        end
     end)
 end
 
@@ -2668,10 +2705,63 @@ do
         local fetchStart = os.clock()
         pcall(Moderation.pull, true)
         Perf.since("First moderation read (background)", fetchStart)
+    end)
+end
+
+------------------------------------------------------------------------
+-- RepoSync: one check of the repository every pollSeconds for all shared
+-- files. It lists the repository root (one request; 304 when nothing
+-- changed) and pulls only the files whose sha moved. When the listing
+-- cannot be used (no request(), rate limit) every file is read the old way,
+-- which falls back to the raw files.
+------------------------------------------------------------------------
+
+local RepoSync = { etag = nil, shas = {}, status = "starting" }
+do
+    local FILES = {
+        { path = SETTINGS.TagSync.path, pull = function() return TagSync.pull() end, ready = function() return TagSync.canPull() end },
+        { path = SETTINGS.Auras.path, pull = function() return AuraSync.pull() end, ready = function() return not AuraSync.queued end },
+        { path = "moderation.json", pull = function() return Moderation.pull() end, ready = function() return true end },
+    }
+
+    function RepoSync.tick()
+        local ok, shas = TagSync.listRoot(RepoSync)
+        if ok and shas == "unchanged" then RepoSync.status = "unchanged"; return end
+        if not ok then
+            RepoSync.status = "per-file (" .. tostring(shas) .. ")"
+            for _, f in ipairs(FILES) do
+                if f.ready() then pcall(f.pull) end
+            end
+            return
+        end
+        local pulled = 0
+        for _, f in ipairs(FILES) do
+            local sha = shas[f.path] or false
+            if sha ~= RepoSync.shas[f.path] then
+                -- a file that is not ready keeps its old sha, so the next tick tries again
+                if f.ready() then
+                    local okP, res = pcall(f.pull)
+                    if okP and res ~= false then RepoSync.shas[f.path] = sha end
+                    pulled = pulled + 1
+                else
+                    RepoSync.etag = nil
+                end
+            end
+        end
+        RepoSync.status = pulled > 0 and ("pulled " .. pulled) or "listing changed, files unchanged"
+    end
+
+    task.spawn(function()
+        -- the first listing only records the shas: the startup reads already ran
+        local ok, shas = TagSync.listRoot(RepoSync)
+        if ok and type(shas) == "table" then
+            for _, f in ipairs(FILES) do RepoSync.shas[f.path] = shas[f.path] or false end
+        end
         while genv.PuppyAdminActive == true do
             task.wait(SETTINGS.TagSync.pollSeconds)
             if genv.PuppyAdminActive ~= true then break end
-            pcall(Moderation.pull)
+            local okT, err = pcall(RepoSync.tick)
+            if not okT then RepoSync.status = "error: " .. tostring(err) end
         end
     end)
 end
@@ -14538,6 +14628,7 @@ function H.tagsync(a)
         local c = SETTINGS.TagSync
         note("Tag sync", (TagSync.token() and "read + write" or "read only") .. " - " .. c.owner .. "/" .. c.repo .. ":" .. c.path .. " - " .. tostring(TagSync.status))
         note("Presence", tostring(Presence.status))
+        note("Repo check", "every " .. SETTINGS.TagSync.pollSeconds .. " s - " .. tostring(RepoSync.status))
     end
 end
 
