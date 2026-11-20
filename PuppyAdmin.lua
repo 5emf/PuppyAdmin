@@ -346,6 +346,7 @@ local Cfg = {
     tagClickTp = true, -- clicking someone else's tag teleports you to them
     skipIntro = false, -- start without the brand intro
     uiFont = "Default", -- Settings > Font (UIFont.choices())
+    uiTextScale = 1,    -- Settings > Text size (0.5 - 2)
     games = {},        -- mini game best scores: game id -> number
 }
 
@@ -4388,7 +4389,7 @@ local cmds = {
     "aura", "unaura", "auras",
     "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "games", "owner", "kick", "ban", "unban", "bans", "antikick", "unantikick", "antivcban",
     "reanim",
-    "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
+    "prefix", "uikey", "textsize", "settings", "theme", "kill", "stop", "help",
 }
 
 -- Movement aliases come from the engine's own registrations (PUP_MOVE).
@@ -4415,6 +4416,7 @@ local cmdDocs = {
     ban = "ban <players> [reason] - Ban players from using the script; they are kicked when they run it (owners only)",
     unban = "unban <players or UserIds> - Lift a script ban (owners only)",
     bans = "bans - List players banned from the script (owners only)",
+    textsize = "textsize <percent> - Text size of every window, 50-200 (100 = normal; also in Settings)",
     games = "games - Mini games: Snake, Stack Drop, Treat Chase (also: minigames, arcade)",
     performance = "performance - Performance panel: FPS unlock, anti-lag, low graphics, no fog / shadows / effects (also: boost)",
     perf = "perf - How long start-up and first-time actions took (for tuning the script)",
@@ -4825,6 +4827,7 @@ end
 
 function H.performance() UIAPI.togglePanel("performance") end
 function H.games() UIAPI.togglePanel("games") end
+
 
 function H.perf()
     local lines = { "Times in milliseconds (ms). Background reads do not hold up the UI.", "" }
@@ -5293,8 +5296,33 @@ do
         return inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox")
     end
 
-    function UIFont.applyTo(inst)
-        if not isText(inst) or inst:GetAttribute("PuppyAdminKeepFont") then return end
+    -- Text size scale (Settings > Text size): every text object keeps the size
+    -- it was built with (UIFont.size) and shows base * scale. When the
+    -- script itself later sets a new size, that becomes the new base.
+    -- TextScaled text already fits its box and is left alone.
+    UIFont.scale = 1
+    UIFont.size = setmetatable({}, { __mode = "k" })
+    local sizeSet = setmetatable({}, { __mode = "k" }) -- last size written here (signals may arrive deferred)
+    local function applySize(inst)
+        if inst.TextScaled then return end
+        local base = UIFont.size[inst]
+        if not base then
+            if UIFont.scale == 1 then return end
+            base = inst.TextSize
+            UIFont.size[inst] = base
+            inst:GetPropertyChangedSignal("TextSize"):Connect(function()
+                if inst.TextSize == sizeSet[inst] then return end
+                UIFont.size[inst] = inst.TextSize
+                applySize(inst)
+            end)
+        end
+        local want = math.clamp(math.floor(base * UIFont.scale + 0.5), 6, 100)
+        sizeSet[inst] = want
+        if inst.TextSize ~= want then pcall(function() inst.TextSize = want end) end
+    end
+
+    local function applyFont(inst)
+        if inst:GetAttribute("PuppyAdminKeepFont") then return end
         local orig = UIFont.original[inst]
         if not orig then
             if not current then return end
@@ -5310,6 +5338,14 @@ do
         end)
     end
 
+    function UIFont.applyTo(inst)
+        if not isText(inst) then return end
+        applyFont(inst)
+        pcall(applySize, inst)
+    end
+
+    local function active() return current ~= nil or UIFont.scale ~= 1 end
+
     function UIFont.applyTree(root)
         UIFont.applyTo(root)
         for _, d in ipairs(root:GetDescendants()) do UIFont.applyTo(d) end
@@ -5319,9 +5355,9 @@ do
     function UIFont.attach(root)
         table.insert(UIFont.roots, root)
         table.insert(conns, root.DescendantAdded:Connect(function(d)
-            if current then task.defer(function() if d.Parent then UIFont.applyTo(d) end end) end
+            if active() then task.defer(function() if d.Parent then UIFont.applyTo(d) end end) end
         end))
-        if current then UIFont.applyTree(root) end
+        if active() then UIFont.applyTree(root) end
     end
 
     -- label from UIFont.choices(); returns ok, message. Yields for a first download.
@@ -5342,12 +5378,44 @@ do
         return true, "Font: " .. label
     end
 
+    local function applyAll()
+        for i = #UIFont.roots, 1, -1 do
+            local r = UIFont.roots[i]
+            if r.Parent then UIFont.applyTree(r) else table.remove(UIFont.roots, i) end
+        end
+    end
+
+    -- v: 0.5 .. 2 (1 = sizes as built)
+    function UIFont.setScale(v, quiet)
+        v = tonumber(v)
+        if not v or v ~= v then return false, "Text size: a number like 120 (percent)" end
+        v = math.clamp(math.floor(v * 20 + 0.5) / 20, 0.5, 2)
+        UIFont.scale = v
+        Cfg.uiTextScale = v
+        if not quiet then cfgSave() end
+        applyAll()
+        return true, "Text size " .. math.floor(v * 100 + 0.5) .. "%"
+    end
+
     function UIFont.load()
+        if type(Cfg.uiTextScale) == "number" and Cfg.uiTextScale ~= 1 then UIFont.setScale(Cfg.uiTextScale, true) end
         if type(Cfg.uiFont) == "string" and Cfg.uiFont ~= "Default" then
             local ok = UIFont.set(Cfg.uiFont, true)
             if not ok then current = nil end
         end
     end
+end
+
+-- textsize <percent>
+function H.textsize(a)
+    local pct = tonumber(a[1] and a[1]:gsub("%%", "") or nil)
+    if not pct then
+        note("Text size", "Now " .. math.floor(UIFont.scale * 100 + 0.5) .. "% - use textsize 50-200", LIGHT)
+        return
+    end
+    local ok, msg = UIFont.setScale(pct / 100)
+    if ok and UIAPI.textScaleSlider then UIAPI.textScaleSlider.set(UIFont.scale) end
+    note("Text size", msg, ok and LIGHT or RED)
 end
 
 ------------------------------------------------------------------------
@@ -8554,7 +8622,7 @@ local function createUI()
         return b
     end
 
-    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 760), "SETTINGS")
+    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 816), "SETTINGS")
 
     fieldLabel(settingsFrame, "Chat command prefixes (comma separated, 1-3 symbols)", 45)
     local prefixBox = fieldBox(settingsFrame, 65, table.concat(Cfg.prefixes, ", "))
@@ -8699,6 +8767,26 @@ local function createUI()
                 note("Font", msg, ok and LIGHT or RED)
             end)
         end)
+
+    -- applied a moment after the slider stops, not on every step of a drag
+    local scaleToken = 0
+    local scaleSlider = uiSlider(settingsFrame, "Text size (every window)", UDim2.new(0, 15, 0, 712), 330, {
+        min = 0.5, max = 2, step = 0.05, value = UIFont.scale,
+        format = function(v) return math.floor(v * 100 + 0.5) .. "%" end,
+        onChange = function(v)
+            scaleToken = scaleToken + 1
+            local mine = scaleToken
+            task.delay(0.25, function()
+                if mine == scaleToken then UIFont.setScale(v) end
+            end)
+        end,
+    })
+    UIAPI.textScaleSlider = scaleSlider
+    actionButton(settingsFrame, "Reset text size", UDim2.new(0, 15, 0, 760), UDim2.new(1, -30, 0, 26)).MouseButton1Click:Connect(function()
+        scaleSlider.set(1)
+        local ok, msg = UIFont.setScale(1)
+        note("Text size", msg, ok and LIGHT or RED)
+    end)
 
     local killBtn = actionButton(settingsFrame, "KILL SCRIPT", UDim2.new(0, 15, 1, -45), UDim2.new(1, -30, 0, 32), Color3.fromRGB(130, 35, 35))
     killBtn.MouseButton1Click:Connect(function() shutdown(false) end)
