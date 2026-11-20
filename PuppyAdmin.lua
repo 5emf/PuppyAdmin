@@ -17073,6 +17073,15 @@ table.insert(cleanups, function()
     table.clear(charConns)
 end)
 
+-- Rainbow tags and animated auras run every frame, whether or not the tools
+-- system is on (they used to share the tools loop and froze while it was off).
+table.insert(conns, RunService.RenderStepped:Connect(function(dt)
+    if not genv.PuppyAdminActive then return end
+    local t = os.clock()
+    Aura.step(t, dt)
+    Tags.step(t)
+end))
+
 table.insert(conns, RunService.RenderStepped:Connect(function(dt)
     if not genv.PuppyAdminActive or not S.enabled then return end
     if not targetHRP or not targetHRP.Parent then targetHRP = hrp end
@@ -17103,8 +17112,6 @@ table.insert(conns, RunService.RenderStepped:Connect(function(dt)
         end
     end
 
-    Aura.step(time, dt)
-    Tags.step(time)
 
     if sethiddenproperty then
         pcall(function() sethiddenproperty(plr, "SimulationRadius", math.huge) end)
