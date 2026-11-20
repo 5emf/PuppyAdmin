@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-11" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-12" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -361,6 +361,7 @@ local Cfg = {
     uiFont = "Default", -- Settings > Font (UIFont.choices())
     uiTextScale = 1,    -- Settings > Text size (0.5 - 2)
     games = {},        -- mini game best scores: game id -> number
+    fpsCounter = { on = false }, -- Performance > FPS counter: on, x, y (pixels)
 }
 
 local function cfgSave()
@@ -7649,6 +7650,93 @@ table.insert(cleanups, function()
     end
 end)
 
+-- FPS counter (Performance > FPS counter): a small box that keeps measuring
+-- your frame rate. Drag it anywhere; the spot and on/off are saved.
+do
+    local Fps = {}
+    UIAPI.fps = Fps
+
+    local function cfg()
+        if type(Cfg.fpsCounter) ~= "table" then Cfg.fpsCounter = { on = false } end
+        return Cfg.fpsCounter
+    end
+
+    function Fps.hide()
+        if Fps.conn then Fps.conn:Disconnect(); Fps.conn = nil end
+        for _, c in ipairs(Fps.inputConns or {}) do c:Disconnect() end
+        Fps.inputConns = nil
+        if Fps.gui then Fps.gui:Destroy(); Fps.gui = nil end
+    end
+
+    function Fps.show()
+        if Fps.gui then return end
+        local c = cfg()
+        local g = Instance.new("ScreenGui")
+        g.Name = "PuppyAdminFPS"
+        g.ResetOnSpawn = false
+        g.IgnoreGuiInset = true
+        g.DisplayOrder = 999990
+        parentGui(g)
+        if not g.Parent then return end
+        Fps.gui = g
+        local box = make("TextButton", {
+            Size = UDim2.fromOffset(118, 26), Position = UDim2.fromOffset(tonumber(c.x) or 12, tonumber(c.y) or 60),
+            BackgroundColor3 = PAL.PANEL, BackgroundTransparency = 0.15, BorderSizePixel = 0, AutoButtonColor = false,
+            Text = "-- FPS", Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = PAL.TEXT,
+        }, g)
+        corner(box, 8)
+        stroke(box, PAL.STROKE, 1, 0)
+        pcall(Theme.attach, g)
+
+        -- drag to place; kept inside the screen and saved when you let go
+        local dragging, startPos, startMouse = false, nil, nil
+        box.InputBegan:Connect(function(input)
+            if isPointer(input) then dragging, startPos, startMouse = true, box.Position, input.Position end
+        end)
+        Fps.inputConns = {
+            UserInputService.InputChanged:Connect(function(input)
+                if not dragging then return end
+                if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+                local d = input.Position - startMouse
+                local vp = g.AbsoluteSize
+                local x = math.clamp(startPos.X.Offset + d.X, 0, math.max(0, vp.X - box.AbsoluteSize.X))
+                local y = math.clamp(startPos.Y.Offset + d.Y, 0, math.max(0, vp.Y - box.AbsoluteSize.Y))
+                box.Position = UDim2.fromOffset(x, y)
+            end),
+            UserInputService.InputEnded:Connect(function(input)
+                if dragging and isPointer(input) then
+                    dragging = false
+                    c.x, c.y = box.Position.X.Offset, box.Position.Y.Offset
+                    cfgSave()
+                end
+            end),
+        }
+
+        -- frames counted over half a second
+        local frames, t0 = 0, os.clock()
+        Fps.conn = RunService.RenderStepped:Connect(function()
+            frames = frames + 1
+            local now = os.clock()
+            local span = now - t0
+            if span >= 0.5 then
+                local fps = frames / span
+                box.Text = string.format("%d FPS  %d ms", math.floor(fps + 0.5), math.floor(1000 / math.max(fps, 1) + 0.5))
+                box.TextColor3 = fps >= 55 and Color3.fromRGB(120, 230, 140) or (fps >= 30 and Color3.fromRGB(255, 210, 110) or Color3.fromRGB(255, 110, 110))
+                frames, t0 = 0, now
+            end
+        end)
+    end
+
+    function Fps.set(on)
+        cfg().on = on and true or false
+        cfgSave()
+        if on then Fps.show() else Fps.hide() end
+    end
+    function Fps.isOn() return cfg().on == true end
+
+    table.insert(cleanups, Fps.hide)
+end
+
 local function buildPerformancePanel(screenGui)
     local W, HGT = 340, 560
     local f = uiWindow(screenGui, "performance", "Performance", UDim2.fromOffset(W, HGT), UDim2.new(0, 380, 0.5, -HGT / 2))
@@ -7667,9 +7755,9 @@ local function buildPerformancePanel(screenGui)
         function(on) fpsSwitch("_pup_applyUnlockFps", on) end)
     switch("Low FPS when tabbed out (24)", function() return Pup.pupL ~= nil and Pup.pupL.bgFpsCapEnabled == true end,
         function(on) fpsSwitch("_pup_applyBgFpsCap", on) end)
+    switch("FPS counter (drag it where you want it)", function() return UIAPI.fps.isOn() end, function(on) UIAPI.fps.set(on) end)
     local y = add(38)
-    uiButton(body, "Show FPS", UDim2.fromOffset(half, 30), UDim2.fromOffset(12, y), function() Pup.run("fps", {}) end)
-    uiButton(body, "Timing report", UDim2.fromOffset(half, 30), UDim2.fromOffset(12 + half + 8, y), function() H.perf() end)
+    uiButton(body, "Timing report", UDim2.fromOffset(IW, 30), UDim2.fromOffset(12, y), function() H.perf() end)
 
     sectionTitle(body, add, "Quick boost")
     switch("Anti-lag (lower graphics)", function() return Pup.active.antilag == true end, function(on)
@@ -9533,6 +9621,7 @@ if not Cfg.skipIntro then showBrandIntro() end
 do
     local uiStart = os.clock()
     createUI()
+    if UIAPI.fps and UIAPI.fps.isOn() then pcall(UIAPI.fps.show) end
     Perf.since("Main UI (terminal, help, settings, panel registry)", uiStart)
 end
 Watch.start()
