@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-21" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-22" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -9065,18 +9065,28 @@ function UIAPI.buildGameBoyPanel(screenGui)
             snd.TimePosition = 0
         end
     end
-    -- every tone, silent or not, so none of them runs out while unused
+    -- every tone, silent or not, so none of them runs out while unused (twice a second is plenty for 8 s files)
+    local lastSweep = 0
     local function keepAllPlaying()
         if not SND.ready then return end
+        local now = os.clock()
+        if now - lastSweep < 0.5 then return end
+        lastSweep = now
         for _, set in ipairs(SND.sounds) do
             for _, snd in pairs(set) do keepPlaying(snd) end
         end
+    end
+    -- Roblox property writes are costly: only write what changed
+    local lastVol, lastSpeed = {}, {}
+    local function setTone(snd, vol, speed)
+        if lastVol[snd] ~= vol then snd.Volume = vol; lastVol[snd] = vol end
+        if speed and lastSpeed[snd] ~= speed then snd.PlaybackSpeed = speed; lastSpeed[snd] = speed end
     end
 
     local function muteSound()
         if not SND.ready then return end
         for _, set in ipairs(SND.sounds) do
-            for _, snd in pairs(set) do if snd.Volume ~= 0 then snd.Volume = 0 end end
+            for _, snd in pairs(set) do setTone(snd, 0) end
         end
     end
     local function updateSound(a)
@@ -9087,15 +9097,16 @@ function UIAPI.buildGameBoyPanel(screenGui)
             local key, speed
             if a.power and c.on and level > 0 then key, speed = soundKey(n, c) end
             for name, snd in pairs(SND.sounds[n]) do
-                keepPlaying(snd)
                 if name == key then
-                    snd.PlaybackSpeed = speed
-                    snd.Volume = c.vol * a.master * level * CHANNEL_GAIN
-                elseif snd.Volume ~= 0 then
-                    snd.Volume = 0
+                    keepPlaying(snd)
+                    -- small steps are inaudible; rounding saves property writes
+                    setTone(snd, math.floor(c.vol * a.master * level * CHANNEL_GAIN * 100 + 0.5) / 100, math.floor(speed * 1000 + 0.5) / 1000)
+                else
+                    setTone(snd, 0)
                 end
             end
         end
+        keepAllPlaying()
     end
     local volDd = uiDropdown(f, "", UDim2.fromOffset(108, 22), UDim2.fromOffset(W - 16 - 108, 335), VOLUME_LABELS,
         table.find(VOLUMES, Cfg.gbVolume) or 1, function(i)
@@ -9107,9 +9118,8 @@ function UIAPI.buildGameBoyPanel(screenGui)
                 local beep = SND.sounds[1] and SND.sounds[1].sq2_lo
                 if not beep then return end
                 keepPlaying(beep)
-                beep.PlaybackSpeed = 4 -- 441 Hz
-                beep.Volume = Cfg.gbVolume * CHANNEL_GAIN
-                task.delay(0.35, function() if not running then beep.Volume = 0 end end)
+                setTone(beep, Cfg.gbVolume * CHANNEL_GAIN, 4) -- 441 Hz
+                task.delay(0.35, function() if not running then setTone(beep, 0) end end)
                 note("Game Boy", "Sound test beep (" .. tostring(SND.format) .. " tones)", LIGHT)
             end)
         end)
