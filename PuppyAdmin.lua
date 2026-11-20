@@ -1374,7 +1374,7 @@ end)
 -- A player belongs to at most one tag. Billboards live in the script's GUI
 -- container (not under the head) so they can be clicked: clicking someone
 -- else's tag teleports you to them (Cfg.tagClickTp).
-local Tags = { gui = {}, rainbow = {}, byUser = {}, assets = {}, pending = {}, ui = { current = nil } }  -- ui.current: tag open in the panels
+local Tags = { gui = {}, rainbow = {}, watch = {}, byUser = {}, assets = {}, pending = {}, ui = { current = nil } }  -- ui.current: tag open in the panels
 
 local TAG_DEFAULTS = {
     text = "", sub = "", color = { 255, 255, 255 }, rainbow = false, size = 22, offset = 3, font = "GothamBold",
@@ -1454,6 +1454,8 @@ function Tags.destroy(userId)
     if g then pcall(function() g:Destroy() end) end
     Tags.gui[userId] = nil
     Tags.rainbow[userId] = nil
+    for _, c in ipairs(Tags.watch[userId] or {}) do pcall(function() c:Disconnect() end) end
+    Tags.watch[userId] = nil
 end
 
 -- Image sources are resolved once per session (URLs download), then cached.
@@ -1505,6 +1507,8 @@ function Tags.build(player, char)
     if not def or not char then return end
     local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
     if not head then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health <= 0 then return end
 
     local okFont, font = pcall(function() return Enum.Font[def.font or "GothamBold"] end)
     if not okFont or not font then font = Enum.Font.GothamBold end
@@ -1603,6 +1607,16 @@ function Tags.build(player, char)
     parentGui(g)
     Tags.gui[player.UserId] = g
     if def.rainbow then Tags.rainbow[player.UserId] = { main, sub } end
+
+    -- the tag goes with the player: gone on death, or once the body leaves the
+    -- world; the respawned character gets a fresh one from Watch
+    local uid = player.UserId
+    local watch = {}
+    if hum then table.insert(watch, hum.Died:Connect(function() if Tags.gui[uid] == g then Tags.destroy(uid) end end)) end
+    table.insert(watch, head.AncestryChanged:Connect(function()
+        if Tags.gui[uid] == g and not head:IsDescendantOf(workspace) then Tags.destroy(uid) end
+    end))
+    Tags.watch[uid] = watch
 end
 
 function Tags.refresh(userId)
@@ -16382,27 +16396,38 @@ table.insert(conns, UserInputService.InputBegan:Connect(function(input, processe
     end
 end))
 
-table.insert(conns, chr.ChildAdded:Connect(function(c)
-    if c:IsA("Tool") then
-        task.wait()
-        setupTool(c)
-    end
-end))
-
-for _, v in ipairs(chr:GetChildren()) do
-    if v:IsA("Tool") then setupTool(v) end
-end
-
 local function isGrip(obj)
     return obj.Name == "RightGrip" and obj:IsA("JointInstance")
 end
 
-for _, obj in ipairs(chr:GetDescendants()) do
-    if isGrip(obj) then obj:Destroy() end
+-- Tool and hand-grip hooks for the current body; re-run after every respawn.
+local charConns = {}
+local function hookCharacter(c, async)
+    for _, cn in ipairs(charConns) do pcall(function() cn:Disconnect() end) end
+    table.clear(charConns)
+    table.insert(charConns, c.ChildAdded:Connect(function(t)
+        if t:IsA("Tool") then
+            task.wait()
+            setupTool(t)
+        end
+    end))
+    for _, v in ipairs(c:GetChildren()) do
+        if v:IsA("Tool") then
+            if async then task.spawn(setupTool, v) else setupTool(v) end
+        end
+    end
+    for _, obj in ipairs(c:GetDescendants()) do
+        if isGrip(obj) then obj:Destroy() end
+    end
+    table.insert(charConns, c.DescendantAdded:Connect(function(obj)
+        if isGrip(obj) then obj:Destroy() end
+    end))
 end
-table.insert(conns, chr.DescendantAdded:Connect(function(obj)
-    if isGrip(obj) then obj:Destroy() end
-end))
+hookCharacter(chr, false)
+table.insert(cleanups, function()
+    for _, cn in ipairs(charConns) do pcall(function() cn:Disconnect() end) end
+    table.clear(charConns)
+end)
 
 table.insert(conns, RunService.RenderStepped:Connect(function(dt)
     if not genv.PuppyAdminActive then return end
@@ -16507,13 +16532,25 @@ task.spawn(function()
     end
 end)
 
+-- Respawn: the script keeps running and moves to the new body (orbit tools,
+-- orbit target, tool hooks). Reanimation swaps Character to its clone and back
+-- on purpose; those swaps are not respawns and are left alone.
 table.insert(conns, plr.CharacterAdded:Connect(function(newChar)
-    -- reanimation swaps your Character to its clone and back on purpose; only a
-    -- real respawn (a new model that is not the clone) ends the script
     if newChar == chr or Reanim.isClone(newChar) then return end
     task.wait(0.5) -- the engine can register the clone just after the swap
-    if Reanim.isClone(newChar) or plr.Character ~= newChar or genv.PuppyAdminActive ~= true then return end
-    shutdown(false)
+    if newChar == chr or Reanim.isClone(newChar) or plr.Character ~= newChar or genv.PuppyAdminActive ~= true then return end
+    local newRoot = newChar:WaitForChild("HumanoidRootPart", 10)
+    if not newRoot or plr.Character ~= newChar or genv.PuppyAdminActive ~= true then return end
+    local followedSelf = targetHRP == hrp or not targetHRP or not targetHRP.Parent
+    for i = #slots, 1, -1 do destroySlotObjects(slots[i]) end
+    table.clear(slots)
+    table.clear(pendingTools)
+    chr, hrp = newChar, newRoot
+    bp = plr:FindFirstChildOfClass("Backpack") or plr:WaitForChild("Backpack", 5) or bp
+    if followedSelf then targetHRP = hrp end
+    lastHRPPos, hrpVel = hrp.Position, Vector3.zero
+    hookCharacter(chr, true)
+    if UIAPI.sync then UIAPI.sync() end
 end))
 
 sendFlatNotification("System", "Puppy Admin ready - " .. firstPrefix() .. "help in chat", LIGHT)
