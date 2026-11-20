@@ -12209,7 +12209,7 @@ local LEGACY_DATA_DIR = "Novoline" -- folder name only, kept so old data is foun
 local function migrateLegacyData()
     if not (isfolder and isfile and listfiles and readfile and writefile and makefolder) then return end
     if not pcall(isfolder, LEGACY_DATA_DIR) or not isfolder(LEGACY_DATA_DIR) then return end
-    if isfile("PuppyAdmin/.legacy_copied") then return end
+    -- runs every start: files added to the old folder later are copied too
     local copied = 0
     local function copyTree(from, to, depth)
         if depth > 6 then return end
@@ -12230,7 +12230,6 @@ local function migrateLegacyData()
         end
     end
     copyTree(LEGACY_DATA_DIR, "PuppyAdmin", 0)
-    pcall(writefile, "PuppyAdmin/.legacy_copied", tostring(copied))
     if copied > 0 then note("Puppy Admin", "Moved " .. copied .. " saved files (animations, recordings, binds) into PuppyAdmin/", LIGHT) end
 end
 
@@ -12469,6 +12468,48 @@ local function importLink(url)
         if rs.localAnimCache then rs.localAnimCache[path] = nil end
     end
     return true, base, path
+end
+
+-- Your animations from files ---------------------------------------------------
+-- The engine reads PuppyAdmin/custom once at start, only its top level (plus
+-- Recorded) and only lower-case .lua/.txt/.json. This re-runs that scan and
+-- then adds anything it missed: files in any subfolder, any letter case.
+Novo.legacyCopy = migrateLegacyData
+function Novo.reloadCustom()
+    pcall(migrateLegacyData)
+    local nvL = Novo.nvL
+    if type(nvL) == "table" and type(nvL.reloadCustom) == "function" then pcall(nvL.reloadCustom) end
+    local rs = _G._nv_reanimState
+    if type(rs) ~= "table" or type(rs.customItems) ~= "table" or type(rs.reanimAddItem) ~= "function" then return 0 end
+    if not (listfiles and isfolder) then return #rs.customItems end
+    local have = {}
+    for _, it in ipairs(rs.customItems) do
+        if type(it.url) == "string" then have[it.url:gsub("\\", "/"):lower()] = true end
+    end
+    local added = 0
+    local function scan(dir, depth, category)
+        if depth > 4 then return end
+        local ok, items = pcall(listfiles, dir)
+        if not ok or type(items) ~= "table" then return end
+        for _, path in ipairs(items) do
+            path = tostring(path)
+            local norm = path:gsub("\\", "/")
+            local leaf = norm:match("([^/]+)$") or norm
+            local okF, isDir = pcall(isfolder, norm)
+            if okF and isDir then
+                scan(norm, depth + 1, category or leaf)
+            else
+                local ext = (leaf:match("%.(%w+)$") or ""):lower()
+                if (ext == "lua" or ext == "txt" or ext == "json") and not have[norm:lower()] then
+                    have[norm:lower()] = true
+                    pcall(rs.reanimAddItem, (leaf:gsub("%.[^%.]+$", "")), norm, rs.customItems, category)
+                    added = added + 1
+                end
+            end
+        end
+    end
+    scan("PuppyAdmin/custom", 0, nil)
+    return #rs.customItems, added
 end
 
 -- Recordings: the engine keeps a finished "Record motion" take only in its
@@ -15520,7 +15561,14 @@ local function buildReanimPanel(screenGui)
         local page = pages.Library
         local source = 1
         local SOURCES = { { "customItems", "Your animations" }, { "favsItems", "Favorites" } }
-        local search = uiBox(page, UDim2.fromOffset(16, 0), UDim2.fromOffset(IW - 120, 28), "Search")
+        local search = uiBox(page, UDim2.fromOffset(16, 0), UDim2.fromOffset(IW - 188, 28), "Search")
+        uiButton(page, "Reload files", UDim2.fromOffset(64, 28), UDim2.fromOffset(16 + IW - 180, 0), function()
+            task.spawn(function()
+                local total, added = Novo.reloadCustom()
+                note("Reanim", tostring(total or 0) .. " animations in PuppyAdmin/custom" .. ((added or 0) > 0 and (" (" .. added .. " from subfolders)") or ""), LIGHT)
+                if refreshLibrary then refreshLibrary(true) end
+            end)
+        end).TextSize = 10
         local srcBtn
         srcBtn = uiButton(page, SOURCES[1][2], UDim2.fromOffset(112, 28), UDim2.fromOffset(16 + IW - 112, 0), function()
             source = source % #SOURCES + 1
@@ -15783,7 +15831,7 @@ local function buildReanimPanel(screenGui)
             end
             if shown == 0 then
                 label(list, { Size = UDim2.new(1, -6, 0, 40), TextWrapped = true, TextSize = 12, LayoutOrder = 1, TextColor3 = PAL.DIM,
-                    Text = (#items == 0 and (source == 1 and "No animations yet. Import one above with a Roblox animation or emote ID, or a keyframe link."
+                    Text = (#items == 0 and (source == 1 and "No animations yet. Import an ID or link above, or put .lua / .txt / .json keyframe files in your executor's workspace/PuppyAdmin/custom and press Reload files."
                         or "No favourites yet. Right-click one of your animations > Add to favorites.") or "Nothing matches") })
             end
             hint.Text = (shown > MAX_ROWS and ("Showing the first " .. MAX_ROWS .. " - search to narrow.  ") or "")
@@ -15911,6 +15959,8 @@ local function buildReanimPanel(screenGui)
             Novo.ensure()
             if typeof(_G._reanimPanel) == "Instance" then _G._reanimPanel.Visible = false end
             novoLoadApi()
+            pcall(Novo.reloadCustom)
+            if refreshLibrary then pcall(refreshLibrary, true) end
             while f.Visible and genv.PuppyAdminActive do
                 pcall(sync)
                 task.wait(0.5)
