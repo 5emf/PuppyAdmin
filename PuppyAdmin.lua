@@ -46,6 +46,10 @@ local SETTINGS = {
         tokenFile = "PuppyAdmin/tagsync_token.txt", -- only on the machine that may write
         pollSeconds = 20, pushDelay = 4,
     },
+    -- Who is running the script (for the default tag). url: your deployed
+    -- presence worker (presence/ in the repository), e.g.
+    -- "https://puppyadmin-presence.<you>.workers.dev". Empty = only you see your own default tag.
+    Presence = { url = "", beatSeconds = 20 },
 }
 
 local S = {
@@ -1374,6 +1378,7 @@ end)
 -- A player belongs to at most one tag. Billboards live in the script's GUI
 -- container (not under the head) so they can be clicked: clicking someone
 -- else's tag teleports you to them (Cfg.tagClickTp).
+local Presence -- who else is running the script in this server (set up after TagSync)
 local Tags = { gui = {}, rainbow = {}, watch = {}, byUser = {}, assets = {}, pending = {}, ui = { current = nil } }  -- ui.current: tag open in the panels
 
 local TAG_DEFAULTS = {
@@ -1407,8 +1412,50 @@ end
 function Tags.reindex()
     Tags.byUser = {}
     for _, def in ipairs(Cfg.tagDefs) do
-        for _, uid in ipairs(def.members) do Tags.byUser[tostring(uid)] = def end
+        if not def.isDefault then
+            for _, uid in ipairs(def.members) do Tags.byUser[tostring(uid)] = def end
+        end
     end
+end
+
+-- The default tag: worn by anyone running the script right now who has no
+-- custom tag (see Presence). Editable like any tag; it is stored in tagDefs
+-- with isDefault = true (members are ignored) and synced with the rest.
+local BUILTIN_DEFAULT = {
+    isDefault = true, name = "Default", text = "Puppy Admin", sub = "", color = { 255, 170, 220 }, size = 18, offset = 3,
+    font = "GothamBold", rainbow = false,
+    backdrop = { on = true, color = { 18, 18, 22 }, transparency = 0.35, image = "", imageTransparency = 0.15, round = true },
+    pfp = { mode = "avatar", image = "", round = true },
+    members = {},
+}
+
+Tags.builtinDefault = Tags.normalize(HttpService:JSONDecode(HttpService:JSONEncode(BUILTIN_DEFAULT)))
+
+function Tags.defaultDef()
+    for _, def in ipairs(Cfg.tagDefs) do
+        if def.isDefault then return def end
+    end
+    return nil
+end
+
+-- Creates the editable default tag from the built-in look the first time it is edited.
+function Tags.ensureDefault()
+    local def = Tags.defaultDef()
+    if def then return def end
+    def = Tags.normalize(HttpService:JSONDecode(HttpService:JSONEncode(BUILTIN_DEFAULT)))
+    table.insert(Cfg.tagDefs, def)
+    return def
+end
+
+-- Custom tag first; otherwise the default tag, but only while that player is
+-- running the script (they stop showing it when they kill it).
+function Tags.defFor(player)
+    local custom = Tags.byUser[tostring(player.UserId)]
+    if custom then return custom end
+    if Presence and Presence.isActive(player.UserId) then
+        return Tags.defaultDef() or Tags.builtinDefault
+    end
+    return nil
 end
 
 function Tags.findDef(name)
@@ -1503,7 +1550,7 @@ end
 -- with TextService so the backdrop, its image and the click area fit exactly.
 function Tags.build(player, char)
     Tags.destroy(player.UserId)
-    local def = Tags.byUser[tostring(player.UserId)]
+    local def = Tags.defFor(player)
     if not def or not char then return end
     local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
     if not head then return end
@@ -1666,11 +1713,13 @@ function Tags.deleteDef(def)
     if not idx then return end
     table.remove(Cfg.tagDefs, idx)
     Tags.save()
+    if def.isDefault then Tags.refreshAll() return end -- back to the built-in default look
     for _, uid in ipairs(def.members) do Tags.refresh(uid) end
 end
 
 -- uids: UserIds (numbers or strings). Someone already in another tag moves here.
 function Tags.addMembers(def, uids)
+    if def.isDefault then return 0 end -- the default tag follows the script users, not a list
     local added = 0
     for _, uid in ipairs(uids) do
         local key = tostring(uid)
@@ -1812,6 +1861,8 @@ do
         return res
     end
 
+    TagSync.request = httpRequest
+
     local function apiUrl()
         return "https://api.github.com/repos/" .. CFG.owner .. "/" .. CFG.repo .. "/contents/" .. CFG.path
     end
@@ -1862,10 +1913,12 @@ do
     -- values get through; anything else is dropped.
     function TagSync.sanitize(list)
         if type(list) ~= "table" then return nil end
-        local out = {}
+        local out, haveDefault = {}, false
         for i = 1, math.min(#list, 200) do
             local d = list[i]
-            if type(d) == "table" and type(d.name) == "string" then
+            local isDefault = type(d) == "table" and d.isDefault == true and not haveDefault
+            if isDefault then haveDefault = true end
+            if type(d) == "table" and type(d.name) == "string" and (d.isDefault ~= true or isDefault) then
                 local bd = type(d.backdrop) == "table" and d.backdrop or {}
                 local pf = type(d.pfp) == "table" and d.pfp or {}
                 local members = {}
@@ -1876,6 +1929,7 @@ do
                     end
                 end
                 out[#out + 1] = Tags.normalize({
+                    isDefault = isDefault or nil,
                     name = clampStr(d.name, 30), text = clampStr(d.text, 40) or "", sub = clampStr(d.sub, 40) or "",
                     color = rgb(d.color, { 255, 255, 255 }), rainbow = d.rainbow == true,
                     size = clampNum(d.size, 8, 48, 22), offset = clampNum(d.offset, 0, 12, 3),
@@ -2034,6 +2088,95 @@ end
 
 Tags.onChange = TagSync.changed
 TagSync.start()
+
+------------------------------------------------------------------------
+-- Presence: who in this server is running the script right now, for the
+-- default tag. Every copy checks in with SETTINGS.Presence.url every
+-- beatSeconds and gets back the other script users in the same server
+-- (game.JobId); the server forgets anyone who has not checked in for a
+-- minute, and `kill` / `stop` sign out at once. Nothing a client does is
+-- visible to other clients by itself, so this needs that small server.
+------------------------------------------------------------------------
+
+Presence = { online = {}, running = true, status = "off" }
+
+do
+    local CFG = SETTINGS.Presence
+
+    function Presence.isActive(uid)
+        uid = tonumber(uid)
+        if uid == plr.UserId then return Presence.running end
+        return Presence.online[uid] == true
+    end
+
+    local function endpoint()
+        local url = tostring(CFG.url or ""):gsub("%s", ""):gsub("/+$", "")
+        if not url:match("^https://") then return nil end
+        return url .. "/beat"
+    end
+
+    -- active = false signs out. Returns the list of other online UserIds, or nil and a reason.
+    local function beat(active)
+        local url = endpoint()
+        if not url then return nil, "no presence server set" end
+        local res, err = TagSync.request({
+            Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode({
+                jobId = game.JobId ~= "" and game.JobId or ("studio-" .. tostring(game.PlaceId)),
+                userId = plr.UserId, active = active,
+            }),
+        })
+        if not res then return nil, err end
+        if tonumber(res.StatusCode) ~= 200 then return nil, "server said " .. tostring(res.StatusCode) end
+        local ok, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
+        if not ok or type(data) ~= "table" or type(data.online) ~= "table" then return nil, "unexpected reply" end
+        return data.online
+    end
+
+    local function update(list)
+        local now = {}
+        for i = 1, math.min(#list, 200) do
+            local id = tonumber(list[i])
+            if id and id > 0 and id ~= plr.UserId then now[id] = true end
+        end
+        local old = Presence.online
+        Presence.online = now
+        local changed = {}
+        for id in pairs(old) do if not now[id] then changed[id] = true end end
+        for id in pairs(now) do if not old[id] then changed[id] = true end end
+        for id in pairs(changed) do
+            if not Tags.byUser[tostring(id)] then Tags.refresh(id) end -- custom tags never depend on presence
+        end
+        if next(changed) and UIAPI.syncFns.taglist then pcall(UIAPI.syncFns.taglist) end
+    end
+
+    function Presence.start()
+        if not endpoint() then Presence.status = "off (SETTINGS.Presence.url is empty)"; return end
+        task.spawn(function()
+            while genv.PuppyAdminActive == true and Presence.running do
+                local list, err = beat(true)
+                if list then
+                    update(list)
+                    local n = 0
+                    for _ in pairs(Presence.online) do n = n + 1 end
+                    Presence.status = "online - " .. n .. " other script user" .. (n == 1 and "" or "s") .. " here"
+                else
+                    Presence.status = "check-in failed: " .. tostring(err)
+                end
+                task.wait(CFG.beatSeconds)
+            end
+        end)
+    end
+
+    -- kill / stop: hide your default tag for everyone right away (custom tags stay)
+    table.insert(cleanups, function()
+        Presence.running = false
+        Presence.online = {}
+        if endpoint() then pcall(beat, false) end
+    end)
+end
+
+Presence.start()
 
 
 ------------------------------------------------------------------------
@@ -14294,6 +14437,7 @@ function H.tagsync(a)
     else
         local c = SETTINGS.TagSync
         note("Tag sync", (TagSync.token() and "read + write" or "read only") .. " - " .. c.owner .. "/" .. c.repo .. ":" .. c.path .. " - " .. tostring(TagSync.status))
+        note("Presence", tostring(Presence.status))
     end
 end
 
@@ -14313,13 +14457,16 @@ function H.taglist(a)
     if not canEditTags() then note("Tags", "Not authorized to edit nametags", RED); return end
     local sub = a[1] and a[1]:lower()
     if not sub then
-        local lines = {}
+        local dflt = Tags.defaultDef() or Tags.builtinDefault
+        local lines = { "Default  \"" .. (dflt.text or "") .. "\"  -  everyone running the script without a custom tag" }
         for _, def in ipairs(Cfg.tagDefs) do
-            local names = {}
-            for _, uid in ipairs(def.members) do table.insert(names, Tags.memberName(uid)) end
-            table.insert(lines, def.name .. "  \"" .. (def.text or "") .. "\"  -  " .. (#names > 0 and table.concat(names, ", ") or "no members"))
+            if not def.isDefault then
+                local names = {}
+                for _, uid in ipairs(def.members) do table.insert(names, Tags.memberName(uid)) end
+                table.insert(lines, def.name .. "  \"" .. (def.text or "") .. "\"  -  " .. (#names > 0 and table.concat(names, ", ") or "no members"))
+            end
         end
-        if #lines == 0 then lines[1] = "No tags yet - taglist new <name>, or use the panel" end
+        if #lines == 1 then lines[2] = "No custom tags yet - taglist new <name>, or use the panel" end
         UIAPI.showOutput("TAGS", lines)
         local p = UIAPI.panels.taglist
         if p then p.Visible = true; if UIAPI.syncFns.taglist then UIAPI.syncFns.taglist() end end
@@ -15514,7 +15661,8 @@ local function buildTagPanel(screenGui)
     local function load(def)
         Tags.ui.current = def
         local d = def or Tags.normalize({ name = "" })
-        tagLbl.Text = def and ("Tag: " .. def.name .. "  (" .. #def.members .. " members)") or "Tag: new (Save creates it)"
+        tagLbl.Text = (def and def.isDefault and "Default tag: script users without a custom tag")
+            or (def and ("Tag: " .. def.name .. "  (" .. #def.members .. " members)")) or "Tag: new (Save creates it)"
         nameBox.Text = def and def.name or ""
         textBox.Text = d.text or ""
         subBox.Text = d.sub or ""
@@ -15551,10 +15699,14 @@ local function buildTagPanel(screenGui)
         if mode == "custom" and pfpImageBox.Text:match("^%s*$") then note("Tags", "Enter a custom picture or pick another mode", RED); return end
         local def = Tags.ui.current
         local wanted = nameBox.Text:match("^%s*(.-)%s*$"):sub(1, 30)
-        if wanted == "" then wanted = text end
-        local clash = Tags.findDef(wanted)
-        if clash and clash ~= def then note("Tags", "Another tag is already called '" .. wanted .. "'", RED); return end
-        if not def then def = Tags.newDef(wanted) end
+        if def and def.isDefault then
+            def, wanted = Tags.ensureDefault(), "Default"
+        else
+            if wanted == "" then wanted = text end
+            local clash = Tags.findDef(wanted)
+            if clash and clash ~= def then note("Tags", "Another tag is already called '" .. wanted .. "'", RED); return end
+            if not def then def = Tags.newDef(wanted) end
+        end
         def.name, def.text, def.sub = wanted, text, subBox.Text:sub(1, 40)
         def.color, def.rainbow, def.size, def.offset, def.font = color, rainbowSw.get(), sizeSl.get(), offSl.get(), TAG_FONTS[fontIdx]
         def.backdrop = {
@@ -15563,10 +15715,10 @@ local function buildTagPanel(screenGui)
         }
         def.pfp = { mode = mode, image = pfpImageBox.Text:match("^%s*(.-)%s*$"), round = pfpRoundSw.get() }
         Tags.save()
-        for _, uid in ipairs(def.members) do Tags.refresh(uid) end
+        if def.isDefault then Tags.refreshAll() else for _, uid in ipairs(def.members) do Tags.refresh(uid) end end
         load(def)
         if UIAPI.syncFns.taglist then UIAPI.syncFns.taglist() end
-        note("Tags", "Saved '" .. def.name .. "'" .. (#def.members == 0 and " - add players in taglist" or ""), LIGHT)
+        note("Tags", "Saved '" .. def.name .. "'" .. ((not def.isDefault and #def.members == 0) and " - add players in taglist" or ""), LIGHT)
     end)
     uiButton(body, "Members...", UDim2.fromOffset((IW - 8) / 2, 32), UDim2.fromOffset(12 + (IW + 8) / 2, y), function()
         if UIAPI.tagListSelect then UIAPI.tagListSelect(Tags.ui.current) end
@@ -15582,13 +15734,14 @@ local function buildTagPanel(screenGui)
         Tags.deleteDef(def)
         load(nil)
         if UIAPI.syncFns.taglist then UIAPI.syncFns.taglist() end
-        note("Tags", "Deleted '" .. def.name .. "'")
+        note("Tags", def.isDefault and "Default tag reset to the built-in look" or ("Deleted '" .. def.name .. "'"))
     end, true)
 
     f:GetPropertyChangedSignal("Visible"):Connect(function()
         if f.Visible then
             if not canEditTags() then f.Visible = false; return end
-            if Tags.ui.current and not table.find(Cfg.tagDefs, Tags.ui.current) then load(nil) end
+            local cur = Tags.ui.current
+            if cur and cur ~= Tags.builtinDefault and not table.find(Cfg.tagDefs, cur) then load(nil) end
         end
     end)
     load(nil)
@@ -15654,18 +15807,32 @@ local function buildTagListPanel(screenGui)
 
     refresh = function()
         local cur = Tags.ui.current
-        if cur and not table.find(Cfg.tagDefs, cur) then cur = nil; Tags.ui.current = nil end
+        if cur and cur ~= Tags.builtinDefault and not table.find(Cfg.tagDefs, cur) then cur = nil; Tags.ui.current = nil end
         clear(tagsList)
-        if #Cfg.tagDefs == 0 then
-            row(tagsList, "No tags yet - press New tag", 1, false, nil)
-        end
+        local dflt = Tags.defaultDef() or Tags.builtinDefault
+        row(tagsList, "* Default tag   \"" .. (dflt.text or "") .. "\"   script users without a custom tag", 0, cur == dflt,
+            function() select(dflt) end)
+        local custom = 0
         for i, def in ipairs(Cfg.tagDefs) do
-            row(tagsList, def.name .. "   \"" .. (def.text or "") .. "\"   " .. #def.members .. " member" .. (#def.members == 1 and "" or "s"),
-                i, def == cur, function() select(def) end)
+            if not def.isDefault then
+                custom = custom + 1
+                row(tagsList, def.name .. "   \"" .. (def.text or "") .. "\"   " .. #def.members .. " member" .. (#def.members == 1 and "" or "s"),
+                    i, def == cur, function() select(def) end)
+            end
         end
+        if custom == 0 then row(tagsList, "No custom tags yet - press New tag", 1000, false, nil) end
         clear(memberList)
         selLbl.Text = cur and ("Members of '" .. cur.name .. "'") or "Members (pick a tag above)"
-        if cur then
+        if cur and cur.isDefault then
+            local n = 0
+            for _, p in ipairs(Players:GetPlayers()) do
+                if not Tags.byUser[tostring(p.UserId)] and Presence and Presence.isActive(p.UserId) then
+                    n = n + 1
+                    row(memberList, Tags.memberName(p.UserId) .. "   (running the script)", n, false, nil)
+                end
+            end
+            if n == 0 then row(memberList, "Shown on script users here without a custom tag", 1, false, nil) end
+        elseif cur then
             if #cur.members == 0 then row(memberList, "Nobody yet - add players below", 1, false, nil) end
             for i, uid in ipairs(cur.members) do
                 row(memberList, Tags.memberName(uid), i, false, nil, {
@@ -15692,6 +15859,7 @@ local function buildTagListPanel(screenGui)
     local function addTo(uids, missing)
         local cur = Tags.ui.current
         if not cur then note("Tags", "Pick a tag first", RED); return end
+        if cur.isDefault then note("Tags", "The default tag goes on script users by itself - pick a custom tag", RED); return end
         if #uids == 0 then note("Tags", "Nobody to add" .. (#missing > 0 and (": not found " .. table.concat(missing, ", ")) or ""), RED); return end
         local n = Tags.addMembers(cur, uids)
         note("Tags", "Added " .. n .. " to '" .. cur.name .. "'" .. (#missing > 0 and ("; not found: " .. table.concat(missing, ", ")) or ""), LIGHT)
@@ -15734,7 +15902,7 @@ local function buildTagListPanel(screenGui)
         Tags.deleteDef(cur)
         Tags.ui.current = nil
         refresh()
-        note("Tags", "Deleted '" .. cur.name .. "'")
+        note("Tags", cur.isDefault and "Default tag reset to the built-in look" or ("Deleted '" .. cur.name .. "'"))
     end, true)
 
     UIAPI.syncFns.taglist = function() if f.Visible then refresh() end end
