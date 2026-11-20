@@ -1522,11 +1522,16 @@ function Tags.build(player, char)
         pfpTex = Tags.asset(pf.image, rebuild)
     end
 
-    local textH = size + (subText ~= "" and (subSize + 2) or 0)
-    local textW = math.max(textWidth(text, size, font), textWidth(subText, subSize, font))
+    -- Text boxes get a full line height (glyphs are taller than TextSize) and
+    -- spare width: a billboard drops what does not fit inside its bounds, and
+    -- labels sized exactly to the text were the part that vanished at range.
+    local lineMain = math.ceil(size * 1.35)
+    local lineSub = subText ~= "" and math.ceil(subSize * 1.35) or 0
+    local textH = lineMain + lineSub
+    local textW = math.ceil(math.max(textWidth(text, size, font), textWidth(subText, subSize, font))) + 10
     local pic = pfpTex and math.floor(math.max(textH, size * 1.5)) or 0
     local gap = (pfpTex and textW > 0) and 8 or 0
-    local padX, padY = bd.on and 12 or 2, bd.on and 6 or 2
+    local padX, padY = bd.on and 12 or 4, bd.on and 6 or 4
     local cardW = math.ceil(padX * 2 + pic + gap + textW)
     local cardH = math.ceil(padY * 2 + math.max(textH, pic))
 
@@ -1535,9 +1540,10 @@ function Tags.build(player, char)
         Size = UDim2.fromOffset(cardW, cardH), StudsOffset = Vector3.new(0, tonumber(def.offset) or 3, 0),
         MaxDistance = 250, LightInfluence = 0, ResetOnSpawn = false,
     }, nil)
+    pcall(function() g.ClipsDescendants = false end)
 
     local card = make("Frame", {
-        Name = "Card", Size = UDim2.fromScale(1, 1), BorderSizePixel = 0,
+        Name = "Card", Size = UDim2.fromScale(1, 1), BorderSizePixel = 0, ClipsDescendants = false,
         BackgroundColor3 = tagColor(bd.color), BackgroundTransparency = bd.on and math.clamp(tonumber(bd.transparency) or 0.35, 0, 1) or 1,
     }, g)
     if bd.on then
@@ -1564,12 +1570,13 @@ function Tags.build(player, char)
     local textY = math.floor((cardH - textH) / 2)
     local align = pfpTex and Enum.TextXAlignment.Left or Enum.TextXAlignment.Center
     local main = make("TextLabel", {
-        Position = UDim2.fromOffset(textX, textY), Size = UDim2.fromOffset(textW, size), BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(textX, textY), Size = UDim2.fromOffset(textW, lineMain), BackgroundTransparency = 1,
         Text = text, Font = font, TextSize = size, TextColor3 = color, TextStrokeTransparency = 0.3,
-        TextXAlignment = align, ZIndex = 2,
+        TextXAlignment = align, TextYAlignment = Enum.TextYAlignment.Center, ZIndex = 2,
     }, card)
     local sub = make("TextLabel", {
-        Position = UDim2.fromOffset(textX, textY + size + 2), Size = UDim2.fromOffset(textW, subSize), BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(textX, textY + lineMain), Size = UDim2.fromOffset(textW, math.max(lineSub, 1)), BackgroundTransparency = 1,
+        TextYAlignment = Enum.TextYAlignment.Center,
         Text = subText, Font = font, TextSize = subSize, TextColor3 = color:Lerp(Color3.new(1, 1, 1), 0.4),
         TextStrokeTransparency = 0.4, TextXAlignment = align, Visible = subText ~= "", ZIndex = 2,
     }, card)
