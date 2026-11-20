@@ -3648,6 +3648,42 @@ pending={}for img in queued do local name=img:GetAttribute('NvIcon')if type(name
 function __DARKLUA_BUNDLE_MODULES.l():typeof(__modImpl())local v=
 __DARKLUA_BUNDLE_MODULES.cache.l if not v then v={c=__modImpl()}
 __DARKLUA_BUNDLE_MODULES.cache.l=v end return v.c end end
+do local function __modImpl()return function(env)local
+_isMobile=env._isMobile local _nvL=env._nvL local userInputService=env.
+userInputService local UNFOCUS_FPS=24 local UNCAPPED=999 local UNFOCUS_DEBOUNCE=
+0.35 local savedCap=nil local capped=false local unfocusToken=0 local
+_weUnlocked=false local function canSetFps()return not _isMobile and typeof(
+setfpscap)=='function'end local function sanitizeCap(v)if typeof(v)~='number'or
+v~=v or v==math.huge or v==-math.huge then return nil end if v<=0 then return
+UNCAPPED end if v>1000 then return UNCAPPED end return math.floor(v+0.5)end
+local lastApplied=nil local function readFpsCap()if typeof(getfpscap)==
+'function'then local ok,v=pcall(getfpscap)local cap=ok and sanitizeCap(v)if cap
+~=nil and cap~=false then return cap end end return nil end local function
+applyCap(v)if not canSetFps()then return end local cap=sanitizeCap(v)if cap==nil
+then return end if pcall(setfpscap,cap)then lastApplied=cap end end
+local function applyUnlocked()if not canSetFps()then return end applyCap(
+UNCAPPED)_weUnlocked=true end local function restoreForeground()if not
+canSetFps()then return end if _nvL.unlockFpsEnabled then applyUnlocked()return
+end applyCap(savedCap or UNCAPPED)end _G._nv_applyUnlockFps=function(enabled)
+_nvL.unlockFpsEnabled=enabled and true or false if not canSetFps()then return
+end if capped then return end if _nvL.unlockFpsEnabled then applyUnlocked()
+elseif _weUnlocked then _weUnlocked=false applyCap(UNCAPPED)end end _G.
+_nv_applyBgFpsCap=function(enabled)_nvL.bgFpsCapEnabled=enabled and true or
+false unfocusToken=unfocusToken+1 if not canSetFps()then return end if not _nvL.
+bgFpsCapEnabled and(capped or lastApplied==UNFOCUS_FPS)then capped=false
+restoreForeground()savedCap=nil end end if canSetFps()then if _nvL.
+unlockFpsEnabled then applyUnlocked()end userInputService.WindowFocusReleased:
+Connect(function()if not _nvL.bgFpsCapEnabled or capped or not canSetFps()then
+return end unfocusToken=unfocusToken+1 local token=unfocusToken task.delay(
+UNFOCUS_DEBOUNCE,function()if token~=unfocusToken then return end if not _nvL.
+bgFpsCapEnabled or capped or not canSetFps()then return end savedCap=readFpsCap(
+)if savedCap==UNFOCUS_FPS then savedCap=_nvL.unlockFpsEnabled and UNCAPPED or
+nil end applyCap(UNFOCUS_FPS)capped=true end)end)userInputService.WindowFocused:
+Connect(function()unfocusToken=unfocusToken+1 if not(capped or lastApplied==
+UNFOCUS_FPS)or not canSetFps()then return end restoreForeground()capped=false
+savedCap=nil end)end end end function __DARKLUA_BUNDLE_MODULES.v():typeof(
+__modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.v if not v then v={c=
+__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.v=v end return v.c end end
 do local function
 __modImpl()return function(env,pnl)local _fixedPanels=env._fixedPanels local
 _nvL=env._nvL local screen=env.screen if not pnl or not pnl.Parent then return
@@ -10978,6 +11014,7 @@ local
 getRootPart=env.getRootPart 
 local reg=env.
 reg 
+local runService=env.runService 
 local tweenService=env.
 tweenService 
 reg(
@@ -10997,6 +11034,98 @@ lp.Character)local tRoot=getRootPart(p.Character)if myRoot and tRoot then pcall(
 function()local h=_nvL.lp.Character:FindFirstChildOfClass('Humanoid')if h and h.
 SeatPart then h.Sit=false task.wait(0.1)end end)myRoot.CFrame=tRoot.CFrame+
 Vector3.new(3,1,0)end end)
+reg('fps',
+'Show current framerate','',function()local fps=math.round(1/runService.
+RenderStepped:Wait())_nvL.notify('FPS',tostring(fps)..' fps')end)
+local _plasticSaved={}
+reg('plastic',
+'Set all parts to Plastic (FPS boost)','',{'plas'},function()_plasticSaved={}
+local count=0 for _,v in workspace:GetDescendants()do if v:IsA('Part')and v.
+Material~=Enum.Material.Plastic then _plasticSaved[v]=v.Material v.Material=Enum
+.Material.Plastic count=count+1 end end _nvL.notify('Plastic',count..
+' parts changed')end)
+reg('unplastic','Restore original materials','',{'uplas'},
+function()local count=0 for part,mat in _plasticSaved do pcall(function()part.
+Material=mat end)count=count+1 end _plasticSaved={}_nvL.notify('Plastic',
+'Restored '..count..' parts')end)
+local _untexSaved={}
+reg('untexturebp',
+'Remove all textures/decals from workspace parts','',function()_untexSaved={}
+local removed=0 for _,v in workspace:GetDescendants()do if v:IsA('Texture')or v:
+IsA('Decal')then local saved={inst=v,parent=v.Parent,name=v.Name}pcall(function(
+)saved.face=v.Face end)_untexSaved[#_untexSaved+1]=saved v.Parent=nil removed=
+removed+1 elseif v:IsA('BasePart')and v.TextureID~=nil and v.TextureID~=''then
+_untexSaved[#_untexSaved+1]={inst=v,prop='TextureID',val=v.TextureID}pcall(
+function()v.TextureID=''end)removed=removed+1 elseif v:IsA('SpecialMesh')and v.
+TextureId~=''then _untexSaved[#_untexSaved+1]={inst=v,prop='TextureId',val=v.
+TextureId}pcall(function()v.TextureId=''end)removed=removed+1 end end _nvL.
+notify('UntextureBP',removed..' textures removed')end)
+reg('texturebp',
+'Restore textures removed by untexturebp','',function()local restored=0 for _,s
+in _untexSaved do pcall(function()if s.parent then s.inst.Parent=s.parent elseif
+s.prop then s.inst[s.prop]=s.val end restored=restored+1 end)end _untexSaved={}
+_nvL.notify('UntextureBP','Restored '..restored..' textures')end)
+local _fbSaved=
+{}
+reg('fullbright','Maximize all light ranges','',function()_fbSaved={}local
+lighting=game:GetService('Lighting')lighting.GlobalShadows=false for _,v in game
+:GetDescendants()do if v:IsA('PointLight')or v:IsA('SurfaceLight')or v:IsA(
+'SpotLight')then _fbSaved[v]={range=v.Range,enabled=v.Enabled}v.Enabled=true v.
+Range=999 end end _nvL.notify('Fullbright','On')end)
+reg('nofullbright',
+'Restore original lighting','',function()game:GetService('Lighting').
+GlobalShadows=true for light,data in _fbSaved do pcall(function()light.Range=
+data.range light.Enabled=data.enabled end)end _fbSaved={}_nvL.notify(
+'Fullbright','Off')end)
+local _nlParents={}
+reg('nolights',
+'Remove all in-world lights','',function()_nlParents={}for _,v in game:
+GetDescendants()do if v:IsA('PointLight')or v:IsA('SurfaceLight')or v:IsA(
+'SpotLight')then _nlParents[v]=v.Parent v.Parent=nil end end _nvL.notify(
+'Lights','All lights removed')end)
+reg('lights','Restore removed lights','',
+function()for light,parent in _nlParents do pcall(function()light.Parent=parent
+end)end _nlParents={}_nvL.notify('Lights','Restored')end)
+do local _noeffectSaved={}reg('noeffect',
+'Disable all post-processing effects','',{'nfx'},function()local lighting=game:
+GetService('Lighting')for _,v in lighting:GetDescendants()do if v:IsA(
+'PostEffect')then _noeffectSaved[v]=v.Enabled v.Enabled=false elseif v:IsA(
+'Atmosphere')then _noeffectSaved[v]={v.Density,v.Haze,v.Glare}v.Density=0 v.Haze
+=0 v.Glare=0 end end local cam=workspace.CurrentCamera if cam then for _,v in
+cam:GetDescendants()do if v:IsA('PostEffect')then _noeffectSaved[v]=v.Enabled v.
+Enabled=false end end end _nvL.notify('NoEffect','Effects disabled')end)local
+_loopNoEffectConn=nil reg('loopnoeffect','Keep post-processing effects disabled'
+,'',function()if _loopNoEffectConn then _nvL.notify('LoopNoEffect',
+'Already active')return end _loopNoEffectConn=runService.RenderStepped:Connect(
+function()local lighting=game:GetService('Lighting')for _,v in lighting:
+GetDescendants()do if v:IsA('PostEffect')and v.Enabled then v.Enabled=false end
+if v:IsA('Atmosphere')then v.Density=0 v.Haze=0 v.Glare=0 end end end)_nvL.
+notify('LoopNoEffect','Enabled')end)reg('unloopnoeffect',
+'Stop loop disabling effects','',function()if _loopNoEffectConn then
+_loopNoEffectConn:Disconnect()_loopNoEffectConn=nil end for inst,saved in
+_noeffectSaved do pcall(function()if type(saved)=='table'then inst.Density=saved
+[1]inst.Haze=saved[2]inst.Glare=saved[3]else inst.Enabled=saved end end)end
+_noeffectSaved={}_nvL.notify('LoopNoEffect','Disabled')end)end 
+do local
+_fogSaved={}reg('nofog','Remove all fog from the game','',{'nf'},function()local
+lighting=game:GetService('Lighting')_fogSaved={FogEnd=lighting.FogEnd,FogStart=
+lighting.FogStart}lighting.FogEnd=786543 lighting.FogStart=0 _nvL.notify('NoFog'
+,'Fog removed')end)local _loopNofogConn=nil reg('loopnofog','Keep fog removed',
+'',function()if _loopNofogConn then _nvL.notify('LoopNoFog','Already active')
+return end local lighting=game:GetService('Lighting')_loopNofogConn=runService.
+RenderStepped:Connect(function()if lighting.FogEnd~=786543 then lighting.FogEnd=
+786543 end if lighting.FogStart~=0 then lighting.FogStart=0 end end)_nvL.notify(
+'LoopNoFog','Enabled')end)reg('unloopnofog','Restore fog','',function()if
+_loopNofogConn then _loopNofogConn:Disconnect()_loopNofogConn=nil end local
+lighting=game:GetService('Lighting')if _fogSaved.FogEnd then lighting.FogEnd=
+_fogSaved.FogEnd end if _fogSaved.FogStart then lighting.FogStart=_fogSaved.
+FogStart end _fogSaved={}_nvL.notify('LoopNoFog','Disabled')end)end 
+reg('globalshadows',
+'Enable global shadows','',{'gs'},function()game:GetService('Lighting').
+GlobalShadows=true _nvL.notify('Shadows','Enabled')end)
+reg('unglobalshadows',
+'Disable global shadows','',{'ugs'},function()game:GetService('Lighting').
+GlobalShadows=false _nvL.notify('Shadows','Disabled')end)
 local extra={speed=60,guis={},boxes=
 setmetatable({},{__mode='k'})}
 local function body()local char=_nvL.lp.Character
@@ -11015,6 +11144,12 @@ reg('tweenspeed',
 'Set tweengoto speed in studs per second','<n>',function(a)extra.speed=math.
 clamp(tonumber(a[2])or 60,5,500)_nvL.notify('TweenGoto','Speed '..extra.speed)
 end)
+reg('norender',
+'Turn 3D rendering off to save FPS','',function()runService:
+Set3dRenderingEnabled(false)_nvL.notify('Render','3D rendering off')end)
+reg(
+'render','Turn 3D rendering back on','',function()runService:
+Set3dRenderingEnabled(true)_nvL.notify('Render','3D rendering on')end)
 reg('clicktp',
 'Click anywhere to teleport there','',{'ctp','clickteleport'},function()if
 extra.jump then _nvL.notify('ClickTP','Already on')return end local mouse=_nvL.
@@ -11030,6 +11165,53 @@ Disconnect()extra.jump=nil end _nvL.notify('ClickTP','Off')end)
 end end function __DARKLUA_BUNDLE_MODULES.aQ(
 ):typeof(__modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.aQ if not v then v={
 c=__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.aQ=v end return v.c end end
+do
+local function __modImpl()return function(env)
+local _nvL=env._nvL 
+local reg=env.
+reg 
+local lighting=game:GetService('Lighting')
+local runService=game:GetService('RunService')
+local BUDGET=0.003 
+local
+A={on=false,saved={},queue={},head=1,token=0}
+local function set(d,prop
+,value)local ok,cur=pcall(function()return d[prop]end)if not ok or cur==value
+then return end local s=A.saved[d]if not s then s={}A.saved[d]=s end if s[prop]
+==nil then s[prop]=cur end pcall(function()d[prop]=value end)end 
+local function lowerWorld()set(lighting,'GlobalShadows',
+false)set(lighting,'EnvironmentDiffuseScale',0)set(lighting,
+'EnvironmentSpecularScale',0)set(lighting,'FogStart',9e9)set(lighting,'FogEnd',
+9e9)for _,d in lighting:GetDescendants()do if d:IsA('PostEffect')and d.Name:sub(
+1,3)~='_NV'then set(d,'Enabled',false)end end local terrain=workspace:
+FindFirstChildWhichIsA('Terrain')if terrain then set(terrain,'WaterWaveSize',0)
+set(terrain,'WaterWaveSpeed',0)set(terrain,'WaterReflectance',0)set(terrain,
+'WaterTransparency',1)set(terrain,'Decoration',false)end pcall(function()local
+rendering=settings().Rendering A.quality=rendering.QualityLevel rendering.
+QualityLevel=Enum.QualityLevel.Level01 end)end 
+local drain 
+local function start()if A.on then return end A.on=true A.
+token+=1 local token=A.token lowerWorld()A.queue,A.head=workspace:
+GetDescendants(),1 A.added=workspace.DescendantAdded:Connect(function(d)A.queue[
+#A.queue+1]=d drain(token)end)drain(token)end 
+local function stop()if not A.on
+then return end A.on=false A.token+=1 if A.added then A.added:Disconnect()A.
+added=nil end A.queue,A.head={},1 local saved=A.saved A.saved={}if A.quality
+then pcall(function()settings().Rendering.QualityLevel=A.quality end)A.quality=
+nil end task.spawn(function()local begin=os.clock()for d,props in saved do if A.
+on then local s=A.saved[d]or{}for prop,value in props do s[prop]=value end A.
+saved[d]=s elseif d.Parent then for prop,value in props do pcall(function()d[
+prop]=value end)end end if os.clock()-begin>BUDGET then runService.Heartbeat:
+Wait()begin=os.clock()end end end)end 
+reg('antilag',
+'Lower graphics for more FPS, undo with unantilag','',{'boostfps','lowgraphics'}
+,function()start()_nvL.notify('Low Graphics','On')end)
+reg('unantilag',
+'Restore graphics after antilag','',{'uantilag'},function()stop()_nvL.notify(
+'Low Graphics','Off')end)
+end end function __DARKLUA_BUNDLE_MODULES.aR():typeof(
+__modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.aR if not v then v={c=
+__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.aR=v end return v.c end end
 do
 local function __modImpl()return function(env)
 local _nvL=env.
@@ -11249,6 +11431,9 @@ goFind('Go to part',a,'BasePart')end)
 add('movement','gotomodel',
 'Teleport to a model by name','<name>',{'tomodel'},function(a)return goFind(
 'Go to model',a,'Model')end)
+add('misc','removeterrain',
+'Clear the terrain on your screen','',{'noterrain'},function()workspace.Terrain:
+Clear()_nvL.notify('Terrain','Cleared')end)
 end
 end function __DARKLUA_BUNDLE_MODULES.aT():typeof(__modImpl())local v=
 __DARKLUA_BUNDLE_MODULES.cache.aT if not v then v={c=__modImpl()}
@@ -11944,6 +12129,9 @@ GetPropertyChangedSignal('GroupTransparency'):Connect(follow)follow()else s.
 Transparency=_G._nv_glowT(s,0.45)end end)end return rim end 
 _G._nv_glowT=_G.
 _nv_glowT or function(sh,t)sh:SetAttribute('NvGlowT',t)return t end 
+do
+__DARKLUA_BUNDLE_MODULES.v()({_isMobile=_isMobile,_nvL=_nvL,userInputService=
+userInputService})end 
 do __DARKLUA_BUNDLE_MODULES.l()({_nvL=_nvL,_safeLoadstring=_safeLoadstring})end
 _nvL.
 chordSame={LeftShift={'LeftShift','RightShift'},RightShift={'LeftShift',
@@ -12392,6 +12580,8 @@ findPlayers,font=font,getRootPart=getRootPart,makeFloatingPanel=
 makeFloatingPanel,makePanelTitleBar=makePanelTitleBar,players=players,reg=reg,
 runService=runService,saveAutoExec=saveAutoExec,saveSettings=saveSettings,tween=
 tween,tweenService=tweenService})
+__DARKLUA_BUNDLE_MODULES.aR()({_nvL=_nvL,reg=
+reg})
 __DARKLUA_BUNDLE_MODULES.aS()({_cs=_cs,_nvL=_nvL,cmdReg=cmdReg,findPlayers=
 findPlayers,getRootPart=getRootPart,players=players,reg=reg,runService=
 runService,userInputService=userInputService})
@@ -13062,6 +13252,33 @@ end)
 -- Generated from the engine's registry: every command in its "movement" group,
 -- plus the fly / noclip / swim / hatfly / helicopter family. Each runs the
 -- engine's own handler (Novo.run); this table only feeds help, aliases and autocomplete.
+-- Generated from the engine's registry: its graphics / FPS commands. Each runs
+-- the engine's own handler (Novo.run); this table feeds help and the Performance panel.
+local NOVO_PERF = {
+    { name = "antilag", args = "", desc = "Lower graphics for more FPS, undo with unantilag", aliases = { "boostfps", "lowgraphics" } },
+    { name = "fps", args = "", desc = "Show current framerate", aliases = {} },
+    { name = "fullbright", args = "", desc = "Maximize all light ranges", aliases = {} },
+    { name = "globalshadows", args = "", desc = "Enable global shadows", aliases = { "gs" } },
+    { name = "lights", args = "", desc = "Restore removed lights", aliases = {} },
+    { name = "loopnoeffect", args = "", desc = "Keep post-processing effects disabled", aliases = {} },
+    { name = "loopnofog", args = "", desc = "Keep fog removed", aliases = {} },
+    { name = "noeffect", args = "", desc = "Disable all post-processing effects", aliases = { "nfx" } },
+    { name = "nofog", args = "", desc = "Remove all fog from the game", aliases = { "nf" } },
+    { name = "nofullbright", args = "", desc = "Restore original lighting", aliases = {} },
+    { name = "nolights", args = "", desc = "Remove all in-world lights", aliases = {} },
+    { name = "norender", args = "", desc = "Turn 3D rendering off to save FPS", aliases = {} },
+    { name = "plastic", args = "", desc = "Set all parts to Plastic (FPS boost)", aliases = { "plas" } },
+    { name = "removeterrain", args = "", desc = "Clear the terrain on your screen", aliases = { "noterrain" } },
+    { name = "render", args = "", desc = "Turn 3D rendering back on", aliases = {} },
+    { name = "texturebp", args = "", desc = "Restore textures removed by untexturebp", aliases = {} },
+    { name = "unantilag", args = "", desc = "Restore graphics after antilag", aliases = { "uantilag" } },
+    { name = "unglobalshadows", args = "", desc = "Disable global shadows", aliases = { "ugs" } },
+    { name = "unloopnoeffect", args = "", desc = "Stop loop disabling effects", aliases = {} },
+    { name = "unloopnofog", args = "", desc = "Restore fog", aliases = {} },
+    { name = "unplastic", args = "", desc = "Restore original materials", aliases = { "uplas" } },
+    { name = "untexturebp", args = "", desc = "Remove all textures/decals from workspace parts", aliases = {} },
+}
+
 local NOVO_MOVE = {
     { name = "airwalk", args = "", desc = "Walk on air (Space to go up)", aliases = { "aw" } },
     { name = "autoflashback", args = "", desc = "Go back to where you died every time you respawn", aliases = { "autofb" } },
@@ -13847,14 +14064,14 @@ local cmds = {
     "hide", "unhide", "mute", "unmute",
     "tp",
     "aura", "unaura", "auras",
-    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "owner", "kick", "ban", "unban", "bans", "antikick", "unantikick", "antivcban",
+    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "owner", "kick", "ban", "unban", "bans", "antikick", "unantikick", "antivcban",
     "reanim",
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
 
 -- Movement aliases come from the engine's own registrations (NOVO_MOVE).
 local ALIASES = {
-    anim = "reanim", reanimui = "reanim",
+    anim = "reanim", reanimui = "reanim", boost = "performance", fpsboost = "performance",
     wh = "esp", wallhack = "esp", unwh = "unesp", noesp = "unesp", ibp = "infbaseplate",
 }
 
@@ -13876,6 +14093,7 @@ local cmdDocs = {
     ban = "ban <players> [reason] - Ban players from using the script; they are kicked when they run it (owners only)",
     unban = "unban <players or UserIds> - Lift a script ban (owners only)",
     bans = "bans - List players banned from the script (owners only)",
+    performance = "performance - Performance panel: FPS unlock, anti-lag, low graphics, no fog / shadows / effects (also: boost)",
     perf = "perf - How long start-up and first-time actions took (for tuning the script)",
     tagrefresh = "tagrefresh - Load tags, auras and bans from the repository again and redraw every tag (running the script again does the same)",
     tagsync = "tagsync [pull|push] - Shared tags in the repository (token goes in Settings, never in chat)",
@@ -14282,6 +14500,8 @@ function H.antivcban(a)
     if UIAPI.sync then UIAPI.sync() end
 end
 
+function H.performance() UIAPI.togglePanel("performance") end
+
 function H.perf()
     local lines = { "Times in milliseconds (ms). Background reads do not hold up the UI.", "" }
     for _, m in ipairs(Perf.marks) do
@@ -14536,7 +14756,10 @@ end
 
 do
     local docsTaken = {}
-    for _, c in ipairs(NOVO_MOVE) do
+    local all = {}
+    for _, c in ipairs(NOVO_MOVE) do all[#all + 1] = c end
+    for _, c in ipairs(NOVO_PERF) do all[#all + 1] = c end
+    for _, c in ipairs(all) do
         local name = c.name
         if not H[name] then
             H[name] = function(a) Novo.run(name, a) end
@@ -16521,6 +16744,103 @@ local function buildOwnerPanel(screenGui)
     end)
 end
 
+------------------------------------------------------------------------
+-- Performance panel (`performance`): the engine's graphics / FPS commands
+------------------------------------------------------------------------
+
+-- Graphics switches: name shown, the command that turns it on, the one that
+-- turns it back off. State is kept here so kill can undo what you turned on.
+local PERF_TOGGLES = {
+    { "Plastic materials", "plastic", "unplastic" },
+    { "Remove textures and decals", "untexturebp", "texturebp" },
+    { "No post effects (bloom, blur, colour)", "loopnoeffect", "unloopnoeffect" },
+    { "No fog", "loopnofog", "unloopnofog" },
+    { "No lights", "nolights", "lights" },
+    { "No shadows", "unglobalshadows", "globalshadows" },
+    { "Fullbright", "fullbright", "nofullbright" },
+}
+local perfOn = {}
+
+local function perfSet(onCmd, offCmd, on)
+    perfOn[onCmd] = on and offCmd or nil
+    Novo.run(on and onCmd or offCmd, {})
+end
+
+local function fpsSwitch(fnName, on)
+    task.spawn(function()
+        if not Novo.boot() then return end
+        local fn = _G[fnName]
+        if type(fn) == "function" then
+            pcall(fn, on)
+        else
+            note("Performance", "Your executor cannot change the FPS cap (no setfpscap)", RED)
+        end
+    end)
+end
+
+table.insert(cleanups, function()
+    for onCmd, offCmd in pairs(perfOn) do
+        local c = Novo.booted and Novo.find(offCmd)
+        if c and type(c.exec) == "function" then pcall(c.exec, { offCmd }) end
+    end
+    perfOn = {}
+    for _, fnName in ipairs({ "_nv_applyUnlockFps", "_nv_applyBgFpsCap" }) do
+        if type(_G[fnName]) == "function" then pcall(_G[fnName], false) end
+    end
+end)
+
+local function buildPerformancePanel(screenGui)
+    local W, HGT = 340, 560
+    local f = uiWindow(screenGui, "performance", "Performance", UDim2.fromOffset(W, HGT), UDim2.new(0, 380, 0.5, -HGT / 2))
+    local body, add = scrollBody(f, 42)
+    local IW = W - 40
+    local half = (IW - 8) / 2
+    local syncers = {}
+    local function switch(text, get, onChange)
+        local s = uiSwitch(body, text, UDim2.fromOffset(12, add(32)), IW, get(), onChange)
+        table.insert(syncers, function() s.set(get()) end)
+        return s
+    end
+
+    sectionTitle(body, add, "FPS")
+    switch("Unlock FPS", function() return Novo.nvL ~= nil and Novo.nvL.unlockFpsEnabled == true end,
+        function(on) fpsSwitch("_nv_applyUnlockFps", on) end)
+    switch("Low FPS when tabbed out (24)", function() return Novo.nvL ~= nil and Novo.nvL.bgFpsCapEnabled == true end,
+        function(on) fpsSwitch("_nv_applyBgFpsCap", on) end)
+    local y = add(38)
+    uiButton(body, "Show FPS", UDim2.fromOffset(half, 30), UDim2.fromOffset(12, y), function() Novo.run("fps", {}) end)
+    uiButton(body, "Timing report", UDim2.fromOffset(half, 30), UDim2.fromOffset(12 + half + 8, y), function() H.perf() end)
+
+    sectionTitle(body, add, "Quick boost")
+    switch("Anti-lag (lower graphics)", function() return Novo.active.antilag == true end, function(on)
+        Novo.run(on and "antilag" or "unantilag", {})
+    end)
+
+    sectionTitle(body, add, "Graphics")
+    for _, t in ipairs(PERF_TOGGLES) do
+        local onCmd, offCmd = t[2], t[3]
+        switch(t[1], function() return perfOn[onCmd] ~= nil end, function(on) perfSet(onCmd, offCmd, on) end)
+    end
+
+    sectionTitle(body, add, "Heavy")
+    switch("Stop 3D rendering (UI only, max FPS)", function() return perfOn.norender ~= nil end, function(on)
+        perfSet("norender", "render", on)
+        if on then note("Performance", "3D rendering is off - switch it back here or run render", LIGHT) end
+    end)
+    y = add(38)
+    uiButton(body, "Remove terrain (until rejoin)", UDim2.fromOffset(IW, 30), UDim2.fromOffset(12, y), function()
+        Novo.run("removeterrain", {})
+    end, true)
+    label(body, { Position = UDim2.fromOffset(12, add(40)), Size = UDim2.fromOffset(IW, 36), TextWrapped = true, TextSize = 11,
+        TextColor3 = PAL.DIM, Text = "Everything here is on your screen only. Kill / stop turns off what you switched on." })
+
+    UIAPI.syncFns.performance = function()
+        if not f.Visible then return end
+        for _, fn in ipairs(syncers) do pcall(fn) end
+    end
+    f:GetPropertyChangedSignal("Visible"):Connect(function() if f.Visible then UIAPI.syncFns.performance() end end)
+end
+
 local function buildPanels(screenGui)
     local B = UIAPI.builders
     B.tools = function() buildToolsPanel(screenGui) end
@@ -16532,6 +16852,7 @@ local function buildPanels(screenGui)
     B.vcb = function() buildVcbPanel(screenGui) end
     B.reanim = function() buildReanimPanel(screenGui) end
     B.owner = function() buildOwnerPanel(screenGui) end
+    B.performance = function() buildPerformancePanel(screenGui) end
 end
 
 ------------------------------------------------------------------------
