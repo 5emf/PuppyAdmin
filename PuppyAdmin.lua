@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-23" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-24" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -4483,7 +4483,7 @@ local cmds = {
     "hide", "unhide", "mute", "unmute",
     "tp",
     "aura", "unaura", "auras",
-    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "games", "gameboy", "owner", "kick", "ban", "unban", "bans", "blacklist", "antikick", "unantikick", "antivcban",
+    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "games", "gameboy", "doom", "owner", "kick", "ban", "unban", "bans", "blacklist", "antikick", "unantikick", "antivcban",
     "reanim",
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
@@ -4513,6 +4513,7 @@ local cmdDocs = {
     unban = "unban <players or UserIds> - Lift a script ban (owners only)",
     bans = "bans - List players banned from the script (owners only)",
     blacklist = "blacklist - Owners: blacklist menu (everyone banned from the script, unban, add) (also: bl, banlist)",
+    doom = "doom - Doom (1993): plays your WAD from the PuppyAdmin/doom folder",
     gameboy = "gameboy - Game Boy emulator: plays .gb / .zip games from your PuppyAdmin/roms folder (also: gb, emulator)",
     games = "games - Mini games: Snake, Stack Drop, Treat Chase (also: minigames, arcade)",
     performance = "performance - Performance panel: FPS unlock, anti-lag, low graphics, no fog / shadows / effects (also: boost)",
@@ -4929,6 +4930,7 @@ end
 function H.performance() UIAPI.togglePanel("performance") end
 function H.games() UIAPI.togglePanel("games") end
 function H.gameboy() UIAPI.togglePanel("gameboy") end
+function H.doom() UIAPI.togglePanel("doom") end
 
 
 function H.perf()
@@ -8526,7 +8528,7 @@ local function buildGamesPanel(screenGui)
     end
 
     local tabs = {}
-    local tabW = (W - 32 - 24) / 4
+    local tabW = (W - 32 - 32) / 5
     local hud = label(f, { Position = UDim2.fromOffset(16, 82), Size = UDim2.fromOffset(W - 32, 18), TextSize = 12, Text = "" })
     local bestLbl = label(f, { Position = UDim2.fromOffset(16, 82), Size = UDim2.fromOffset(W - 32, 18), TextSize = 12,
         TextXAlignment = Enum.TextXAlignment.Right, TextColor3 = PAL.DIM, Text = "" })
@@ -8739,6 +8741,9 @@ local function buildGamesPanel(screenGui)
     end
     uiButton(f, "Game Boy", UDim2.fromOffset(tabW, 28), UDim2.fromOffset(16 + #MiniGames.list * (tabW + 8), 46), function()
         H.gameboy()
+    end).TextSize = 11
+    uiButton(f, "Doom", UDim2.fromOffset(tabW, 28), UDim2.fromOffset(16 + (#MiniGames.list + 1) * (tabW + 8), 46), function()
+        H.doom()
     end)
 
     local function act(a)
@@ -9387,6 +9392,314 @@ function UIAPI.buildGameBoyPanel(screenGui)
     table.insert(cleanups, function() saveNow(); bind(false); stopLoop() end)
 end
 
+------------------------------------------------------------------------
+-- Doom window (`doom`): the 1993 Doom engine (doomgeneric, GPL-2.0)
+-- converted to Luau, in emu/doom-<version>.lua (downloaded once into
+-- PuppyAdmin/engine). The game data is your own WAD in the executor folder
+-- PuppyAdmin/doom (DOOM1.WAD shareware, DOOM.WAD, DOOM2.WAD or Freedoom);
+-- saves and Doom's settings are written there too. No sound.
+------------------------------------------------------------------------
+
+UIAPI.DOOM_MODULE = { version = "8ce88db02c", bytes = 3072936 }
+
+function UIAPI.buildDoomPanel(screenGui)
+    local W, HGT = 380, 452
+    local f = uiWindow(screenGui, "doom", "Doom", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2, 0.5, -HGT / 2))
+    local DIR, CACHE_DIR = "PuppyAdmin/doom", "PuppyAdmin/engine"
+    local DM = UIAPI.DOOM_MODULE
+    local MOD_NAME = "doom-" .. DM.version .. ".lua"
+    local TIC = 1 / 35
+
+    local doom, running, starting = nil, false, false
+    local acc, frames, secondStart, fpsShown = 0, 0, os.clock(), 0
+    local statusBase = "No game loaded"
+
+    pcall(function()
+        if makefolder and isfolder and not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
+        if makefolder and isfolder and not isfolder(DIR) then makefolder(DIR) end
+    end)
+
+    local function wadList()
+        local out = {}
+        pcall(function()
+            for _, p in ipairs(listfiles(DIR)) do
+                local name = tostring(p):match("([^/\\]+)$")
+                if name and name:lower():match("%.wad$") then out[#out + 1] = name end
+            end
+        end)
+        table.sort(out, function(a, b) return a:lower() < b:lower() end)
+        return out
+    end
+    local listed = {}
+
+    -- screen: 320 x 200, shown at 4:3 like the original monitors
+    local sw, sh = 344, 258
+    local bezel = make("Frame", {
+        Position = UDim2.fromOffset((W - sw) / 2 - 4, 76), Size = UDim2.fromOffset(sw + 8, sh + 8),
+        BackgroundColor3 = Color3.fromRGB(0, 0, 0), BorderSizePixel = 0,
+    }, f)
+    corner(bezel, 8)
+    local screen = make("ImageLabel", {
+        Position = UDim2.fromOffset(4, 4), Size = UDim2.fromOffset(sw, sh), BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+        BorderSizePixel = 0, ScaleType = Enum.ScaleType.Stretch,
+    }, bezel)
+    pcall(function() screen.ResampleMode = Enum.ResamplerMode.Pixelated end)
+    local overlay = label(bezel, {
+        Position = UDim2.fromOffset(16, 4), Size = UDim2.fromOffset(sw - 24, sh), TextWrapped = true, ZIndex = 3,
+        TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = Color3.fromRGB(230, 230, 230), TextSize = 13,
+        Text = "Put a Doom WAD (DOOM1.WAD, DOOM.WAD, DOOM2.WAD or Freedoom) in your executor's workspace/PuppyAdmin/doom folder, then pick it above.",
+    })
+    local status = label(f, { Position = UDim2.fromOffset(16, 340), Size = UDim2.fromOffset(W - 32, 16), TextSize = 11,
+        TextColor3 = PAL.DIM, TextTruncate = Enum.TextTruncate.AtEnd, Text = statusBase })
+    label(f, { Position = UDim2.fromOffset(16, 360), Size = UDim2.fromOffset(W - 32, 84), TextSize = 11, TextWrapped = true,
+        TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = PAL.DIM,
+        Text = "Arrows or W/S move, A/D strafe, Left/Right turn, Ctrl or F fire, Space or E use, Shift run, 1-7 weapons, "
+            .. "Tab map, P menu (Esc is Roblox's), Enter select, Y/N answer. Mouse: click 'Mouse' to turn with the mouse "
+            .. "and fire with the left button (click it again or press P to get the cursor back)." })
+
+    local image, pixels
+    local function makeImage()
+        if image then return true end
+        local ok, ei = pcall(function()
+            return game:GetService("AssetService"):CreateEditableImage({ Size = Vector2.new(320, 200) })
+        end)
+        if not ok or not ei then return false, "EditableImage is not available: " .. tostring(ei) end
+        local shown = pcall(function() screen.ImageContent = Content.fromObject(ei) end)
+        if not shown then shown = pcall(function() ei.Parent = screen end) end
+        if not shown then return false, "could not show the screen" end
+        image, pixels = ei, buffer.create(320 * 200 * 4)
+        return true
+    end
+
+    local function loadModule()
+        if UIAPI.doomModuleLoaded then return UIAPI.doomModuleLoaded end
+        local head = "-- PuppyAdmin doom " .. DM.version
+        local function valid(src) return type(src) == "string" and #src == DM.bytes and src:sub(1, #head) == head end
+        local path = CACHE_DIR .. "/" .. MOD_NAME
+        local src
+        pcall(function() if isfile(path) then src = readfile(path) end end)
+        if typeof(src) == "buffer" then src = buffer.tostring(src) end
+        if not valid(src) then
+            local ok, body = pcall(function() return game:HttpGet(SETTINGS.Auras.assetBase .. "emu/" .. MOD_NAME) end)
+            if not ok or not valid(body) then error("Doom download failed or was incomplete", 0) end
+            src = body
+            pcall(function()
+                if makefolder and isfolder and not isfolder(CACHE_DIR) then makefolder(CACHE_DIR) end
+                writefile(path, src)
+            end)
+        end
+        local fn, err = (loadstring or load)(src, "=PuppyAdminDoom")
+        if not fn then error("Doom did not compile: " .. tostring(err), 0) end
+        UIAPI.doomModuleLoaded = fn()
+        return UIAPI.doomModuleLoaded
+    end
+
+    -- Doom's own files (saves, settings) live next to the WAD; "/" in a name becomes "_"
+    local function diskName(name) return DIR .. "/" .. name:gsub("[/\\]", "_") end
+    local function readBinary(path)
+        local ok, d = pcall(readfile, path)
+        if ok and typeof(d) == "buffer" then d = buffer.tostring(d) end
+        if ok and type(d) == "string" then return d end
+        return nil
+    end
+
+    local releaseAll
+    local pauseBtn
+    local function setRunning(on)
+        running = on and doom ~= nil
+        if releaseAll then releaseAll() end
+        if pauseBtn then pauseBtn.Text = running and "Pause" or "Play" end
+    end
+
+    local function startGame(name)
+        if starting then return end
+        starting = true
+        task.spawn(function()
+            doom, running = nil, false
+            overlay.Visible = true
+            overlay.Text = "Loading Doom and " .. name .. "...\n(the first time downloads the engine, about 3 MB)"
+            local ok, err = pcall(function()
+                local okImg, why = makeImage()
+                if not okImg then error(why, 0) end
+                local Doom = loadModule()
+                local wad = UIAPI.gbReadFile and UIAPI.gbReadFile(name, { DIR .. "/" .. name }) or readBinary(DIR .. "/" .. name)
+                if not wad then error("could not read " .. name, 0) end
+                if not Doom.identify(wad) then error(name .. " is not a Doom WAD this engine knows (DOOM1, DOOM, DOOM2 or Freedoom)", 0) end
+                local d = Doom.new(Doom.makeWasm, {
+                    wadData = wad,
+                    clock = os.clock,
+                    readFile = function(n) return readBinary(diskName(n)) end,
+                    writeFile = function(n, data) pcall(writefile, diskName(n), data) end,
+                    deleteFile = function(n) if delfile then pcall(delfile, diskName(n)) end end,
+                    yield = function() task.wait() end,
+                })
+                local gameName = d.start()
+                doom = d
+                statusBase = name .. "  (" .. gameName .. ")"
+            end)
+            starting = false
+            if not ok then
+                doom = nil
+                overlay.Text = "Could not start Doom:\n" .. tostring(err)
+                status.Text = "No game loaded"
+                return
+            end
+            overlay.Visible = false
+            acc = 0
+            status.Text = statusBase
+            setRunning(true)
+        end)
+    end
+
+    -- top row ----------------------------------------------------------------------------
+    local dd = uiDropdown(f, "", UDim2.fromOffset(180, 28), UDim2.fromOffset(16, 42), function()
+        listed = wadList()
+        if #listed == 0 then return { "No WADs in PuppyAdmin/doom" } end
+        return listed
+    end, 1, function(i)
+        local name = listed[i]
+        if name then startGame(name) end
+    end)
+    dd.button.TextSize = 11
+    pauseBtn = uiButton(f, "Play", UDim2.fromOffset(56, 28), UDim2.fromOffset(200, 42), function()
+        if doom then setRunning(not running) end
+    end)
+    local mouseOn = false
+    local mouseBtn
+    local function setMouse(on)
+        mouseOn = on and running
+        mouseBtn.BackgroundColor3 = mouseOn and PAL.ELEVATED or PAL.CARD
+        mouseBtn.Text = mouseOn and "Mouse on" or "Mouse"
+        if not mouseOn then pcall(function() UserInputService.MouseBehavior = Enum.MouseBehavior.Default end) end
+    end
+    mouseBtn = uiButton(f, "Mouse", UDim2.fromOffset(104, 28), UDim2.fromOffset(260, 42), function() setMouse(not mouseOn) end)
+
+    -- input ----------------------------------------------------------------------------------
+    local K = Enum.KeyCode
+    local KEYS = {
+        [K.Up] = 0xad, [K.W] = 0xad, [K.Down] = 0xaf, [K.S] = 0xaf, [K.Left] = 0xac, [K.Right] = 0xae,
+        [K.A] = 0xa0, [K.D] = 0xa1, [K.LeftControl] = 0xa3, [K.RightControl] = 0xa3, [K.F] = 0xa3,
+        [K.Space] = 0xa2, [K.E] = 0xa2, [K.LeftShift] = 0xb6, [K.RightShift] = 0xb6, [K.LeftAlt] = 0xb8,
+        [K.P] = 27, [K.Escape] = 27, [K.Return] = 13, [K.Tab] = 9, [K.Backspace] = 0x7f,
+        [K.Minus] = 0x2d, [K.Equals] = 0x3d, [K.Y] = string.byte("y"), [K.N] = string.byte("n"),
+        [K.F2] = 0xbc, [K.F3] = 0xbd, [K.F6] = 0xc0, [K.F9] = 0xc3,
+    }
+    for i = 1, 7 do KEYS[K[({ "One", "Two", "Three", "Four", "Five", "Six", "Seven" })[i]]] = string.byte(tostring(i)) end
+    local held = {}
+    local mouseButtons, mouseDx = 0, 0
+    releaseAll = function()
+        for code in pairs(held) do if doom then pcall(doom.key, false, code) end end
+        held = {}
+        if mouseButtons ~= 0 and doom then pcall(doom.mouse, 0, 0, 0) end
+        mouseButtons, mouseDx = 0, 0
+    end
+    local keyList = {}
+    for kc in pairs(KEYS) do keyList[#keyList + 1] = kc end
+    local ACTION, MOUSE_ACTION = "PuppyAdminDoom", "PuppyAdminDoomMouse"
+    local bound = false
+    local function onKey(_, state, input)
+        if not (running and doom) then return Enum.ContextActionResult.Pass end
+        local code = KEYS[input.KeyCode]
+        if not code then return Enum.ContextActionResult.Pass end
+        local down = state == Enum.UserInputState.Begin
+        if code == 27 and down and mouseOn then setMouse(false) end -- P / menu gives the cursor back
+        if down then held[code] = true else held[code] = nil end
+        pcall(doom.key, down, code)
+        return Enum.ContextActionResult.Sink
+    end
+    -- with Mouse on: movement turns (and is kept from the Roblox camera), left button fires
+    local function onMouse(_, state, input)
+        if not (running and doom and mouseOn) then return Enum.ContextActionResult.Pass end
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            mouseDx = mouseDx + input.Delta.X
+        elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+            mouseButtons = state == Enum.UserInputState.Begin and 1 or 0
+            pcall(doom.mouse, mouseButtons, 0, 0)
+        end
+        return Enum.ContextActionResult.Sink
+    end
+    local function bind(on)
+        if on == bound then return end
+        bound = on
+        if on then
+            pcall(function() ContextActionService:BindActionAtPriority(ACTION, onKey, false, 3000, table.unpack(keyList)) end)
+            pcall(function()
+                ContextActionService:BindActionAtPriority(MOUSE_ACTION, onMouse, false, 3000,
+                    Enum.UserInputType.MouseMovement, Enum.UserInputType.MouseButton1)
+            end)
+        else
+            pcall(function() ContextActionService:UnbindAction(ACTION) end)
+            pcall(function() ContextActionService:UnbindAction(MOUSE_ACTION) end)
+            releaseAll()
+            setMouse(false)
+        end
+    end
+
+    -- main loop: Doom's clock moves 1/35 s per tic of real time (up to 4 tics per frame when
+    -- the device is slow, so the game keeps its speed and only the frame rate drops)
+    local loop
+    local function startLoop()
+        if loop then return end
+        loop = RunService.Heartbeat:Connect(function(dt)
+            if mouseOn then
+                pcall(function() UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter end)
+            end
+            if not (running and doom) then return end
+            acc = math.min(acc + dt, 0.25)
+            local due = math.floor(acc / TIC)
+            if due < 1 then return end
+            due = math.min(due, 4)
+            acc = acc - due * TIC
+            if mouseDx ~= 0 then
+                pcall(doom.mouse, mouseButtons, math.floor(mouseDx * 4 + 0.5), 0)
+                mouseDx = 0
+            end
+            doom.advance(due * 1000 / 35)
+            local ok, err = pcall(doom.tick)
+            if not ok then
+                setRunning(false)
+                setMouse(false)
+                doom = nil
+                overlay.Visible = true
+                overlay.Text = tostring(err):find("DOOM_EXIT") and "Doom closed. Pick a WAD above to play again."
+                    or ("Doom stopped:\n" .. tostring(err))
+                status.Text = "No game loaded"
+                return
+            end
+            if doom.blit(pixels) then
+                pcall(function() image:WritePixelsBuffer(Vector2.zero, Vector2.new(320, 200), pixels) end)
+                frames = frames + 1
+            end
+            local now = os.clock()
+            if now - secondStart >= 1 then
+                fpsShown = math.floor(frames / (now - secondStart) + 0.5)
+                frames, secondStart = 0, now
+                status.Text = statusBase .. "  [" .. fpsShown .. " fps]"
+            end
+        end)
+        table.insert(conns, loop)
+    end
+    local function stopLoop()
+        if loop then loop:Disconnect(); loop = nil end
+    end
+
+    f:GetPropertyChangedSignal("Visible"):Connect(function()
+        if f.Visible then
+            bind(true)
+            startLoop()
+        else
+            if running then setRunning(false) end
+            bind(false)
+            stopLoop()
+        end
+    end)
+    table.insert(conns, UserInputService.WindowFocusReleased:Connect(function()
+        releaseAll()
+        if mouseOn then setMouse(false) end
+    end))
+    table.insert(cleanups, function() bind(false); stopLoop() end)
+end
+
 local function buildPanels(screenGui)
     local B = UIAPI.builders
     B.tools = function() buildToolsPanel(screenGui) end
@@ -9402,6 +9715,7 @@ local function buildPanels(screenGui)
     B.performance = function() buildPerformancePanel(screenGui) end
     B.games = function() buildGamesPanel(screenGui) end
     B.gameboy = function() UIAPI.buildGameBoyPanel(screenGui) end
+    B.doom = function() UIAPI.buildDoomPanel(screenGui) end
 end
 
 ------------------------------------------------------------------------
