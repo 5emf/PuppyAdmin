@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-9" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-10" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -2561,11 +2561,12 @@ table.insert(cleanups, function() AntiKick.on = false end)
 ------------------------------------------------------------------------
 -- Moderation (owners only): a script blacklist and kicks, kept in
 -- moderation.json next to tags.json:
---   [ { "type": "ban",  "userId": "123", "reason": "..." },
---     { "type": "kick", "userId": "123", "reason": "...", "id": "...", "at": 1700000000 } ]
+--   [ { "type": "ban",  "userId": "123", "name": "user", "reason": "..." },
+--     { "type": "kick", "userId": "123", "reason": "...", "id": "...", "at": 1700000000, "jobId": "..." } ]
 -- Every copy of the script checks it at start and every pollSeconds: a banned
--- player is kicked when they run the script; a kick is carried out once, if
--- it is less than ten minutes old. Owners (TAG_EDITORS) are never affected.
+-- player is kicked whenever they run the script, in any server. A kick only
+-- applies in the server it was sent from (jobId) and for ten minutes: the
+-- player can join any other server. Owners (TAG_EDITORS) are never affected.
 -- Like everything client-side, someone who edits the script can remove it.
 ------------------------------------------------------------------------
 
@@ -2598,6 +2599,8 @@ do
                     reason = type(e.reason) == "string" and e.reason:sub(1, 120) or "",
                     id = type(e.id) == "string" and e.id:sub(1, 40) or nil,
                     at = tonumber(e.at),
+                    name = type(e.name) == "string" and e.name:sub(1, 40) or nil,
+                    jobId = type(e.jobId) == "string" and e.jobId:sub(1, 64) or nil,
                 }
             end
         end
@@ -2621,7 +2624,8 @@ do
                     return
                 elseif e.type == "kick" and e.id and not Moderation.handled[e.id] then
                     Moderation.handled[e.id] = true
-                    if e.at and os.time() - e.at <= KICK_WINDOW then
+                    -- only in the server the kick was sent from (older kicks without a server are ignored)
+                    if e.at and os.time() - e.at <= KICK_WINDOW and e.jobId and e.jobId ~= "" and e.jobId == game.JobId then
                         kickSelf("You were kicked by a Puppy Admin owner." .. (e.reason ~= "" and ("\nReason: " .. e.reason) or ""))
                         return
                     end
@@ -2644,6 +2648,7 @@ do
         Moderation.status = "up to date (" .. bans .. " banned)"
         enforce()
         if UIAPI.syncFns and UIAPI.syncFns.owner then pcall(UIAPI.syncFns.owner) end
+        if UIAPI.syncFns and UIAPI.syncFns.blacklist then pcall(UIAPI.syncFns.blacklist) end
         return true
     end
 
@@ -2662,6 +2667,7 @@ do
         if not ok then return false, err end
         Moderation.entries = list
         if UIAPI.syncFns and UIAPI.syncFns.owner then pcall(UIAPI.syncFns.owner) end
+        if UIAPI.syncFns and UIAPI.syncFns.blacklist then pcall(UIAPI.syncFns.blacklist) end
         return true, msg
     end
 
@@ -2672,7 +2678,31 @@ do
         return false
     end
 
+    -- Username for a UserId: from the server, the moderation file, or Roblox (yields; cached).
+    Moderation.names = {}
+    function Moderation.nameOf(uid, noYield)
+        local key = tostring(uid)
+        if Moderation.names[key] then return Moderation.names[key] end
+        local p = Players:GetPlayerByUserId(tonumber(key) or 0)
+        if p then Moderation.names[key] = p.Name; return p.Name end
+        for _, e in ipairs(Moderation.entries) do
+            if e.userId == key and e.name then Moderation.names[key] = e.name; return e.name end
+        end
+        if noYield then return nil end
+        local ok, name = pcall(function() return Players:GetNameFromUserIdAsync(tonumber(key)) end)
+        if ok and type(name) == "string" then Moderation.names[key] = name; return name end
+        return nil
+    end
+
+    function Moderation.bans()
+        local out = {}
+        for _, e in ipairs(Moderation.entries) do if e.type == "ban" then out[#out + 1] = e end end
+        return out
+    end
+
     function Moderation.ban(uids, reason)
+        local names = {}
+        for _, uid in ipairs(uids) do names[tostring(uid)] = Moderation.nameOf(uid) end
         return write(function(list)
             local n = 0
             for _, uid in ipairs(uids) do
@@ -2680,7 +2710,7 @@ do
                 if not isOwnerId(uid) and not Moderation.isBanned(key) then
                     local present = false
                     for _, e in ipairs(list) do if e.type == "ban" and e.userId == key then present = true end end
-                    if not present then list[#list + 1] = { type = "ban", userId = key, reason = reason or "" }; n = n + 1 end
+                    if not present then list[#list + 1] = { type = "ban", userId = key, name = names[key], reason = reason or "" }; n = n + 1 end
                 end
             end
             return "Banned " .. n
@@ -2707,11 +2737,12 @@ do
                     list[#list + 1] = {
                         type = "kick", userId = tostring(uid), reason = reason or "",
                         id = tostring(uid) .. "-" .. tostring(os.time()) .. "-" .. tostring(math.random(1000, 9999)), at = os.time(),
+                        jobId = game.JobId,
                     }
                     n = n + 1
                 end
             end
-            return "Kick sent to " .. n .. " (within about " .. SETTINGS.TagSync.pollSeconds .. " s, if they run the script)"
+            return "Kick sent to " .. n .. " (this server only, within about " .. SETTINGS.TagSync.pollSeconds .. " s, if they run the script)"
         end)
     end
 
@@ -4396,14 +4427,14 @@ local cmds = {
     "hide", "unhide", "mute", "unmute",
     "tp",
     "aura", "unaura", "auras",
-    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "games", "owner", "kick", "ban", "unban", "bans", "antikick", "unantikick", "antivcban",
+    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "games", "owner", "kick", "ban", "unban", "bans", "blacklist", "antikick", "unantikick", "antivcban",
     "reanim",
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
 
 -- Movement aliases come from the engine's own registrations (PUP_MOVE).
 local ALIASES = {
-    anim = "reanim", reanimui = "reanim", boost = "performance", fpsboost = "performance", minigames = "games", arcade = "games",
+    anim = "reanim", reanimui = "reanim", boost = "performance", fpsboost = "performance", minigames = "games", arcade = "games", bl = "blacklist", banlist = "blacklist",
     wh = "esp", wallhack = "esp", unwh = "unesp", noesp = "unesp", ibp = "infbaseplate",
 }
 
@@ -4421,10 +4452,11 @@ local cmdDocs = {
     unmute = "unmute [name|all|others] - Undo mute",
     tagui = "tagui - Nametag editor: text, colors, backdrop, profile picture (allowlisted users only)",
     owner = "owner - Owner panel: kick, ban, auras, tag tools (owners only)",
-    kick = "kick <players> [reason] - Kick players who run the script (owners only)",
+    kick = "kick <players> [reason] - Kick players who run the script from this server only; they can join others (owners only)",
     ban = "ban <players> [reason] - Ban players from using the script; they are kicked when they run it (owners only)",
     unban = "unban <players or UserIds> - Lift a script ban (owners only)",
     bans = "bans - List players banned from the script (owners only)",
+    blacklist = "blacklist - Owners: blacklist menu (everyone banned from the script, unban, add) (also: bl, banlist)",
     games = "games - Mini games: Snake, Stack Drop, Treat Chase (also: minigames, arcade)",
     performance = "performance - Performance panel: FPS unlock, anti-lag, low graphics, no fog / shadows / effects (also: boost)",
     perf = "perf - How long start-up and first-time actions took (for tuning the script)",
@@ -4728,6 +4760,10 @@ end
 function H.owner()
     if not ownerOnly() then return end
     UIAPI.togglePanel("owner")
+end
+function H.blacklist()
+    if not ownerOnly() then return end
+    UIAPI.togglePanel("blacklist")
 end
 
 -- aura <name> [players] [color]   give an aura to players (names, UserIds, all, others; default: you)
@@ -7352,6 +7388,8 @@ local function buildOwnerPanel(screenGui)
     uiButton(body, "Refresh", UDim2.fromOffset(half, 30), UDim2.fromOffset(12 + half + 8, y), function()
         task.spawn(function() Moderation.pull(true) end)
     end)
+    y = add(38)
+    uiButton(body, "Blacklist menu", UDim2.fromOffset(IW, 30), UDim2.fromOffset(12, y), function() H.blacklist() end)
     local status = label(body, { Position = UDim2.fromOffset(12, add(22)), Size = UDim2.fromOffset(IW, 18), Text = "", TextColor3 = PAL.DIM, TextSize = 11 })
     local banList = make("ScrollingFrame", {
         Position = UDim2.fromOffset(12, add(128)), Size = UDim2.fromOffset(IW, 120), BackgroundColor3 = PAL.CARD,
@@ -7416,6 +7454,99 @@ local function buildOwnerPanel(screenGui)
         if not f.Visible then return end
         if not canEditTags() then f.Visible = false; return end
         refresh()
+    end)
+end
+
+------------------------------------------------------------------------
+-- Blacklist panel (`blacklist`, owners only): everyone banned from the
+-- script in a dropdown, with their reason, unban, and adding new bans.
+------------------------------------------------------------------------
+
+local function buildBlacklistPanel(screenGui)
+    local W, HGT = 360, 470
+    local f = uiWindow(screenGui, "blacklist", "Blacklist", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2, 0.5, -HGT / 2))
+    local body, add = scrollBody(f, 42)
+    local IW = W - 40
+    local half = (IW - 8) / 2
+
+    local bans = {}      -- snapshot shown in the dropdown
+    local selected = 1
+    local function entryLabel(e)
+        local name = Moderation.nameOf(e.userId, true)
+        return (name and ("@" .. name) or ("UserId " .. e.userId)) .. (name and ("  (" .. e.userId .. ")") or "")
+    end
+
+    sectionTitle(body, add, "Blacklisted users")
+    local countLbl = label(body, { Position = UDim2.fromOffset(12, add(20)), Size = UDim2.fromOffset(IW, 18), Text = "", TextColor3 = PAL.DIM, TextSize = 11 })
+    local dd = uiDropdown(body, "", UDim2.fromOffset(IW, 28), UDim2.fromOffset(12, add(36)), function()
+        if #bans == 0 then return { "Nobody is blacklisted" } end
+        local l = {}
+        for i, e in ipairs(bans) do l[i] = entryLabel(e) end
+        return l
+    end, 1, function(i)
+        selected = i
+        UIAPI.syncFns.blacklist()
+    end)
+    local info = label(body, { Position = UDim2.fromOffset(12, add(56)), Size = UDim2.fromOffset(IW, 52), TextWrapped = true,
+        TextYAlignment = Enum.TextYAlignment.Top, TextSize = 12, Text = "" })
+    local y = add(38)
+    uiButton(body, "Unban selected", UDim2.fromOffset(half, 30), UDim2.fromOffset(12, y), function()
+        local e = bans[selected]
+        if not e then return end
+        local id = e.userId
+        task.spawn(function()
+            local ok, msg = Moderation.unban({ id })
+            note("Blacklist", tostring(msg), ok and LIGHT or RED)
+        end)
+    end, true)
+    uiButton(body, "Refresh", UDim2.fromOffset(half, 30), UDim2.fromOffset(12 + half + 8, y), function()
+        task.spawn(function() Moderation.pull(true) end)
+    end)
+
+    sectionTitle(body, add, "Add to blacklist")
+    local who = uiBox(body, UDim2.fromOffset(12, add(34)), UDim2.fromOffset(IW, 28), "Players: names, UserIds (commas)")
+    local reason = uiBox(body, UDim2.fromOffset(12, add(34)), UDim2.fromOffset(IW, 28), "Reason (optional)")
+    y = add(38)
+    uiButton(body, "Blacklist", UDim2.fromOffset(IW, 30), UDim2.fromOffset(12, y), function()
+        if who.Text == "" then note("Blacklist", "Type a player name or UserId", RED); return end
+        H.ban({ who.Text, reason.Text ~= "" and reason.Text or nil })
+        who.Text, reason.Text = "", ""
+    end, true)
+    label(body, { Position = UDim2.fromOffset(12, add(48)), Size = UDim2.fromOffset(IW, 44), TextWrapped = true, TextSize = 11,
+        TextColor3 = PAL.DIM, TextYAlignment = Enum.TextYAlignment.Top,
+        Text = "Blacklisted players are kicked whenever they run the script, in any server. Kicks (Owner panel) only apply in the server they were sent from. Needs the GitHub token in Settings." })
+
+    local resolving = false
+    UIAPI.syncFns.blacklist = function()
+        if not f.Visible then return end
+        bans = Moderation.bans()
+        if selected > #bans then selected = math.max(1, #bans) end
+        dd.set(selected)
+        countLbl.Text = #bans .. " blacklisted  -  " .. tostring(Moderation.status)
+        local e = bans[selected]
+        if e then
+            info.Text = "User: " .. entryLabel(e) .. "\nReason: " .. (e.reason ~= "" and e.reason or "(none)")
+        else
+            info.Text = "Nobody is blacklisted."
+        end
+        -- names of bans made before names were saved: look them up once, then redraw
+        if not resolving then
+            local missing = {}
+            for _, b in ipairs(bans) do if not Moderation.nameOf(b.userId, true) then missing[#missing + 1] = b.userId end end
+            if #missing > 0 then
+                resolving = true
+                task.spawn(function()
+                    for _, id in ipairs(missing) do Moderation.nameOf(id) end
+                    resolving = false
+                    if f.Visible then UIAPI.syncFns.blacklist() end
+                end)
+            end
+        end
+    end
+    f:GetPropertyChangedSignal("Visible"):Connect(function()
+        if not f.Visible then return end
+        if not canEditTags() then f.Visible = false; return end
+        UIAPI.syncFns.blacklist()
     end)
 end
 
@@ -8590,6 +8721,7 @@ local function buildPanels(screenGui)
     B.vcb = function() buildVcbPanel(screenGui) end
     B.reanim = function() buildReanimPanel(screenGui) end
     B.owner = function() buildOwnerPanel(screenGui) end
+    B.blacklist = function() buildBlacklistPanel(screenGui) end
     B.performance = function() buildPerformancePanel(screenGui) end
     B.games = function() buildGamesPanel(screenGui) end
 end
