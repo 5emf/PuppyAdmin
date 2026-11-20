@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-13" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-14" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -4482,14 +4482,14 @@ local cmds = {
     "hide", "unhide", "mute", "unmute",
     "tp",
     "aura", "unaura", "auras",
-    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "games", "owner", "kick", "ban", "unban", "bans", "blacklist", "antikick", "unantikick", "antivcban",
+    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "games", "gameboy", "owner", "kick", "ban", "unban", "bans", "blacklist", "antikick", "unantikick", "antivcban",
     "reanim",
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
 
 -- Movement aliases come from the engine's own registrations (PUP_MOVE).
 local ALIASES = {
-    anim = "reanim", reanimui = "reanim", boost = "performance", fpsboost = "performance", minigames = "games", arcade = "games", bl = "blacklist", banlist = "blacklist",
+    anim = "reanim", reanimui = "reanim", boost = "performance", fpsboost = "performance", minigames = "games", arcade = "games", gb = "gameboy", emulator = "gameboy", bl = "blacklist", banlist = "blacklist",
     wh = "esp", wallhack = "esp", unwh = "unesp", noesp = "unesp", ibp = "infbaseplate",
 }
 
@@ -4512,6 +4512,7 @@ local cmdDocs = {
     unban = "unban <players or UserIds> - Lift a script ban (owners only)",
     bans = "bans - List players banned from the script (owners only)",
     blacklist = "blacklist - Owners: blacklist menu (everyone banned from the script, unban, add) (also: bl, banlist)",
+    gameboy = "gameboy - Game Boy emulator: plays .gb / .zip games from your PuppyAdmin/roms folder (also: gb, emulator)",
     games = "games - Mini games: Snake, Stack Drop, Treat Chase (also: minigames, arcade)",
     performance = "performance - Performance panel: FPS unlock, anti-lag, low graphics, no fog / shadows / effects (also: boost)",
     perf = "perf - How long start-up and first-time actions took (for tuning the script)",
@@ -4926,6 +4927,7 @@ end
 
 function H.performance() UIAPI.togglePanel("performance") end
 function H.games() UIAPI.togglePanel("games") end
+function H.gameboy() UIAPI.togglePanel("gameboy") end
 
 
 function H.perf()
@@ -8523,7 +8525,7 @@ local function buildGamesPanel(screenGui)
     end
 
     local tabs = {}
-    local tabW = (W - 32 - 16) / 3
+    local tabW = (W - 32 - 24) / 4
     local hud = label(f, { Position = UDim2.fromOffset(16, 82), Size = UDim2.fromOffset(W - 32, 18), TextSize = 12, Text = "" })
     local bestLbl = label(f, { Position = UDim2.fromOffset(16, 82), Size = UDim2.fromOffset(W - 32, 18), TextSize = 12,
         TextXAlignment = Enum.TextXAlignment.Right, TextColor3 = PAL.DIM, Text = "" })
@@ -8734,6 +8736,9 @@ local function buildGamesPanel(screenGui)
         end)
         tabs[i] = { btn = b, mg = g }
     end
+    uiButton(f, "Game Boy", UDim2.fromOffset(tabW, 28), UDim2.fromOffset(16 + #MiniGames.list * (tabW + 8), 46), function()
+        H.gameboy()
+    end)
 
     local function act(a)
         if status ~= "play" or not state then return end
@@ -8852,6 +8857,314 @@ local function buildGamesPanel(screenGui)
     selectGame(mg)
 end
 
+------------------------------------------------------------------------
+-- Game Boy window (`gameboy`): runs original Game Boy games from the
+-- executor folder PuppyAdmin/roms (.gb or .zip). The emulator itself is a
+-- separate file in the repository (emu/gameboy-<version>.lua), downloaded
+-- once into PuppyAdmin/engine. Battery saves go next to the game as .sav.
+-- The games are never part of the script or the repository.
+------------------------------------------------------------------------
+
+UIAPI.GB_MODULE = { version = "ee60d69c8a", bytes = 63890 }
+
+function UIAPI.buildGameBoyPanel(screenGui)
+    local W, HGT = 360, 470
+    local f = uiWindow(screenGui, "gameboy", "Game Boy", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2, 0.5, -HGT / 2))
+    local ROM_DIR, CACHE_DIR = "PuppyAdmin/roms", "PuppyAdmin/engine"
+    local GBM = UIAPI.GB_MODULE
+    local MOD_NAME = "gameboy-" .. GBM.version .. ".lua"
+    local FRAME = 1 / 59.73
+    -- shade 0..3 -> RGBA as a little-endian u32 (classic green screen)
+    local SHADES = { { 224, 248, 208 }, { 136, 192, 112 }, { 52, 104, 86 }, { 8, 24, 32 } }
+    local COLOR = {}
+    for i, c in ipairs(SHADES) do COLOR[i - 1] = c[1] + c[2] * 256 + c[3] * 65536 + 255 * 16777216 end
+
+    local emu, romPath, running, fast = nil, nil, false, false
+    local acc, framesThisSecond, secondStart, speedPct = 0, 0, os.clock(), 0
+    local lastSave = os.clock()
+
+    pcall(function()
+        if makefolder and isfolder and not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
+        if makefolder and isfolder and not isfolder(ROM_DIR) then makefolder(ROM_DIR) end
+    end)
+
+    local function romList()
+        local out = {}
+        pcall(function()
+            for _, p in ipairs(listfiles(ROM_DIR)) do
+                local name = tostring(p):match("([^/\\]+)$")
+                local low = name and name:lower() or ""
+                if low:match("%.gb$") or low:match("%.gbc$") or low:match("%.zip$") then out[#out + 1] = name end
+            end
+        end)
+        table.sort(out, function(a, b) return a:lower() < b:lower() end)
+        return out
+    end
+    local listed = {}
+
+    -- screen ---------------------------------------------------------------
+    local screenW, screenH = 280, 252
+    local bezel = make("Frame", {
+        Position = UDim2.fromOffset((W - screenW) / 2 - 4, 76), Size = UDim2.fromOffset(screenW + 8, screenH + 8),
+        BackgroundColor3 = Color3.fromRGB(10, 12, 16), BorderSizePixel = 0,
+    }, f)
+    corner(bezel, 8)
+    local screen = make("ImageLabel", {
+        Position = UDim2.fromOffset(4, 4), Size = UDim2.fromOffset(screenW, screenH), BackgroundColor3 = Color3.fromRGB(224, 248, 208),
+        BorderSizePixel = 0, ScaleType = Enum.ScaleType.Stretch,
+    }, bezel)
+    pcall(function() screen.ResampleMode = Enum.ResamplerMode.Pixelated end)
+    local overlay = label(bezel, {
+        Position = UDim2.fromOffset(14, 4), Size = UDim2.fromOffset(screenW - 20, screenH), TextWrapped = true, ZIndex = 3,
+        TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = Color3.fromRGB(30, 50, 40), TextSize = 13,
+        Text = "Put .gb or .zip games in your executor's workspace/PuppyAdmin/roms folder, then pick one above.\n\n"
+            .. "Keys: arrows / WASD move, X = A, Z = B, Enter = Start, Backspace = Select.",
+    })
+    local status = label(f, { Position = UDim2.fromOffset(16, 338), Size = UDim2.fromOffset(W - 32, 16), TextSize = 11,
+        TextColor3 = PAL.DIM, Text = "No game loaded" })
+
+    local image, pixels
+    local function makeImage()
+        if image then return true end
+        local ok, ei = pcall(function()
+            return game:GetService("AssetService"):CreateEditableImage({ Size = Vector2.new(160, 144) })
+        end)
+        if not ok or not ei then return false, "EditableImage is not available: " .. tostring(ei) end
+        local shown = pcall(function() screen.ImageContent = Content.fromObject(ei) end)
+        if not shown then
+            shown = pcall(function() ei.Parent = screen end)
+        end
+        if not shown then return false, "could not show the screen" end
+        image = ei
+        pixels = buffer.create(160 * 144 * 4)
+        return true
+    end
+
+    local function present()
+        if not (emu and image) then return end
+        local fb = emu.fb
+        local writeu32 = buffer.writeu32
+        for i = 1, 23040 do writeu32(pixels, i * 4 - 4, COLOR[fb[i]]) end
+        pcall(function() image:WritePixelsBuffer(Vector2.zero, Vector2.new(160, 144), pixels) end)
+    end
+
+    -- emulator module (downloaded once per version) ----------------------------
+    local function loadModule()
+        if UIAPI.gbModuleLoaded then return UIAPI.gbModuleLoaded end
+        local function valid(src)
+            return type(src) == "string" and #src == GBM.bytes and src:sub(1, 30) == ("-- PuppyAdmin gameboy " .. GBM.version):sub(1, 30)
+        end
+        local path = CACHE_DIR .. "/" .. MOD_NAME
+        local src
+        pcall(function() if isfile(path) then src = readfile(path) end end)
+        if not valid(src) then
+            local ok, body = pcall(function() return game:HttpGet(SETTINGS.Auras.assetBase .. "emu/" .. MOD_NAME) end)
+            if not ok or not valid(body) then error("emulator download failed or was incomplete", 0) end
+            src = body
+            pcall(function()
+                if makefolder and isfolder and not isfolder(CACHE_DIR) then makefolder(CACHE_DIR) end
+                writefile(path, src)
+            end)
+        end
+        local fn, err = (loadstring or load)(src, "=PuppyAdminGameBoy")
+        if not fn then error("emulator did not compile: " .. tostring(err), 0) end
+        UIAPI.gbModuleLoaded = fn()
+        return UIAPI.gbModuleLoaded
+    end
+
+    local function savePath(path) return (path:gsub("%.[^.]+$", "")) .. ".sav" end
+
+    local function saveNow()
+        if not (emu and romPath and emu.battery and emu.dirty()) then return end
+        local data = emu.saveData()
+        if data and writefile then
+            local ok = pcall(writefile, savePath(romPath), data)
+            if ok then emu.clearDirty() end
+        end
+        lastSave = os.clock()
+    end
+
+    local releaseAll -- set below (input)
+
+    local function setRunning(on)
+        running = on and emu ~= nil
+        if not running and releaseAll then releaseAll() end
+        UIAPI.gbButtons.pause.Text = running and "Pause" or "Play"
+    end
+
+    local function loadGame(name)
+        task.spawn(function()
+            saveNow()
+            emu, running = nil, false
+            overlay.Visible = true
+            overlay.Text = "Loading " .. name .. "..."
+            local ok, err = pcall(function()
+                local okImg, why = makeImage()
+                if not okImg then error(why, 0) end
+                local mod = loadModule()
+                local path = ROM_DIR .. "/" .. name
+                local data = readfile(path)
+                if name:lower():match("%.zip$") then
+                    local rom, inner = mod.Zip.extract(data)
+                    if not rom then error(inner, 0) end
+                    data = rom
+                end
+                local save
+                pcall(function() if isfile(savePath(path)) then save = readfile(savePath(path)) end end)
+                emu = mod.GB.new(data, save)
+                romPath = path
+            end)
+            if not ok then
+                emu = nil
+                overlay.Text = "Could not start " .. name .. ":\n" .. tostring(err)
+                status.Text = "No game loaded"
+                return
+            end
+            overlay.Visible = false
+            acc = 0
+            setRunning(true)
+            status.Text = (emu.title ~= "" and emu.title or name) .. (emu.battery and "  -  saves to " .. savePath(name) or "")
+        end)
+    end
+
+    -- top row: game picker and controls -------------------------------------------
+    local dd = uiDropdown(f, "", UDim2.fromOffset(160, 28), UDim2.fromOffset(16, 42), function()
+        listed = romList()
+        if #listed == 0 then return { "No games in PuppyAdmin/roms" } end
+        return listed
+    end, 1, function(i)
+        local name = listed[i]
+        if name then loadGame(name) end
+    end)
+    dd.button.TextSize = 11
+    UIAPI.gbButtons = {}
+    UIAPI.gbButtons.pause = uiButton(f, "Play", UDim2.fromOffset(52, 28), UDim2.fromOffset(180, 42), function()
+        if emu then setRunning(not running) end
+    end)
+    local fastBtn
+    fastBtn = uiButton(f, "Fast", UDim2.fromOffset(52, 28), UDim2.fromOffset(236, 42), function()
+        fast = not fast
+        fastBtn.BackgroundColor3 = fast and PAL.ELEVATED or PAL.CARD
+        fastBtn.Text = fast and "Fast x3" or "Fast"
+    end)
+    uiButton(f, "Reset", UDim2.fromOffset(52, 28), UDim2.fromOffset(292, 42), function()
+        if romPath then loadGame(romPath:match("([^/\\]+)$")) end
+    end)
+
+    -- input -------------------------------------------------------------------------
+    local held = {}
+    local function press(name, down)
+        held[name] = down or nil
+        if emu then emu.setButton(name, down) end
+    end
+    releaseAll = function()
+        for name in pairs(held) do if emu then emu.setButton(name, false) end end
+        held = {}
+    end
+
+    -- on-screen pad (hold to press)
+    local function padButton(text, name, x, y, w, h, round)
+        local b = make("TextButton", {
+            Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, h), BackgroundColor3 = PAL.CARD, BackgroundTransparency = 0.1,
+            BorderSizePixel = 0, AutoButtonColor = false, Text = text, TextColor3 = PAL.TEXT, Font = Enum.Font.GothamBold, TextSize = 12,
+        }, f)
+        corner(b, round and math.floor(w / 2) or 6)
+        b.InputBegan:Connect(function(input) if isPointer(input) then press(name, true); b.BackgroundColor3 = PAL.ELEVATED end end)
+        b.InputEnded:Connect(function(input) if isPointer(input) then press(name, false); b.BackgroundColor3 = PAL.CARD end end)
+        b.MouseLeave:Connect(function() if held[name] then press(name, false); b.BackgroundColor3 = PAL.CARD end end)
+        return b
+    end
+    local py = 360
+    padButton("^", "up", 58, py, 32, 32)
+    padButton("<", "left", 24, py + 34, 32, 32)
+    padButton(">", "right", 92, py + 34, 32, 32)
+    padButton("v", "down", 58, py + 68, 32, 32)
+    padButton("Select", "select", 140, py + 74, 52, 22)
+    padButton("Start", "start", 198, py + 74, 52, 22)
+    padButton("B", "b", 258, py + 26, 40, 40, true)
+    padButton("A", "a", 304, py + 6, 40, 40, true)
+
+    local KEYS = {
+        [Enum.KeyCode.Up] = "up", [Enum.KeyCode.W] = "up", [Enum.KeyCode.Down] = "down", [Enum.KeyCode.S] = "down",
+        [Enum.KeyCode.Left] = "left", [Enum.KeyCode.A] = "left", [Enum.KeyCode.Right] = "right", [Enum.KeyCode.D] = "right",
+        [Enum.KeyCode.X] = "a", [Enum.KeyCode.K] = "a", [Enum.KeyCode.Z] = "b", [Enum.KeyCode.J] = "b",
+        [Enum.KeyCode.Return] = "start", [Enum.KeyCode.Backspace] = "select", [Enum.KeyCode.RightShift] = "select",
+    }
+    local keyList = {}
+    for kc in pairs(KEYS) do keyList[#keyList + 1] = kc end
+    local ACTION = "PuppyAdminGameBoy"
+    local bound = false
+    local function onKey(_, state, input)
+        if not (running and emu) then return Enum.ContextActionResult.Pass end
+        local name = KEYS[input.KeyCode]
+        if not name then return Enum.ContextActionResult.Pass end
+        press(name, state == Enum.UserInputState.Begin)
+        return Enum.ContextActionResult.Sink
+    end
+    local function bind(on)
+        if on == bound then return end
+        bound = on
+        if on then
+            pcall(function() ContextActionService:BindActionAtPriority(ACTION, onKey, false, 3000, table.unpack(keyList)) end)
+        else
+            pcall(function() ContextActionService:UnbindAction(ACTION) end)
+            releaseAll()
+        end
+    end
+
+    -- main loop: real-time pacing, at most 2 frames per heartbeat (3 when fast)
+    local loop
+    local function startLoop()
+        if loop then return end
+        loop = RunService.Heartbeat:Connect(function(dt)
+            if not (running and emu) then return end
+            local start = os.clock()
+            local ran = 0
+            if fast then
+                while ran < 3 and os.clock() - start < 0.03 do emu.runFrame(); ran = ran + 1 end
+                acc = 0
+            else
+                acc = math.min(acc + dt, 0.25)
+                while acc >= FRAME and ran < 2 do
+                    emu.runFrame()
+                    acc = acc - FRAME
+                    ran = ran + 1
+                    if os.clock() - start > 0.03 then break end
+                end
+                if acc > 0.1 then acc = 0 end -- falling behind: run slower instead of piling up
+            end
+            if ran > 0 then present() end
+            framesThisSecond = framesThisSecond + ran
+            local now = os.clock()
+            if now - secondStart >= 1 then
+                speedPct = math.floor(framesThisSecond / (now - secondStart) / 59.73 * 100 + 0.5)
+                framesThisSecond, secondStart = 0, now
+                local base = status.Text:gsub("  %[%d+%%%]$", "")
+                status.Text = base .. "  [" .. speedPct .. "%]"
+            end
+            if now - lastSave > 5 then saveNow() end
+        end)
+        table.insert(conns, loop)
+    end
+    local function stopLoop()
+        if loop then loop:Disconnect(); loop = nil end
+    end
+
+    f:GetPropertyChangedSignal("Visible"):Connect(function()
+        if f.Visible then
+            bind(true)
+            startLoop()
+        else
+            if running then setRunning(false) end
+            saveNow()
+            bind(false)
+            stopLoop()
+        end
+    end)
+    table.insert(conns, UserInputService.WindowFocusReleased:Connect(function() releaseAll() end))
+    table.insert(cleanups, function() saveNow(); bind(false); stopLoop() end)
+end
+
 local function buildPanels(screenGui)
     local B = UIAPI.builders
     B.tools = function() buildToolsPanel(screenGui) end
@@ -8866,6 +9179,7 @@ local function buildPanels(screenGui)
     B.blacklist = function() buildBlacklistPanel(screenGui) end
     B.performance = function() buildPerformancePanel(screenGui) end
     B.games = function() buildGamesPanel(screenGui) end
+    B.gameboy = function() UIAPI.buildGameBoyPanel(screenGui) end
 end
 
 ------------------------------------------------------------------------
