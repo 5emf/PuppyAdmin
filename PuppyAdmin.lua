@@ -50,6 +50,12 @@ local SETTINGS = {
     -- presence worker (presence/ in the repository), e.g.
     -- "https://puppyadmin-presence.<you>.workers.dev". Empty = only you see your own default tag.
     Presence = { url = "", beatSeconds = 20 },
+    -- Shared auras: who wears which aura (auras.json, same repository and
+    -- branch as tags) and where aura textures are downloaded from.
+    Auras = {
+        path = "auras.json",
+        assetBase = "https://raw.githubusercontent.com/5emf/PuppyAdmin/ccr-3b4dfcff-nyfy0w/",
+    },
 }
 
 local S = {
@@ -1129,8 +1135,8 @@ table.insert(cleanups, function()
 end)
 
 ------------------------------------------------------------------------
--- Auras / VFX (new, written for this script; add your own with Aura.register)
--- Visible on your screen only.
+-- Auras / VFX (add your own with Aura.register). Assigned auras are shared
+-- through auras.json (see AuraSync): every copy of the script draws them.
 ------------------------------------------------------------------------
 
 local Aura = {
@@ -1165,11 +1171,41 @@ local function fxPart(props)
 end
 
 -- build(ctx) -> { objs = { instances to destroy }, step = function(t, dt) or nil }
--- ctx = { char, hrp, head, color }
-function Aura.register(name, desc, build)
+-- ctx = { char, hrp, head, color }. opts.ownColors: the aura keeps its
+-- texture's colours unless a colour is given explicitly.
+function Aura.register(name, desc, build, opts)
     name = name:lower()
     if not Aura.defs[name] then table.insert(Aura.order, name) end
-    Aura.defs[name] = { name = name, desc = desc, build = build }
+    Aura.defs[name] = { name = name, desc = desc, build = build, ownColors = opts and opts.ownColors or false }
+end
+
+-- Aura textures live in the repository (SETTINGS.Auras.assetBase .. file);
+-- each copy downloads them once and loads them with getcustomasset.
+Aura.textures, Aura.loading = {}, {}
+function Aura.texture(file, auraName)
+    local tex = Aura.textures[file]
+    if tex then return tex ~= false and tex or nil end
+    if not Aura.loading[file] then
+        Aura.loading[file] = true
+        task.spawn(function()
+            local url = SETTINGS.Auras.assetBase .. file
+            local got = urlImageAsset(url, "aura")
+            Aura.textures[file] = got or false
+            Aura.loading[file] = nil
+            if not got then
+                note("Aura", "Could not load " .. file .. " (needs getcustomasset + writefile)", RED)
+                return
+            end
+            -- build again for everyone wearing an aura that was waiting for it
+            for uid, st in pairs(Aura.state) do
+                if st[auraName] then
+                    local p = Players:GetPlayerByUserId(uid)
+                    if p and p.Character then Aura.build(p, p.Character, auraName) end
+                end
+            end
+        end)
+    end
+    return nil
 end
 
 Aura.register("fire", "Flames around the body", function(c)
@@ -1290,6 +1326,33 @@ Aura.register("pulse", "Breathing force-field bubble", function(c)
     }
 end)
 
+-- 8x8 flipbook (64 frames, 30 fps) on one camera-facing particle at the feet.
+-- One particle lives exactly one loop and the next starts as it ends.
+Aura.register("lightning", "Pink lightning charge at your feet (animated)", function(c)
+    local tex = Aura.texture("assets/auras/lightning_charge_pink.png", "lightning")
+    if not tex then return nil end
+    local hum = c.char:FindFirstChildOfClass("Humanoid")
+    local legs = (hum and hum.RigType == Enum.HumanoidRigType.R15) and hum.HipHeight or 2
+    local size = 9
+    local feet = -(c.hrp.Size.Y / 2 + legs)
+    local att = fxNew("Attachment", { Position = Vector3.new(0, feet + size * 0.28, 0) }, c.hrp)
+    local loop = 64 / 30
+    local em = fxNew("ParticleEmitter", {
+        Texture = tex, Color = ColorSequence.new(c.color or Color3.new(1, 1, 1)),
+        Size = NumberSequence.new(size), Transparency = NumberSequence.new(0), LightEmission = 0.6,
+        Lifetime = NumberRange.new(loop), Rate = 1 / loop, Speed = NumberRange.new(0),
+        Rotation = NumberRange.new(0), RotSpeed = NumberRange.new(0), LockedToPart = true,
+        Orientation = Enum.ParticleOrientation.FacingCamera, ZOffset = 1,
+    }, att)
+    pcall(function()
+        em.FlipbookLayout = Enum.ParticleFlipbookLayout.Grid8x8
+        em.FlipbookMode = Enum.ParticleFlipbookMode.OneShot
+        em.FlipbookStartRandom = false
+    end)
+    em:Emit(1)
+    return { objs = { att } }
+end, { ownColors = true })
+
 local function auraDestroyObjs(entry)
     if entry.h and entry.h.objs then
         for _, o in ipairs(entry.h.objs) do pcall(function() o:Destroy() end) end
@@ -1316,7 +1379,9 @@ function Aura.apply(player, name, color)
     local st = Aura.state[player.UserId]
     if not st then st = {}; Aura.state[player.UserId] = st end
     if st[name] then auraDestroyObjs(st[name]) end
-    st[name] = { color = color or Aura.defaultColor }
+    local fallback = Aura.defaultColor
+    if Aura.defs[name].ownColors then fallback = nil end
+    st[name] = { color = color or fallback }
     if player.Character then Aura.build(player, player.Character, name) end
     return true
 end
@@ -1863,8 +1928,8 @@ do
 
     TagSync.request = httpRequest
 
-    local function apiUrl()
-        return "https://api.github.com/repos/" .. CFG.owner .. "/" .. CFG.repo .. "/contents/" .. CFG.path
+    local function apiUrl(path)
+        return "https://api.github.com/repos/" .. CFG.owner .. "/" .. CFG.repo .. "/contents/" .. (path or CFG.path)
     end
 
     function TagSync.token()
@@ -1982,34 +2047,65 @@ do
     end
 
     -- The contents API is always current (the raw file is cached by GitHub for
-    -- minutes). Each read sends the last ETag: an unchanged file answers 304,
-    -- which GitHub does not count against the rate limit, so polling is cheap.
-    -- Returns ok, text | "unchanged" | nil (no file), sha.
-    function TagSync.fetch(fresh)
+    -- minutes). Each read sends the last ETag (kept in st.etag): an unchanged
+    -- file answers 304, which GitHub does not count against the rate limit.
+    -- Returns ok, text | "unchanged" | nil (no file), sha. Used for every
+    -- shared file in the repository (tags.json, auras.json).
+    function TagSync.readPath(path, st, fresh)
         local token = TagSync.token()
         local h = headers(token)
-        if TagSync.etag and not fresh then h["If-None-Match"] = TagSync.etag end
-        local res = httpRequest({ Url = apiUrl() .. "?ref=" .. CFG.branch, Method = "GET", Headers = h })
+        if st.etag and not fresh then h["If-None-Match"] = st.etag end
+        local res = httpRequest({ Url = apiUrl(path) .. "?ref=" .. CFG.branch, Method = "GET", Headers = h })
         if res then
             local code = tonumber(res.StatusCode) or 0
             if code == 304 then return true, "unchanged", nil end
-            if code == 404 then TagSync.etag = nil; return true, nil, nil end
+            if code == 404 then st.etag = nil; return true, nil, nil end
             if code == 200 then
                 local ok, meta = pcall(function() return HttpService:JSONDecode(res.Body) end)
                 if ok and type(meta) == "table" and type(meta.content) == "string" then
-                    TagSync.etag = header(res, "ETag")
+                    st.etag = header(res, "ETag")
                     return true, b64decode(meta.content), meta.sha
                 end
             end
             if token then return false, "GitHub said " .. tostring(code) end
             -- no token and the API refused (e.g. rate limit): fall through to the raw file
         elseif token then
-            return false, "executor has no request() - cannot write tags"
+            return false, "executor has no request() - cannot write to the repository"
         end
-        local url = "https://raw.githubusercontent.com/" .. CFG.owner .. "/" .. CFG.repo .. "/" .. CFG.branch .. "/" .. CFG.path
+        local url = "https://raw.githubusercontent.com/" .. CFG.owner .. "/" .. CFG.repo .. "/" .. CFG.branch .. "/" .. path
         local ok, body = pcall(function() return game:HttpGet(url .. "?t=" .. tostring(os.time())) end)
         if not ok or type(body) ~= "string" or body:sub(1, 1) ~= "[" then return true, nil, nil end
         return true, body, nil
+    end
+
+    -- Commits body as path (creates it when missing). Returns ok, message.
+    function TagSync.writePath(path, body, message, st)
+        local token = TagSync.token()
+        if not token then return false, "no token - add one in Settings" end
+        for attempt = 1, 2 do
+            local ok, text, sha = TagSync.readPath(path, {}, true)
+            if not ok then return false, "read failed: " .. tostring(text) end
+            if text == body then return true, "already up to date" end
+            local payload = HttpService:JSONEncode({ message = message, content = b64encode(body), branch = CFG.branch, sha = sha })
+            local h = headers(token)
+            h["Content-Type"] = "application/json"
+            local res, err = httpRequest({ Url = apiUrl(path), Method = "PUT", Headers = h, Body = payload })
+            if not res then return false, err end
+            if res.StatusCode == 200 or res.StatusCode == 201 then
+                if st then st.etag = nil end -- next poll reads the new version
+                return true, "saved"
+            end
+            if res.StatusCode == 401 or res.StatusCode == 403 then
+                return false, "GitHub refused the token (" .. res.StatusCode .. ") - needs Contents: read and write on " .. CFG.repo
+            end
+            -- 409 / 422: someone else wrote in between; read the new sha and try once more
+            if attempt == 2 then return false, "GitHub said " .. tostring(res.StatusCode) end
+        end
+        return false, "write failed"
+    end
+
+    function TagSync.fetch(fresh)
+        return TagSync.readPath(CFG.path, TagSync, fresh)
     end
 
     function TagSync.pull(fresh)
@@ -2023,33 +2119,11 @@ do
     end
 
     function TagSync.push()
-        local token = TagSync.token()
-        if not token then return false, "no token - add one in Settings" end
         local body = encodeTags()
-        for attempt = 1, 2 do
-            local ok, text, sha = TagSync.fetch(true)
-            if not ok then return false, "read failed: " .. tostring(text) end
-            if text == body then TagSync.lastJson = body; return true, "already up to date" end
-            local payload = HttpService:JSONEncode({
-                message = "Update tags (" .. #Cfg.tagDefs .. ") from PuppyAdmin",
-                content = b64encode(body), branch = CFG.branch, sha = sha,
-            })
-            local h = headers(token)
-            h["Content-Type"] = "application/json"
-            local res, err = httpRequest({ Url = apiUrl(), Method = "PUT", Headers = h, Body = payload })
-            if not res then return false, err end
-            if res.StatusCode == 200 or res.StatusCode == 201 then
-                TagSync.lastJson = body
-                TagSync.etag = nil -- next poll reads the new version
-                return true, "pushed " .. #Cfg.tagDefs .. " tags"
-            end
-            if res.StatusCode == 401 or res.StatusCode == 403 then
-                return false, "GitHub refused the token (" .. res.StatusCode .. ") - needs Contents: read and write on " .. CFG.repo
-            end
-            -- 409 / 422: someone else wrote in between; read the new sha and try once more
-            if attempt == 2 then return false, "GitHub said " .. tostring(res.StatusCode) end
-        end
-        return false, "push failed"
+        local ok, msg = TagSync.writePath(CFG.path, body, "Update tags (" .. #Cfg.tagDefs .. ") from PuppyAdmin", TagSync)
+        if not ok then return false, msg end
+        TagSync.lastJson = body
+        return true, msg == "saved" and ("pushed " .. #Cfg.tagDefs .. " tags") or msg
     end
 
     -- Called by Tags.save after every local change.
@@ -2177,6 +2251,172 @@ do
 end
 
 Presence.start()
+
+------------------------------------------------------------------------
+-- Shared auras: auras.json in the repository holds who wears which aura,
+--   [ { "userId": "123", "aura": "lightning", "color": [r, g, b] }, ... ]
+-- ("color" optional). Every copy of the script reads it at start and every
+-- pollSeconds and draws those auras; only accounts that may edit tags change
+-- it (aura / unaura), and only a device with the GitHub token writes it.
+------------------------------------------------------------------------
+
+local AuraSync = { etag = nil, lastJson = nil, queued = false, status = "starting", shared = {} }
+
+do
+    local CFG = SETTINGS.Auras
+
+    -- shared: { ["<UserId>"] = { [auraName] = {r,g,b} or false } }
+    local function encode(shared)
+        local list = {}
+        for uid, set in pairs(shared) do
+            for name, color in pairs(set) do
+                list[#list + 1] = { userId = uid, aura = name, color = color or nil }
+            end
+        end
+        table.sort(list, function(a, b) return a.userId .. a.aura < b.userId .. b.aura end)
+        return HttpService:JSONEncode(list)
+    end
+
+    local function sanitize(list)
+        if type(list) ~= "table" then return nil end
+        local out = {}
+        for i = 1, math.min(#list, 2000) do
+            local e = list[i]
+            local uid = type(e) == "table" and tostring(e.userId or "") or ""
+            local name = type(e) == "table" and type(e.aura) == "string" and e.aura:lower():sub(1, 40) or nil
+            if uid:match("^%d+$") and #uid <= 20 and name and name:match("^[%w_]+$") then
+                local color = false
+                if type(e.color) == "table" and tonumber(e.color[1]) and tonumber(e.color[2]) and tonumber(e.color[3]) then
+                    color = { math.clamp(tonumber(e.color[1]), 0, 255), math.clamp(tonumber(e.color[2]), 0, 255), math.clamp(tonumber(e.color[3]), 0, 255) }
+                end
+                out[uid] = out[uid] or {}
+                out[uid][name] = color
+            end
+        end
+        return out
+    end
+
+    local function colorOf(def, c)
+        if c then return Color3.fromRGB(c[1], c[2], c[3]) end
+        if def and def.ownColors then return nil end
+        return Aura.defaultColor
+    end
+
+    -- Makes Aura.state match the shared list (also for players not here yet:
+    -- the character watcher builds from Aura.state when they spawn).
+    function AuraSync.reconcile(new)
+        local old = AuraSync.shared
+        AuraSync.shared = new
+        for uid, set in pairs(old) do
+            for name in pairs(set) do
+                if not (new[uid] and new[uid][name] ~= nil) then
+                    local id = tonumber(uid)
+                    local st = Aura.state[id]
+                    local p = Players:GetPlayerByUserId(id)
+                    if p then Aura.remove(p, name) elseif st then st[name] = nil end
+                end
+            end
+        end
+        for uid, set in pairs(new) do
+            for name, c in pairs(set) do
+                local def = Aura.defs[name]
+                if def then
+                    local was = old[uid] and old[uid][name]
+                    local same = old[uid] and old[uid][name] ~= nil and HttpService:JSONEncode({ was }) == HttpService:JSONEncode({ c })
+                    if not same then
+                        local id = tonumber(uid)
+                        local p = Players:GetPlayerByUserId(id)
+                        if p then
+                            Aura.apply(p, name, colorOf(def, c))
+                        else
+                            Aura.state[id] = Aura.state[id] or {}
+                            Aura.state[id][name] = { color = colorOf(def, c) }
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    function AuraSync.pull(fresh)
+        local ok, text = TagSync.readPath(CFG.path, AuraSync, fresh)
+        if not ok then AuraSync.status = "read failed: " .. tostring(text); return false, AuraSync.status end
+        if text == "unchanged" then return true, AuraSync.status end
+        if not text then AuraSync.status = "no auras file yet"; return true, AuraSync.status end
+        local okJ, decoded = pcall(function() return HttpService:JSONDecode(text) end)
+        local new = okJ and sanitize(decoded)
+        if not new then AuraSync.status = "auras file is not valid"; return false, AuraSync.status end
+        local js = encode(new)
+        -- changes made here without a token stay until the script restarts
+        if js ~= AuraSync.lastJson and not AuraSync.localOnly then
+            AuraSync.lastJson = js
+            AuraSync.reconcile(new)
+        end
+        local n = 0
+        for _, set in pairs(new) do for _ in pairs(set) do n = n + 1 end end
+        AuraSync.status = "up to date (" .. n .. " auras)"
+        return true, AuraSync.status
+    end
+
+    local function schedulePush()
+        if not TagSync.token() then
+            AuraSync.localOnly = true
+            note("Aura", "Applied on this device only - add the GitHub token in Settings to share auras", GREY)
+            return
+        end
+        if AuraSync.queued then return end
+        AuraSync.queued = true
+        task.delay(SETTINGS.TagSync.pushDelay, function()
+            AuraSync.queued = false
+            if genv.PuppyAdminActive ~= true then return end
+            local body = encode(AuraSync.shared)
+            local ok, msg = TagSync.writePath(CFG.path, body, "Update auras from PuppyAdmin", AuraSync)
+            if ok then AuraSync.lastJson = body end
+            note("Aura sync", ok and "Shared with everyone using the script" or msg, ok and LIGHT or RED)
+        end)
+    end
+
+    -- uids: UserIds; color: {r,g,b} or nil. Returns how many changed.
+    function AuraSync.give(uids, name, color)
+        local new = HttpService:JSONDecode(HttpService:JSONEncode(AuraSync.shared))
+        for _, id in ipairs(uids) do
+            local k = tostring(id)
+            new[k] = new[k] or {}
+            new[k][name] = color or false
+        end
+        AuraSync.reconcile(new)
+        schedulePush()
+        return #uids
+    end
+
+    -- name nil: every aura. Returns how many were removed.
+    function AuraSync.take(uids, name)
+        local new = HttpService:JSONDecode(HttpService:JSONEncode(AuraSync.shared))
+        local n = 0
+        for _, id in ipairs(uids) do
+            local set = new[tostring(id)]
+            if set then
+                for k in pairs(set) do
+                    if not name or k == name then set[k] = nil; n = n + 1 end
+                end
+                if next(set) == nil then new[tostring(id)] = nil end
+            end
+        end
+        AuraSync.reconcile(new)
+        if n > 0 then schedulePush() end
+        return n
+    end
+
+    task.spawn(function()
+        pcall(AuraSync.pull, true)
+        while genv.PuppyAdminActive == true do
+            task.wait(SETTINGS.TagSync.pollSeconds)
+            if genv.PuppyAdminActive ~= true then break end
+            if not AuraSync.queued then pcall(AuraSync.pull) end
+        end
+    end)
+end
+
 
 
 ------------------------------------------------------------------------
@@ -13033,9 +13273,9 @@ local cmdDocs = {
     antikick = "antikick - Block client-side Kick calls on you",
     unantikick = "unantikick - Turn antikick off",
     antivcban = "antivcban [close] - Voice chat bypass panel (execute, then mute/unmute)",
-    aura = "aura [name] [target] [color] - Apply an aura (see auras)",
-    unaura = "unaura [name|all] [target] - Remove auras",
-    auras = "auras - List usable auras",
+    aura = "aura [name] [players] [color] - Give an aura everyone using the script sees (tag managers only)",
+    unaura = "unaura [name|all] [players] - Take auras away (tag managers only)",
+    auras = "auras - List auras and who has them",
     reanim = "reanim [on|off] - Reanimation panel (power, library, idle/walk/jump, recording, tricks, copy, speed); on/off toggles reanimation. Also: anim, reanimui",
     prefix = "prefix [add|remove|set] [chars] - Chat command prefixes",
     uikey = "uikey [key] - Key that shows/hides the script UI",
@@ -13263,27 +13503,35 @@ function H.unmute(a) muteCmd(a, false) end
 
 -- Auras -------------------------------------------------------------------------
 
+-- aura <name> [players] [color]   give an aura to players (names, UserIds, all, others; default: you)
+-- unaura <name|all> [players]     take it away
+-- Allowlisted (same accounts as the tag editor); shared with everyone using the script.
 function H.aura(a)
+    if not canEditTags() then note("Aura", "Only tag managers can give out auras", RED); return end
     local name = a[1] and a[1]:lower()
-    if not name then note("Aura", "Usage: aura [name] [target] [color] - see 'auras'"); return end
+    if not name then note("Aura", "Usage: aura [name] [players] [color] - see 'auras'"); return end
     if not Aura.defs[name] then note("Aura", "Unknown aura '" .. name .. "' - see 'auras'", RED); return end
-    local color = Aura.defaultColor
     local r, g, b = parseColorArgs(a, 3)
-    if r then color = Color3.fromRGB(r, g, b) end
-    local list = resolveTargets(a[2])
-    if #list == 0 then note("Aura", "No matching player", RED); return end
-    for _, p in ipairs(list) do Aura.apply(p, name, color) end
-    note("Aura", name .. " -> " .. (#list == 1 and list[1].DisplayName or (#list .. " players")), LIGHT)
+    local color = r and { r, g, b } or nil
+    local who = a[2] or "me"
+    task.spawn(function()
+        local uids, missing = Tags.resolveUsers({ who })
+        if #uids == 0 then note("Aura", "No matching player" .. (#missing > 0 and (": " .. table.concat(missing, ", ")) or ""), RED); return end
+        AuraSync.give(uids, name, color)
+        note("Aura", name .. " -> " .. (#uids == 1 and Tags.memberName(uids[1]) or (#uids .. " players")), LIGHT)
+    end)
 end
 
 function H.unaura(a)
+    if not canEditTags() then note("Aura", "Only tag managers can remove auras", RED); return end
     local name = a[1] and a[1]:lower()
-    if not name then note("Aura", "Usage: unaura [name|all] [target]"); return end
+    if not name then note("Aura", "Usage: unaura [name|all] [players]"); return end
     if name == "all" then name = nil end
-    local list = resolveTargets(a[2])
-    local n = 0
-    for _, p in ipairs(list) do n = n + Aura.remove(p, name) end
-    note("Aura", "Removed " .. n)
+    local who = a[2] or "me"
+    task.spawn(function()
+        local uids = Tags.resolveUsers({ who })
+        note("Aura", "Removed " .. AuraSync.take(uids, name))
+    end)
 end
 
 function H.auras()
@@ -13292,7 +13540,17 @@ function H.auras()
         table.insert(lines, name .. " - " .. Aura.defs[name].desc)
     end
     table.insert(lines, "")
-    table.insert(lines, "color: name, #hex or r,g,b (red green blue white yellow orange purple pink cyan gold)")
+    table.insert(lines, "Given out (shared, " .. tostring(AuraSync.status) .. "):")
+    local any = false
+    for uid, set in pairs(AuraSync.shared) do
+        for name in pairs(set) do
+            any = true
+            table.insert(lines, "  " .. Tags.memberName(uid) .. "  -  " .. name)
+        end
+    end
+    if not any then table.insert(lines, "  nobody yet") end
+    table.insert(lines, "")
+    table.insert(lines, "color: name, #hex or r,g,b - lightning keeps its own colours unless you give one")
     UIAPI.showOutput("AURAS", lines)
 end
 
