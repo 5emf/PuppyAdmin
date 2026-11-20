@@ -3880,7 +3880,7 @@ do local function
 __modImpl()return function(env,state,panel)local C=env.C local _nvL=env._nvL
 local createInstance=env.createInstance local tween=env.tween local
 userInputService=env.userInputService local R={S=state,P=panel,onShow={},eqs=
-setmetatable({},{__mode='k'})}R.W,R.H=412,460 panel.Size=UDim2.fromOffset(R.W,R.
+setmetatable({},{__mode='k'})}_G._nv_reanimLayout=R --[[PuppyAdmin patch]] R.W,R.H=412,460 panel.Size=UDim2.fromOffset(R.W,R.
 H)panel:SetAttribute('ContentRevision','Reanimate 7')panel:SetAttribute(
 '_nvDesignW',R.W)panel:SetAttribute('_nvDesignH',R.H)R.WHITE,R.PAPER,R.INK=
 Color3.new(1,1,1),Color3.fromRGB(242,242,244),Color3.fromRGB(18,18,20)R.SUBTLE,R
@@ -15388,7 +15388,7 @@ local function buildReanimPanel(screenGui)
             end)
         end)
         local hint = label(page, { Position = UDim2.fromOffset(16, 66), Size = UDim2.new(1, -32, 0, 14), TextSize = 10, TextColor3 = PAL.DIM,
-            Text = "Click to play.  I / W / J use it for idle, walk or jump." })
+            Text = "Click to play.  Right-click or ... for more." })
         local list = make("ScrollingFrame", {
             Position = UDim2.fromOffset(16, 84), Size = UDim2.new(1, -32, 1, -92), BackgroundColor3 = PAL.CARD,
             BackgroundTransparency = 0.4, BorderSizePixel = 0, ScrollBarThickness = 2, ScrollBarImageColor3 = PAL.DIM,
@@ -15399,15 +15399,193 @@ local function buildReanimPanel(screenGui)
         make("UIPadding", { PaddingTop = UDim.new(0, 3), PaddingLeft = UDim.new(0, 3) }, list)
         local MAX_ROWS = 150
         local lastSig
-        local function setState(slot, item)
+        local function LAYOUT() local L = _G._nv_reanimLayout; return type(L) == "table" and L or nil end
+        local function titleOf(name)
+            local L = LAYOUT()
+            if L and type(L.title) == "function" then
+                local ok, t = pcall(L.title, name)
+                if ok and type(t) == "string" and t ~= "" then return t end
+            end
+            return name
+        end
+        local function inList(list, item)
+            for _, it in ipairs(list or {}) do if it == item or (it.url == item.url and it.name == item.name) then return true end end
+            return false
+        end
+        local function favSlotOf(name)
             local rs = RS()
-            if not rs or type(rs.stateAnims) ~= "table" then return end
-            rs.stateAnims[slot] = { name = item.name, url = item.url }
-            call("saveStateAnims")
-            call("startStateLoop")
-            note("Reanim", slot .. " = " .. item.name, LIGHT)
+            for k, b in pairs(rs and rs.favKeybinds or {}) do
+                if type(b) == "table" and b.name == name then return k end
+            end
+            return nil
+        end
+        local function setState(slot, item)
+            local L, rs = LAYOUT(), RS()
+            if L and type(L.assignState) == "function" then
+                pcall(L.assignState, slot, item)
+            elseif rs and type(rs.stateAnims) == "table" then
+                local prev = rs.stateAnims[slot]
+                rs.stateAnims[slot] = (prev and prev.name == item.name) and nil or { name = item.name, url = item.url }
+                call("saveStateAnims")
+                call("startStateLoop")
+            end
             for _, fn in ipairs(syncers) do pcall(fn) end
         end
+
+        -- Right-click menu (and the ... button): the same actions as the
+        -- original panel's - play/stop, favourites, key, rename, reset name,
+        -- use for idle/walk/jump, delete file.
+        local catcher = make("TextButton", {
+            Name = "MenuCatcher", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = "",
+            AutoButtonColor = false, Visible = false, ZIndex = 60,
+        }, f)
+        local menu = make("Frame", {
+            Name = "RowMenu", Size = UDim2.fromOffset(220, 0), BackgroundColor3 = PAL.PANEL, BorderSizePixel = 0,
+            Visible = false, ZIndex = 61, AutomaticSize = Enum.AutomaticSize.Y,
+        }, f)
+        corner(menu, 10)
+        stroke(menu, PAL.STROKE, 1, 0)
+        make("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder }, menu)
+        make("UIPadding", { PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6), PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6) }, menu)
+        local keyConn
+        local function closeMenu()
+            if keyConn then keyConn:Disconnect(); keyConn = nil end
+            menu.Visible, catcher.Visible = false, false
+        end
+        catcher.MouseButton1Click:Connect(closeMenu)
+        catcher.MouseButton2Click:Connect(closeMenu)
+        local function menuRow(order, text, right, danger, onClick)
+            local b = make("TextButton", {
+                Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = danger and Color3.fromRGB(110, 35, 35) or PAL.CARD,
+                BackgroundTransparency = danger and 0.3 or 1, BorderSizePixel = 0, AutoButtonColor = false, LayoutOrder = order,
+                Text = text, TextColor3 = PAL.TEXT, Font = Enum.Font.GothamSemibold, TextSize = 12,
+                TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 62,
+            }, menu)
+            corner(b, 6)
+            make("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }, b)
+            local r
+            if right then
+                r = label(b, { Size = UDim2.fromScale(1, 1), Text = right, TextColor3 = PAL.DIM, TextSize = 11,
+                    TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 63 })
+            end
+            b.MouseEnter:Connect(function() if not danger then b.BackgroundTransparency = 0.2 end end)
+            b.MouseLeave:Connect(function() if not danger then b.BackgroundTransparency = 1 end end)
+            b.MouseButton1Click:Connect(function() onClick(b, r) end)
+            return b
+        end
+        local function rule(order)
+            make("Frame", { Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = PAL.DIV, BorderSizePixel = 0, LayoutOrder = order, ZIndex = 62 }, menu)
+        end
+        local function placeMenu(anchor)
+            local fp, fs = f.AbsolutePosition, f.AbsoluteSize
+            local mouse = UserInputService:GetMouseLocation() - game:GetService("GuiService"):GetGuiInset()
+            local x = math.clamp(mouse.X - fp.X, 8, math.max(8, fs.X - 228))
+            local y = math.clamp(mouse.Y - fp.Y, 40, math.max(40, fs.Y - menu.AbsoluteSize.Y - 8))
+            if anchor and (mouse.X < fp.X or mouse.X > fp.X + fs.X) then
+                x = math.clamp(anchor.AbsolutePosition.X - fp.X + anchor.AbsoluteSize.X - 220, 8, fs.X - 228)
+            end
+            menu.Position = UDim2.fromOffset(x, y)
+        end
+        local function openMenu(item, anchor)
+            local rs, L = RS(), LAYOUT()
+            if not rs then return end
+            for _, c in ipairs(menu:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
+            local playing = rs.reanimCurrentName == item.name
+            local o = 0
+            local function nextO() o = o + 1; return o end
+            menuRow(nextO(), playing and "Stop" or "Play", nil, false, function()
+                closeMenu()
+                if playing then call("stopCurrent") else call("playAnim", item.name, item.url) end
+                task.delay(0.3, function() refreshLibrary(true) end)
+            end)
+            if L and type(L.toggleFav) == "function" then
+                local fav = type(L.isFav) == "function" and L.isFav(item.name)
+                menuRow(nextO(), fav and "Remove from favorites" or "Add to favorites", nil, false, function()
+                    closeMenu()
+                    pcall(L.toggleFav, item)
+                    task.delay(0.1, function() refreshLibrary(true) end)
+                end)
+            end
+            local slot = favSlotOf(item.name)
+            menuRow(nextO(), "Set key", slot or "None", false, function(_, r)
+                if r then r.Text = "Press a key"; r.TextColor3 = PAL.TEXT end
+                if keyConn then keyConn:Disconnect() end
+                keyConn = UserInputService.InputBegan:Connect(function(inp, gp)
+                    if gp or inp.UserInputType ~= Enum.UserInputType.Keyboard then return end
+                    local kc = inp.KeyCode
+                    if kc == Enum.KeyCode.Unknown then return end
+                    local binds = rs.favKeybinds
+                    if type(binds) ~= "table" then closeMenu(); return end
+                    if kc == Enum.KeyCode.Escape then closeMenu(); return end
+                    local prev = favSlotOf(item.name)
+                    if kc == Enum.KeyCode.Backspace or kc == Enum.KeyCode.Delete then
+                        if prev then binds[prev] = nil end
+                        call("saveReanimKeybinds")
+                        note("Reanim", titleOf(item.name):sub(1, 24) .. " unbound")
+                        closeMenu()
+                        return
+                    end
+                    local owner = L and type(L.speedOwner) == "function" and L.speedOwner(kc.Name)
+                    if owner then note("Reanim", kc.Name .. " is already used by " .. tostring(owner) .. ". Pick another key.", RED); return end
+                    if prev then binds[prev] = nil end
+                    local was = binds[kc.Name]
+                    binds[kc.Name] = { name = item.name, url = item.url }
+                    call("saveReanimKeybinds")
+                    note("Reanim", titleOf(item.name):sub(1, 24) .. " - " .. kc.Name
+                        .. ((was and was.name ~= item.name) and (" (was " .. titleOf(was.name):sub(1, 18) .. ")") or ""), LIGHT)
+                    closeMenu()
+                end)
+            end)
+            if L and type(L.setTitle) == "function" then
+                menuRow(nextO(), "Rename", nil, false, function(b)
+                    for _, c in ipairs(b:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
+                    b.Text = ""
+                    local box = make("TextBox", {
+                        Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = titleOf(item.name),
+                        PlaceholderText = item.name, ClearTextOnFocus = false, TextColor3 = PAL.TEXT, PlaceholderColor3 = PAL.DIM,
+                        Font = Enum.Font.GothamSemibold, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 63,
+                    }, b)
+                    box.FocusLost:Connect(function(enter)
+                        if enter then
+                            local text = box.Text:sub(1, 40)
+                            pcall(L.setTitle, item.name, text ~= "" and text or nil)
+                            note("Reanim", "Renamed to " .. titleOf(item.name):sub(1, 24), LIGHT)
+                            refreshLibrary(true)
+                        end
+                        closeMenu()
+                    end)
+                    task.defer(function() box:CaptureFocus() end)
+                end)
+                if type(L.titles) == "table" and L.titles[item.name] then
+                    menuRow(nextO(), "Reset name", nil, false, function()
+                        closeMenu()
+                        pcall(L.setTitle, item.name, nil)
+                        note("Reanim", "Name reset to " .. item.name:sub(1, 24))
+                        refreshLibrary(true)
+                    end)
+                end
+            end
+            rule(nextO())
+            for _, slotName in ipairs({ "idle", "walk", "jump" }) do
+                local cur = rs.stateAnims and rs.stateAnims[slotName]
+                local on = cur ~= nil and cur.name == item.name
+                menuRow(nextO(), (on and "Stop using for " or "Use for ") .. slotName, nil, false, function()
+                    closeMenu()
+                    setState(slotName, item)
+                end)
+            end
+            if inList(rs.customItems, item) and L and type(L.deleteCustom) == "function" then
+                rule(nextO())
+                menuRow(nextO(), "Delete file", nil, true, function()
+                    closeMenu()
+                    pcall(L.deleteCustom, item)
+                    task.delay(0.1, function() refreshLibrary(true) end)
+                end)
+            end
+            catcher.Visible, menu.Visible = true, true
+            task.defer(function() placeMenu(anchor) end)
+        end
+
         refreshLibrary = function(force)
             local rs = RS()
             local items = type(rs) == "table" and rs[SOURCES[source][1]] or {}
@@ -15418,33 +15596,37 @@ local function buildReanimPanel(screenGui)
             for _, c in ipairs(list:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
             local shown = 0
             for _, item in ipairs(items) do
-                if type(item) == "table" and not item.isHeader and type(item.name) == "string"
-                    and (q == "" or item.name:lower():find(q, 1, true)) then
+                local shownName = (type(item) == "table" and type(item.name) == "string") and titleOf(item.name) or nil
+                if shownName and not item.isHeader
+                    and (q == "" or item.name:lower():find(q, 1, true) or shownName:lower():find(q, 1, true)) then
                     shown = shown + 1
                     if shown > MAX_ROWS then break end
                     local playing = rs.reanimCurrentName == item.name
+                    local key = favSlotOf(item.name)
                     local row = make("TextButton", {
                         Size = UDim2.new(1, -6, 0, 26), BackgroundColor3 = playing and PAL.ELEVATED or PAL.CARD,
                         BackgroundTransparency = 0.2, BorderSizePixel = 0, AutoButtonColor = false, LayoutOrder = shown,
-                        Text = item.name, TextColor3 = playing and PAL.ACCENT or PAL.TEXT, Font = Enum.Font.Gotham, TextSize = 12,
+                        Text = shownName, TextColor3 = playing and PAL.ACCENT or PAL.TEXT, Font = Enum.Font.Gotham, TextSize = 12,
                         TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
                     }, list)
                     corner(row, 6)
-                    make("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 92) }, row)
+                    make("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, key and 74 or 36) }, row)
                     row.MouseButton1Click:Connect(function()
                         if rs.reanimCurrentName == item.name then call("stopCurrent") else call("playAnim", item.name, item.url) end
                         task.delay(0.3, function() refreshLibrary(true) end)
                     end)
-                    for k, slot in ipairs({ "idle", "walk", "jump" }) do
-                        local b = make("TextButton", {
-                            Size = UDim2.fromOffset(24, 20), AnchorPoint = Vector2.new(1, 0.5),
-                            Position = UDim2.new(1, 88 - (3 - k) * 28, 0.5, 0), BackgroundColor3 = PAL.ELEVATED,
-                            BackgroundTransparency = 0.2, BorderSizePixel = 0, AutoButtonColor = false,
-                            Text = slot:sub(1, 1):upper(), TextColor3 = PAL.DIM, Font = Enum.Font.GothamBold, TextSize = 11,
-                        }, row)
-                        corner(b, 5)
-                        b.MouseButton1Click:Connect(function() setState(slot, item) end)
+                    row.MouseButton2Click:Connect(function() openMenu(item, row) end)
+                    if key then
+                        label(row, { Size = UDim2.new(0, 36, 1, 0), Position = UDim2.new(1, 4, 0, 0), Text = key,
+                            TextColor3 = PAL.ACCENT, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Right })
                     end
+                    local more = make("TextButton", {
+                        Size = UDim2.fromOffset(26, 20), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 32, 0.5, 0),
+                        BackgroundColor3 = PAL.ELEVATED, BackgroundTransparency = 0.2, BorderSizePixel = 0, AutoButtonColor = false,
+                        Text = "...", TextColor3 = PAL.DIM, Font = Enum.Font.GothamBold, TextSize = 12,
+                    }, row)
+                    corner(more, 5)
+                    more.MouseButton1Click:Connect(function() openMenu(item, more) end)
                 end
             end
             if shown == 0 then
@@ -15452,7 +15634,7 @@ local function buildReanimPanel(screenGui)
                     TextColor3 = PAL.DIM, TextSize = 12, LayoutOrder = 1 })
             end
             hint.Text = (shown > MAX_ROWS and ("Showing the first " .. MAX_ROWS .. " - search to narrow.  ") or "")
-                .. "Click to play.  I / W / J use it for idle, walk or jump."
+                .. "Click to play.  Right-click or ... for more."
         end
         search:GetPropertyChangedSignal("Text"):Connect(function() refreshLibrary() end)
         table.insert(syncers, function() refreshLibrary() end)
@@ -15479,7 +15661,7 @@ local function buildReanimPanel(screenGui)
             end)
         end
         label(body, { Position = UDim2.fromOffset(12, add(40)), Size = UDim2.fromOffset(IW, 36), TextWrapped = true, TextSize = 11,
-            TextColor3 = PAL.DIM, Text = "Pick them in Library with the I / W / J buttons. Anything you play yourself takes over until you stop it." })
+            TextColor3 = PAL.DIM, Text = "Pick them in Library: right-click an animation (or ...) > Use for idle / walk / jump. Anything you play yourself takes over until you stop it." })
     end
 
     -- Tricks ------------------------------------------------------------------
