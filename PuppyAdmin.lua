@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-25" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-26" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -363,6 +363,7 @@ local Cfg = {
     games = {},        -- mini game best scores: game id -> number
     fpsCounter = { on = false }, -- Performance > FPS counter: on, x, y (pixels)
     gbVolume = 1,      -- Game Boy sound level (0 = off)
+    windowScales = {}, -- window name -> size set with the corner grip (1 = normal)
 }
 
 local function cfgSave()
@@ -5934,6 +5935,52 @@ function UIAPI.markChrome(f)
 end
 end
 
+-- Corner grip: drag the bottom-right corner to scale a window and everything
+-- in it (most windows are laid out at fixed positions, so scaling is what
+-- makes them bigger). Remembered per window; right-click the grip to reset.
+do
+    local MIN_SCALE, MAX_SCALE = 0.6, 2.2
+    function UIAPI.makeResizable(f, key)
+        if type(Cfg.windowScales) ~= "table" then Cfg.windowScales = {} end
+        local uiScale = make("UIScale", { Scale = math.clamp(tonumber(Cfg.windowScales[key]) or 1, MIN_SCALE, MAX_SCALE) }, f)
+        local grip = make("TextButton", {
+            Name = "ResizeGrip", Size = UDim2.fromOffset(18, 18), Position = UDim2.new(1, -18, 1, -18),
+            BackgroundTransparency = 1, Text = "\226\151\162", TextColor3 = PAL.DIM, Font = Enum.Font.GothamBold,
+            TextSize = 14, AutoButtonColor = false, ZIndex = 60,
+        }, f)
+        local dragging, startMouse, startScale, startW = false, nil, 1, 1
+        grip.InputBegan:Connect(function(input)
+            if isPointer(input) then
+                dragging, startMouse, startScale = true, input.Position, uiScale.Scale
+                startW = math.max(1, f.AbsoluteSize.X)
+            end
+        end)
+        table.insert(conns, UserInputService.InputChanged:Connect(function(input)
+            if not dragging then return end
+            if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+            -- follow the corner: the new on-screen width decides the scale (diagonal drag uses the larger change)
+            local d = input.Position - startMouse
+            local grow = math.max(d.X, d.Y * (f.AbsoluteSize.X / math.max(1, f.AbsoluteSize.Y)))
+            uiScale.Scale = math.clamp(startScale * (startW + grow) / startW, MIN_SCALE, MAX_SCALE)
+        end))
+        table.insert(conns, UserInputService.InputEnded:Connect(function(input)
+            if dragging and isPointer(input) then
+                dragging = false
+                Cfg.windowScales[key] = math.floor(uiScale.Scale * 100 + 0.5) / 100
+                cfgSave()
+            end
+        end))
+        grip.MouseButton2Click:Connect(function()
+            uiScale.Scale = 1
+            Cfg.windowScales[key] = nil
+            cfgSave()
+        end)
+        grip.MouseEnter:Connect(function() grip.TextColor3 = PAL.TEXT end)
+        grip.MouseLeave:Connect(function() grip.TextColor3 = PAL.DIM end)
+        return uiScale
+    end
+end
+
 local function uiWindow(screenGui, key, title, size, pos)
     local f = make("Frame", {
         Name = key, Size = size, Position = pos, BackgroundColor3 = PAL.PANEL,
@@ -5964,6 +6011,7 @@ local function uiWindow(screenGui, key, title, size, pos)
     }, bar)
     x.MouseButton1Click:Connect(function() f.Visible = false end)
     makeDraggable(bar, f)
+    UIAPI.makeResizable(f, key)
     UIAPI.markChrome(f)
     UIAPI.panels[key] = f
     return f
@@ -9967,6 +10015,7 @@ local function createUI()
             TextSize = 16,
         }, f)
         x.MouseButton1Click:Connect(function() f.Visible = false end)
+        UIAPI.makeResizable(f, title:match("^%S+"))
         UIAPI.markChrome(f)
         return f
     end
