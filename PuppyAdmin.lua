@@ -11960,6 +11960,38 @@ end
 return { init = _initReanimPanel, gui = sg, cmds = novoCmdReg, nvL = _nvL, mv = _mv }
 end
 
+-- One-time copy of what older versions saved under the engine's previous
+-- folder name (custom animations, recordings, favourites, keybinds,
+-- waypoints) into PuppyAdmin/. Files already in PuppyAdmin/ are kept.
+local LEGACY_DATA_DIR = "Novoline" -- folder name only, kept so old data is found
+local function migrateLegacyData()
+    if not (isfolder and isfile and listfiles and readfile and writefile and makefolder) then return end
+    if not pcall(isfolder, LEGACY_DATA_DIR) or not isfolder(LEGACY_DATA_DIR) then return end
+    if isfile("PuppyAdmin/.legacy_copied") then return end
+    local copied = 0
+    local function copyTree(from, to, depth)
+        if depth > 6 then return end
+        pcall(function() if not isfolder(to) then makefolder(to) end end)
+        local ok, items = pcall(listfiles, from)
+        if not ok or type(items) ~= "table" then return end
+        for _, path in ipairs(items) do
+            local name = tostring(path):gsub("\\", "/"):match("([^/]+)$")
+            if name then
+                local src, dst = from .. "/" .. name, to .. "/" .. name
+                if isfolder(src) then
+                    copyTree(src, dst, depth + 1)
+                elseif not isfile(dst) then
+                    local okRead, data = pcall(readfile, src)
+                    if okRead and type(data) == "string" and pcall(writefile, dst, data) then copied = copied + 1 end
+                end
+            end
+        end
+    end
+    copyTree(LEGACY_DATA_DIR, "PuppyAdmin", 0)
+    pcall(writefile, "PuppyAdmin/.legacy_copied", tostring(copied))
+    if copied > 0 then note("Puppy Admin", "Moved " .. copied .. " saved files (animations, recordings, binds) into PuppyAdmin/", LIGHT) end
+end
+
 -- Runs the embedded engine once (engines, UI kit, command registry).
 function Novo.boot()
     if Novo.booted then return true end
@@ -11967,6 +11999,7 @@ function Novo.boot()
         note("Puppy Admin", "Unavailable: " .. Novo.failed:sub(1, 60), RED)
         return false
     end
+    pcall(migrateLegacyData)
     local ok, res = pcall(Novo.load, {
         notify = function(title, text) note(tostring(title or "Puppy Admin"), tostring(text or "")) end,
         parentGui = parentGui,
@@ -12054,11 +12087,31 @@ function Novo.ensure()
     return true
 end
 
+-- The engine reports why reanimation did not start (no ragdoll remote, no
+-- Humanoid, already reanimated...) as a returned string or an error, and the
+-- panel's power button ignores both; show them.
+local function watchReanimate(api)
+    if type(api) ~= "table" or api._puppyWatched or type(api.reanimate) ~= "function" then return end
+    local original = api.reanimate
+    api.reanimate = function(...)
+        local ok, res = pcall(original, ...)
+        if not ok then
+            note("Reanim", "Failed: " .. tostring(res):sub(1, 90), RED)
+            error(res, 0)
+        end
+        if type(res) == "string" then note("Reanim", res:sub(1, 90), RED) end
+        return res
+    end
+    api._puppyWatched = true
+end
+
 local function novoLoadApi()
     if not _G._reanimLoaded and type(_G.loadReanimAPI) == "function" then
         pcall(_G.loadReanimAPI, nil)
     end
-    return novoApi()
+    local api = novoApi()
+    watchReanimate(api)
+    return api
 end
 
 -- open: true / false, or nil to toggle.
@@ -12938,7 +12991,7 @@ local cmdDocs = {
     aura = "aura [name] [target] [color] - Apply an aura (see auras)",
     unaura = "unaura [name|all] [target] - Remove auras",
     auras = "auras - List usable auras",
-    anim = "anim - Reanimate panel: power, animation library, states, recording, copy, live, tricks, keys, speed (also: reanim, reanimui)",
+    anim = "anim [on|off] - Reanimate panel (power, library, states, recording, copy, live, tricks, keys, speed); on/off toggles reanimation. Also: reanim, reanimui",
     prefix = "prefix [add|remove|set] [chars] - Chat command prefixes",
     uikey = "uikey [key] - Key that shows/hides the script UI",
     settings = "settings - Toggles the settings window",
@@ -13201,10 +13254,15 @@ end
 -- Reanimation / animations ---------------------------------------------------------
 
 -- anim: the Reanimate panel (power, library, states, recording, copy, live,
--- tricks, keys, speed and transitions all live there). reanim / reanimui are
--- aliases of it.
-function H.anim()
-    Novo.setOpen()
+-- tricks, keys, speed and transitions all live there). `anim on` / `anim off`
+-- press its power button. reanim / reanimui are aliases of it.
+function H.anim(a)
+    local l = a[1] and a[1]:lower()
+    if l == "on" or l == "off" then
+        Novo.setActive(l == "on")
+    else
+        Novo.setOpen()
+    end
 end
 
 -- Panels and teleport -------------------------------------------------------------
