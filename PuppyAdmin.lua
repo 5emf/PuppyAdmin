@@ -22,12 +22,21 @@ local HttpService = game:GetService("HttpService")
 local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
+do
+local SCRIPT_BUILD = "2026.11.20-4" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
-    -- already running: executing again refreshes tags (and auras / moderation)
-    if type(genv.PuppyAdminRefresh) == "function" then pcall(genv.PuppyAdminRefresh) end
-    return
+    if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
+        -- same version already running: executing again refreshes tags (and auras / moderation)
+        if type(genv.PuppyAdminRefresh) == "function" then pcall(genv.PuppyAdminRefresh) end
+        return
+    end
+    -- an older version is running: stop it, then start this one
+    pcall(genv.PuppyAdminShutdown)
+    task.wait(0.5)
 end
 genv.PuppyAdminActive = true
+genv.PuppyAdminBuild = SCRIPT_BUILD
+end
 
 -- Timing report (`perf`): how long each start-up stage and first-time action took.
 local Perf = { t0 = os.clock(), marks = {} }
@@ -4389,7 +4398,7 @@ local cmds = {
     "aura", "unaura", "auras",
     "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "games", "owner", "kick", "ban", "unban", "bans", "antikick", "unantikick", "antivcban",
     "reanim",
-    "prefix", "uikey", "textsize", "settings", "theme", "kill", "stop", "help",
+    "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
 
 -- Movement aliases come from the engine's own registrations (PUP_MOVE).
@@ -4416,7 +4425,6 @@ local cmdDocs = {
     ban = "ban <players> [reason] - Ban players from using the script; they are kicked when they run it (owners only)",
     unban = "unban <players or UserIds> - Lift a script ban (owners only)",
     bans = "bans - List players banned from the script (owners only)",
-    textsize = "textsize <percent> - Text size of every window, 50-200 (100 = normal; also in Settings)",
     games = "games - Mini games: Snake, Stack Drop, Treat Chase (also: minigames, arcade)",
     performance = "performance - Performance panel: FPS unlock, anti-lag, low graphics, no fog / shadows / effects (also: boost)",
     perf = "perf - How long start-up and first-time actions took (for tuning the script)",
@@ -5406,17 +5414,6 @@ do
     end
 end
 
--- textsize <percent>
-function H.textsize(a)
-    local pct = tonumber(a[1] and a[1]:gsub("%%", "") or nil)
-    if not pct then
-        note("Text size", "Now " .. math.floor(UIFont.scale * 100 + 0.5) .. "% - use textsize 50-200", LIGHT)
-        return
-    end
-    local ok, msg = UIFont.setScale(pct / 100)
-    if ok and UIAPI.textScaleSlider then UIAPI.textScaleSlider.set(UIFont.scale) end
-    note("Text size", msg, ok and LIGHT or RED)
-end
 
 ------------------------------------------------------------------------
 -- Theme: recolours the script's own UI (terminal, notifications, every panel).
@@ -5744,6 +5741,8 @@ setmetatable(UIAPI.panels, { __index = function(t, key)
     local start = os.clock()
     local ok, err = pcall(build)
     if not ok then warn("[PuppyAdmin] panel " .. tostring(key) .. ": " .. tostring(err)) end
+    local built = rawget(t, key)
+    if built then pcall(UIAPI.fitWindow, built, 40) end
     Perf.since("Panel '" .. tostring(key) .. "' built on first open", start)
     return rawget(t, key)
 end })
@@ -5799,6 +5798,46 @@ local function makeDraggable(handle, target)
     end))
 end
 
+-- Windows taller than WINDOW_MAX_H (or the screen) keep their layout and
+-- scroll instead: the window shrinks, and everything below the title bar
+-- moves into a scrolling area as tall as the original window. Windows built
+-- around scrollBody only shrink (their body already scrolls).
+do
+local WINDOW_MAX_H = 480
+local windowChrome = setmetatable({}, { __mode = "k" }) -- window -> { child = true } that stay fixed (title, close, backdrop)
+function UIAPI.fitWindow(f, topY)
+    if not f or f:GetAttribute("PuppyAdminFitted") then return end
+    f:SetAttribute("PuppyAdminFitted", true)
+    local designH = f.Size.Y.Offset
+    local maxH = WINDOW_MAX_H
+    local cam = workspace.CurrentCamera
+    if cam and cam.ViewportSize.Y > 0 then maxH = math.min(maxH, math.max(260, cam.ViewportSize.Y - 100)) end
+    if designH <= maxH then return end
+    f.Size = UDim2.new(f.Size.X.Scale, f.Size.X.Offset, 0, maxH)
+    -- windows placed by their top edge move down to stay centred where they were
+    if f.AnchorPoint.Y == 0 then f.Position = f.Position + UDim2.fromOffset(0, math.floor((designH - maxH) / 2)) end
+    if f:GetAttribute("PuppyAdminScrollBody") then return end
+    local chrome = windowChrome[f] or {}
+    local scroll = make("ScrollingFrame", {
+        Name = "PuppyAdminWindowScroll", Position = UDim2.fromOffset(0, topY), Size = UDim2.new(1, 0, 1, -(topY + 6)),
+        BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = PAL.DIM,
+        ScrollingDirection = Enum.ScrollingDirection.Y, CanvasSize = UDim2.fromOffset(0, designH - topY + 6),
+    }, f)
+    local content = make("Frame", {
+        Name = "Content", Position = UDim2.fromOffset(0, -topY), Size = UDim2.new(1, 0, 0, designH), BackgroundTransparency = 1,
+    }, scroll)
+    for _, ch in ipairs(f:GetChildren()) do
+        if ch ~= scroll and not chrome[ch] and not ch:IsA("UIComponent") then ch.Parent = content end
+    end
+end
+
+function UIAPI.markChrome(f)
+    local set = {}
+    for _, ch in ipairs(f:GetChildren()) do set[ch] = true end
+    windowChrome[f] = set
+end
+end
+
 local function uiWindow(screenGui, key, title, size, pos)
     local f = make("Frame", {
         Name = key, Size = size, Position = pos, BackgroundColor3 = PAL.PANEL,
@@ -5829,6 +5868,7 @@ local function uiWindow(screenGui, key, title, size, pos)
     }, bar)
     x.MouseButton1Click:Connect(function() f.Visible = false end)
     makeDraggable(bar, f)
+    UIAPI.markChrome(f)
     UIAPI.panels[key] = f
     return f
 end
@@ -6086,6 +6126,7 @@ local AXIS_ORDER = { "-z", "z", "y", "-y", "x", "-x" }
 
 -- Scrolling body under a window's title bar; returns the frame and an add(height) helper.
 function scrollBody(f, topY)
+    f:SetAttribute("PuppyAdminScrollBody", true)
     local body = make("ScrollingFrame", {
         Size = UDim2.new(1, -8, 1, -(topY + 8)), Position = UDim2.fromOffset(4, topY), BackgroundTransparency = 1,
         BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = PAL.DIM, CanvasSize = UDim2.new(0, 0, 0, 0),
@@ -8567,6 +8608,7 @@ local function createUI()
             TextSize = 16,
         }, f)
         x.MouseButton1Click:Connect(function() f.Visible = false end)
+        UIAPI.markChrome(f)
         return f
     end
 
@@ -8781,7 +8823,6 @@ local function createUI()
             end)
         end,
     })
-    UIAPI.textScaleSlider = scaleSlider
     actionButton(settingsFrame, "Reset text size", UDim2.new(0, 15, 0, 760), UDim2.new(1, -30, 0, 26)).MouseButton1Click:Connect(function()
         scaleSlider.set(1)
         local ok, msg = UIFont.setScale(1)
@@ -8790,6 +8831,7 @@ local function createUI()
 
     local killBtn = actionButton(settingsFrame, "KILL SCRIPT", UDim2.new(0, 15, 1, -45), UDim2.new(1, -30, 0, 32), Color3.fromRGB(130, 35, 35))
     killBtn.MouseButton1Click:Connect(function() shutdown(false) end)
+    UIAPI.fitWindow(settingsFrame, 38)
 
     -- Output window used by auras / tags / anim / binds lists
     local outFrame = windowFrame(UDim2.new(0, 400, 0, 300), "OUTPUT")
@@ -8919,6 +8961,7 @@ end
 shutdown = function(killCharacter)
     if genv.PuppyAdminActive ~= true then return end
     genv.PuppyAdminActive = false
+    genv.PuppyAdminShutdown, genv.PuppyAdminBuild = nil, nil
 
     for _, c in ipairs(conns) do c:Disconnect() end
     table.clear(conns)
@@ -9040,6 +9083,7 @@ end
 ------------------------------------------------------------------------
 
 Perf.since("Setup (everything before the UI)", Perf.t0)
+genv.PuppyAdminShutdown = function() shutdown(false) end
 if not Cfg.skipIntro then showBrandIntro() end
 do
     local uiStart = os.clock()
