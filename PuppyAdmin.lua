@@ -314,7 +314,9 @@ local Cfg = {
     animStates = {},   -- idle / walk / jump / fall -> animation name
     binds = {},        -- KeyCode name -> animation name
     theme = {},        -- role -> {r,g,b}, plus preset name
-    tags = {},         -- tostring(UserId) -> { text, sub, color = {r,g,b}, rainbow, size, font, offset }
+    tags = {},         -- old format (one look per UserId); moved into tagDefs on load
+    tagDefs = {},      -- named tags shared by several players (see Tags below)
+    tagClickTp = true, -- clicking someone else's tag teleports you to them
 }
 
 local function cfgSave()
@@ -1355,14 +1357,88 @@ table.insert(cleanups, function()
 end)
 
 ------------------------------------------------------------------------
--- Nametags (client-side billboards, saved per UserId in the config file)
+-- Nametags (client-side billboards; named tags with members, saved in the config)
 ------------------------------------------------------------------------
 
-local Tags = { gui = {}, rainbow = {} }
+-- A tag is a named look shared by any number of players:
+--   Cfg.tagDefs = { { name, text, sub, color = {r,g,b}, rainbow, size, offset, font,
+--                     backdrop = { on, color, transparency, image, imageTransparency, round },
+--                     pfp = { mode = "none" | "avatar" | "custom", image, round },
+--                     members = { "<UserId>", ... } }, ... }
+-- A player belongs to at most one tag. Billboards live in the script's GUI
+-- container (not under the head) so they can be clicked: clicking someone
+-- else's tag teleports you to them (Cfg.tagClickTp).
+local Tags = { gui = {}, rainbow = {}, byUser = {}, assets = {}, pending = {}, ui = { current = nil } }  -- ui.current: tag open in the panels
 
-local function tagColor(d)
-    local c = d.color or { 255, 255, 255 }
-    return Color3.fromRGB(c[1], c[2], c[3])
+local TAG_DEFAULTS = {
+    text = "", sub = "", color = { 255, 255, 255 }, rainbow = false, size = 22, offset = 3, font = "GothamBold",
+    backdrop = { on = false, color = { 18, 18, 22 }, transparency = 0.35, image = "", imageTransparency = 0.15, round = true },
+    pfp = { mode = "none", image = "", round = true },
+}
+
+local function tagColor(c)
+    c = type(c) == "table" and c or { 255, 255, 255 }
+    return Color3.fromRGB(tonumber(c[1]) or 255, tonumber(c[2]) or 255, tonumber(c[3]) or 255)
+end
+
+-- Fills missing fields (older saves, hand-edited config) with the defaults.
+function Tags.normalize(def)
+    for k, v in pairs(TAG_DEFAULTS) do
+        if type(v) == "table" and k ~= "color" then
+            if type(def[k]) ~= "table" then def[k] = {} end
+            for k2, v2 in pairs(v) do
+                if def[k][k2] == nil then def[k][k2] = type(v2) == "table" and { v2[1], v2[2], v2[3] } or v2 end
+            end
+        elseif def[k] == nil then
+            def[k] = type(v) == "table" and { v[1], v[2], v[3] } or v
+        end
+    end
+    if type(def.members) ~= "table" then def.members = {} end
+    if type(def.name) ~= "string" or def.name == "" then def.name = def.text ~= "" and def.text or "Tag" end
+    return def
+end
+
+function Tags.reindex()
+    Tags.byUser = {}
+    for _, def in ipairs(Cfg.tagDefs) do
+        for _, uid in ipairs(def.members) do Tags.byUser[tostring(uid)] = def end
+    end
+end
+
+function Tags.findDef(name)
+    local l = tostring(name or ""):lower()
+    for _, def in ipairs(Cfg.tagDefs) do
+        if def.name:lower() == l then return def end
+    end
+    return nil
+end
+
+-- One-time move from the old per-user format (Cfg.tags[UserId] = look).
+do
+    if type(Cfg.tagDefs) ~= "table" then Cfg.tagDefs = {} end
+    local migrated = false
+    for uid, d in pairs(type(Cfg.tags) == "table" and Cfg.tags or {}) do
+        if type(d) == "table" then
+            local def = Tags.normalize({
+                name = (d.text and d.text ~= "") and d.text or ("Tag " .. tostring(uid)), text = d.text, sub = d.sub,
+                color = d.color, rainbow = d.rainbow, size = d.size, offset = d.offset, font = d.font,
+            })
+            local same = Tags.findDef(def.name)
+            if same then def.name = def.name .. " (" .. tostring(uid) .. ")" end
+            def.members = { tostring(uid) }
+            table.insert(Cfg.tagDefs, def)
+            migrated = true
+        end
+    end
+    Cfg.tags = {}
+    for _, def in ipairs(Cfg.tagDefs) do Tags.normalize(def) end
+    if migrated then cfgSave() end
+    Tags.reindex()
+end
+
+function Tags.save()
+    Tags.reindex()
+    cfgSave()
 end
 
 function Tags.destroy(userId)
@@ -1372,59 +1448,156 @@ function Tags.destroy(userId)
     Tags.rainbow[userId] = nil
 end
 
+-- Image sources are resolved once per session (URLs download), then cached.
+function Tags.asset(src, onReady)
+    src = tostring(src or "")
+    if src == "" then return nil end
+    local tex = Tags.assets[src]
+    if tex then return tex ~= false and tex or nil end
+    if not Tags.pending[src] then
+        Tags.pending[src] = {}
+        task.spawn(function()
+            local resolved = resolveImageSource(src, "tag")
+            Tags.assets[src] = resolved or false
+            local waiting = Tags.pending[src]
+            Tags.pending[src] = nil
+            if resolved then for _, fn in ipairs(waiting) do pcall(fn) end end
+        end)
+    end
+    table.insert(Tags.pending[src], onReady)
+    return nil
+end
+
+-- Same move as novoline's `goto`: stand up if seated, then land beside them.
+function Tags.teleportTo(p)
+    local myChar, theirChar = plr.Character, p.Character
+    local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+    local theirHum = theirChar and theirChar:FindFirstChildOfClass("Humanoid")
+    local myRoot = (myHum and myHum.RootPart) or (myChar and myChar:FindFirstChild("HumanoidRootPart"))
+    local theirRoot = (theirHum and theirHum.RootPart) or (theirChar and theirChar:FindFirstChild("HumanoidRootPart"))
+    if not (myRoot and theirRoot) then note("Tags", p.DisplayName .. " has no character", RED); return end
+    if myHum and myHum.SeatPart then myHum.Sit = false; task.wait(0.1) end
+    myRoot.CFrame = theirRoot.CFrame + Vector3.new(3, 1, 0)
+    note("Tags", "Teleported to " .. p.DisplayName, LIGHT)
+end
+
+local TextService = game:GetService("TextService")
+
+local function textWidth(text, size, font)
+    if text == "" then return 0 end
+    local ok, v = pcall(function() return TextService:GetTextSize(text, size, font, Vector2.new(2000, 200)) end)
+    return ok and v.X or (#text * size * 0.55)
+end
+
+-- Layout (pixels): [padding][picture][gap][text / subtitle][padding], measured
+-- with TextService so the backdrop, its image and the click area fit exactly.
 function Tags.build(player, char)
     Tags.destroy(player.UserId)
-    local d = Cfg.tags[tostring(player.UserId)]
-    if not d or not char then return end
+    local def = Tags.byUser[tostring(player.UserId)]
+    if not def or not char then return end
     local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
     if not head then return end
 
-    local okFont, font = pcall(function() return Enum.Font[d.font or "GothamBold"] end)
+    local okFont, font = pcall(function() return Enum.Font[def.font or "GothamBold"] end)
     if not okFont or not font then font = Enum.Font.GothamBold end
-    local size = d.size or 22
-    local color = tagColor(d)
+    local size = math.clamp(tonumber(def.size) or 22, 8, 48)
+    local subSize = math.max(12, size - 8)
+    local color = tagColor(def.color)
+    local bd, pf = def.backdrop, def.pfp
+    local text, subText = tostring(def.text or ""), tostring(def.sub or "")
+    local rebuild = function() if player.Parent and player.Character == char then Tags.build(player, char) end end
+
+    local pfpTex
+    if pf.mode == "avatar" then
+        pfpTex = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(player.UserId) .. "&w=150&h=150"
+    elseif pf.mode == "custom" then
+        pfpTex = Tags.asset(pf.image, rebuild)
+    end
+
+    local textH = size + (subText ~= "" and (subSize + 2) or 0)
+    local textW = math.max(textWidth(text, size, font), textWidth(subText, subSize, font))
+    local pic = pfpTex and math.floor(math.max(textH, size * 1.5)) or 0
+    local gap = (pfpTex and textW > 0) and 8 or 0
+    local padX, padY = bd.on and 12 or 2, bd.on and 6 or 2
+    local cardW = math.ceil(padX * 2 + pic + gap + textW)
+    local cardH = math.ceil(padY * 2 + math.max(textH, pic))
 
     local g = make("BillboardGui", {
-        Name = "PuppyAdminTag",
-        Adornee = head,
-        AlwaysOnTop = true,
-        Size = UDim2.fromOffset(280, 64),
-        StudsOffset = Vector3.new(0, d.offset or 3, 0),
-        MaxDistance = 250,
-        LightInfluence = 0,
-        ResetOnSpawn = false,
-    }, head)
+        Name = "PuppyAdminTag", Adornee = head, AlwaysOnTop = true, Active = true,
+        Size = UDim2.fromOffset(cardW, cardH), StudsOffset = Vector3.new(0, tonumber(def.offset) or 3, 0),
+        MaxDistance = 250, LightInfluence = 0, ResetOnSpawn = false,
+    }, nil)
 
+    local card = make("Frame", {
+        Name = "Card", Size = UDim2.fromScale(1, 1), BorderSizePixel = 0,
+        BackgroundColor3 = tagColor(bd.color), BackgroundTransparency = bd.on and math.clamp(tonumber(bd.transparency) or 0.35, 0, 1) or 1,
+    }, g)
+    if bd.on then
+        if bd.round then make("UICorner", { CornerRadius = UDim.new(0, math.min(14, cardH / 2)) }, card) end
+        local tex = Tags.asset(bd.image, rebuild)
+        if tex then
+            local img = make("ImageLabel", {
+                Name = "BackdropImage", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Image = tex,
+                ImageTransparency = math.clamp(tonumber(bd.imageTransparency) or 0.15, 0, 1), ScaleType = Enum.ScaleType.Crop,
+            }, card)
+            if bd.round then make("UICorner", { CornerRadius = UDim.new(0, math.min(14, cardH / 2)) }, img) end
+        end
+    end
+
+    if pfpTex then
+        local picture = make("ImageLabel", {
+            Name = "Pfp", Position = UDim2.fromOffset(padX, math.floor((cardH - pic) / 2)), Size = UDim2.fromOffset(pic, pic),
+            BackgroundTransparency = 1, Image = pfpTex, ScaleType = Enum.ScaleType.Crop, ZIndex = 2,
+        }, card)
+        make("UICorner", { CornerRadius = pf.round and UDim.new(1, 0) or UDim.new(0, 6) }, picture)
+    end
+
+    local textX = padX + pic + gap
+    local textY = math.floor((cardH - textH) / 2)
+    local align = pfpTex and Enum.TextXAlignment.Left or Enum.TextXAlignment.Center
     local main = make("TextLabel", {
-        Size = UDim2.new(1, 0, 0.62, 0),
-        BackgroundTransparency = 1,
-        Text = d.text or "",
-        Font = font,
-        TextSize = size,
-        TextColor3 = color,
-        TextStrokeTransparency = 0.3,
-    }, g)
+        Position = UDim2.fromOffset(textX, textY), Size = UDim2.fromOffset(textW, size), BackgroundTransparency = 1,
+        Text = text, Font = font, TextSize = size, TextColor3 = color, TextStrokeTransparency = 0.3,
+        TextXAlignment = align, ZIndex = 2,
+    }, card)
     local sub = make("TextLabel", {
-        Position = UDim2.new(0, 0, 0.62, 0),
-        Size = UDim2.new(1, 0, 0.38, 0),
-        BackgroundTransparency = 1,
-        Text = d.sub or "",
-        Font = font,
-        TextSize = math.max(12, size - 8),
-        TextColor3 = color:Lerp(Color3.new(1, 1, 1), 0.4),
-        TextStrokeTransparency = 0.4,
-    }, g)
+        Position = UDim2.fromOffset(textX, textY + size + 2), Size = UDim2.fromOffset(textW, subSize), BackgroundTransparency = 1,
+        Text = subText, Font = font, TextSize = subSize, TextColor3 = color:Lerp(Color3.new(1, 1, 1), 0.4),
+        TextStrokeTransparency = 0.4, TextXAlignment = align, Visible = subText ~= "", ZIndex = 2,
+    }, card)
 
+    -- your own tag never teleports; clicks on it pass through to the world
+    if player ~= plr and Cfg.tagClickTp then
+        local hit = make("TextButton", {
+            Name = "Teleport", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = "", ZIndex = 5,
+            AutoButtonColor = false,
+        }, card)
+        hit.MouseButton1Click:Connect(function() task.spawn(Tags.teleportTo, player) end)
+    end
+
+    parentGui(g)
     Tags.gui[player.UserId] = g
-    if d.rainbow then Tags.rainbow[player.UserId] = { main, sub } end
+    if def.rainbow then Tags.rainbow[player.UserId] = { main, sub } end
 end
 
 function Tags.refresh(userId)
-    local p = Players:GetPlayerByUserId(userId)
-    if p and p.Character then Tags.build(p, p.Character) else Tags.destroy(userId) end
+    local p = Players:GetPlayerByUserId(tonumber(userId) or 0)
+    if p and p.Character then Tags.build(p, p.Character) else Tags.destroy(tonumber(userId)) end
+end
+
+function Tags.refreshAll()
+    for uid in pairs(Tags.gui) do Tags.destroy(uid) end
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Character then Tags.build(p, p.Character) end
+    end
 end
 
 function Tags.step(t)
+    -- `hide <player>` hides their tag too (the billboard is not under their head any more)
+    for uid, g in pairs(Tags.gui) do
+        local show = Hide.map[uid] == nil
+        if g.Enabled ~= show then g.Enabled = show end
+    end
     local c = Color3.fromHSV((t * 0.25) % 1, 0.9, 1)
     for uid, pair in pairs(Tags.rainbow) do
         if pair[1].Parent then
@@ -1436,11 +1609,96 @@ function Tags.step(t)
     end
 end
 
+-- Members ---------------------------------------------------------------------
+
+function Tags.newDef(name)
+    local base = tostring(name or ""):sub(1, 30)
+    if base == "" then base = "Tag" end
+    local n, final = 1, base
+    while Tags.findDef(final) do n = n + 1; final = base .. " " .. n end
+    local def = Tags.normalize({ name = final, text = final })
+    table.insert(Cfg.tagDefs, def)
+    Tags.save()
+    return def
+end
+
+function Tags.deleteDef(def)
+    local idx = table.find(Cfg.tagDefs, def)
+    if not idx then return end
+    table.remove(Cfg.tagDefs, idx)
+    Tags.save()
+    for _, uid in ipairs(def.members) do Tags.refresh(uid) end
+end
+
+-- uids: UserIds (numbers or strings). Someone already in another tag moves here.
+function Tags.addMembers(def, uids)
+    local added = 0
+    for _, uid in ipairs(uids) do
+        local key = tostring(uid)
+        local old = Tags.byUser[key]
+        if old ~= def then
+            if old then
+                local i = table.find(old.members, key)
+                if i then table.remove(old.members, i) end
+            end
+            table.insert(def.members, key)
+            added = added + 1
+        end
+    end
+    Tags.save()
+    for _, uid in ipairs(uids) do Tags.refresh(uid) end
+    return added
+end
+
+function Tags.removeMember(def, uid)
+    local i = table.find(def.members, tostring(uid))
+    if not i then return false end
+    table.remove(def.members, i)
+    Tags.save()
+    Tags.refresh(uid)
+    return true
+end
+
+-- Tokens: UserId, player name / display name (in server), "all", "others",
+-- or the name of someone who is not here (looked up by username; yields).
+function Tags.resolveUsers(tokens)
+    local out, seen, missing = {}, {}, {}
+    local function push(id)
+        id = tonumber(id)
+        if id and id > 0 and not seen[id] then seen[id] = true; table.insert(out, id) end
+    end
+    for _, tok in ipairs(tokens) do
+        for piece in tostring(tok):gmatch("[^,%s]+") do
+            if piece:match("^%d+$") then
+                push(piece)
+            else
+                local found = resolveTargets(piece)
+                if #found > 0 then
+                    for _, p in ipairs(found) do push(p.UserId) end
+                else
+                    local ok, id = pcall(function() return Players:GetUserIdFromNameAsync(piece) end)
+                    if ok and id then push(id) else table.insert(missing, piece) end
+                end
+            end
+        end
+    end
+    return out, missing
+end
+
+-- Display name for a member, also when they are not in the server.
+function Tags.memberName(uid)
+    local p = Players:GetPlayerByUserId(tonumber(uid) or 0)
+    if p then return p.DisplayName .. " (@" .. p.Name .. ")" end
+    return "UserId " .. tostring(uid)
+end
+
 Watch.onCharacter(function(p, char) Tags.build(p, char) end)
+table.insert(conns, Players.PlayerRemoving:Connect(function(p) Tags.destroy(p.UserId) end))
 
 table.insert(cleanups, function()
     for uid in pairs(Tags.gui) do Tags.destroy(uid) end
 end)
+
 
 -- Only these accounts may open the nametag editor and change tags (Player.Name,
 -- compared case-insensitively). This is a client-side gate inside the script, not
@@ -13321,7 +13579,7 @@ local cmds = {
     "hide", "unhide", "mute", "unmute",
     "reanimui", "tp",
     "aura", "unaura", "auras",
-    "tagui", "antikick", "unantikick", "antivcban",
+    "tagui", "taglist", "antikick", "unantikick", "antivcban",
     "reanim", "anim",
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
@@ -13345,7 +13603,8 @@ local cmdDocs = {
     unhide = "unhide [ui|me|all|others|name] - Undo hide",
     mute = "mute [name|all|others] - Silence a player's chat and sounds (your side)",
     unmute = "unmute [name|all|others] - Undo mute",
-    tagui = "tagui - Open the nametag editor (allowlisted users only)",
+    tagui = "tagui - Nametag editor: text, colors, backdrop, profile picture (allowlisted users only)",
+    taglist = "taglist [add|remove <tag> <users...>] [new|delete <name>] - All tags and their members; add many players at once",
     antikick = "antikick - Block client-side Kick calls on you",
     unantikick = "unantikick - Turn antikick off",
     antivcban = "antivcban [close] - Open the VC bypass panel (V1 / V2, mic mute)",
@@ -13698,6 +13957,66 @@ function H.tagui()
         return
     end
     UIAPI.togglePanel("tags")
+end
+
+-- taglist                          open the tag list (all tags, members, add players)
+-- taglist add <tag> <users...>     add any number of players (names, UserIds, all, others)
+-- taglist remove <tag> <users...>  take players off a tag
+-- taglist new <name> / delete <name>
+function H.taglist(a)
+    if not canEditTags() then note("Tags", "Not authorized to edit nametags", RED); return end
+    local sub = a[1] and a[1]:lower()
+    if not sub then
+        local lines = {}
+        for _, def in ipairs(Cfg.tagDefs) do
+            local names = {}
+            for _, uid in ipairs(def.members) do table.insert(names, Tags.memberName(uid)) end
+            table.insert(lines, def.name .. "  \"" .. (def.text or "") .. "\"  -  " .. (#names > 0 and table.concat(names, ", ") or "no members"))
+        end
+        if #lines == 0 then lines[1] = "No tags yet - taglist new <name>, or use the panel" end
+        UIAPI.showOutput("TAGS", lines)
+        local p = UIAPI.panels.taglist
+        if p then p.Visible = true; if UIAPI.syncFns.taglist then UIAPI.syncFns.taglist() end end
+        return
+    end
+    if sub == "new" then
+        local name = table.concat(a, " ", 2)
+        if name == "" then note("Tags", "taglist new <name>", RED); return end
+        if Tags.findDef(name) then note("Tags", "That tag already exists", RED); return end
+        local def = Tags.newDef(name)
+        Tags.ui.current = def
+        note("Tags", "Created '" .. def.name .. "' - edit its look with tagui", LIGHT)
+    elseif sub == "delete" then
+        local def = Tags.findDef(table.concat(a, " ", 2))
+        if not def then note("Tags", "No tag with that name", RED); return end
+        Tags.deleteDef(def)
+        note("Tags", "Deleted '" .. def.name .. "'")
+    elseif sub == "add" or sub == "remove" then
+        -- the tag name may contain spaces: take the longest run of words that names a tag
+        local def, last
+        for k = #a, 2, -1 do
+            def = Tags.findDef(table.concat(a, " ", 2, k))
+            if def then last = k; break end
+        end
+        if not def then note("Tags", "No tag named '" .. tostring(a[2]) .. "'", RED); return end
+        local tokens = { table.unpack(a, last + 1) }
+        if #tokens == 0 then note("Tags", "taglist " .. sub .. " <tag> <names or UserIds>", RED); return end
+        task.spawn(function()
+            local uids, missing = Tags.resolveUsers(tokens)
+            local n = 0
+            if sub == "add" then
+                n = Tags.addMembers(def, uids)
+            else
+                for _, uid in ipairs(uids) do if Tags.removeMember(def, uid) then n = n + 1 end end
+            end
+            note("Tags", (sub == "add" and "Added " or "Removed ") .. n .. (sub == "add" and " to '" or " from '") .. def.name .. "'"
+                .. (#missing > 0 and ("; not found: " .. table.concat(missing, ", ")) or ""), n > 0 and LIGHT or RED)
+            if UIAPI.syncFns.taglist then UIAPI.syncFns.taglist() end
+        end)
+    else
+        note("Tags", "taglist [add|remove <tag> <users>] [new|delete <name>]")
+    end
+    if UIAPI.syncFns.taglist then UIAPI.syncFns.taglist() end
 end
 
 
@@ -14499,7 +14818,7 @@ end
 -- Orbit / tail / wings panels
 ------------------------------------------------------------------------
 
-local buildToolsPanel, buildMovementPanel, buildEspPanel, buildFloorPanel
+local buildToolsPanel, buildMovementPanel, buildEspPanel, buildFloorPanel, scrollBody, sectionTitle
 do
 ------------------------------------------------------------------------
 -- Tools panel: orbit, tail and wings in one window (opened with `tools`)
@@ -14516,7 +14835,7 @@ end
 local AXIS_ORDER = { "-z", "z", "y", "-y", "x", "-x" }
 
 -- Scrolling body under a window's title bar; returns the frame and an add(height) helper.
-local function scrollBody(f, topY)
+function scrollBody(f, topY)
     local body = make("ScrollingFrame", {
         Size = UDim2.new(1, -8, 1, -(topY + 8)), Position = UDim2.fromOffset(4, topY), BackgroundTransparency = 1,
         BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = PAL.DIM, CanvasSize = UDim2.new(0, 0, 0, 0),
@@ -14531,7 +14850,7 @@ local function scrollBody(f, topY)
     return body, add
 end
 
-local function sectionTitle(parent, add, text)
+function sectionTitle(parent, add, text)
     local y = add(28)
     label(parent, { Position = UDim2.fromOffset(12, y + 6), Size = UDim2.new(1, -24, 0, 18), Text = text, Font = Enum.Font.GothamBold, TextSize = 14 })
     make("Frame", { Position = UDim2.fromOffset(12, y + 26), Size = UDim2.new(1, -24, 0, 1), BackgroundColor3 = PAL.DIV, BorderSizePixel = 0 }, parent)
@@ -14770,135 +15089,318 @@ end
 
 
 ------------------------------------------------------------------------
--- Nametag editor (opened with `tagui`; allowlisted accounts only)
+-- Nametag editor (`tagui`) and tag list (`taglist`); allowlisted accounts only
 ------------------------------------------------------------------------
 
 local TAG_FONTS = { "GothamBold", "Gotham", "GothamSemibold", "Code", "Arcade", "SourceSansBold", "FredokaOne", "Bangers", "SciFi", "Fantasy" }
+local PFP_MODES = { { "none", "No picture" }, { "avatar", "Their avatar" }, { "custom", "Custom image" } }
+
+local function tagGuard()
+    if canEditTags() then return true end
+    note("Tags", "Not authorized to edit nametags", RED)
+    return false
+end
+
+local function rgbText(c)
+    c = type(c) == "table" and c or { 255, 255, 255 }
+    return string.format("%d,%d,%d", c[1] or 255, c[2] or 255, c[3] or 255)
+end
+
+local function parseRGB(text)
+    local r, g, b = parseColorArgs(splitArgs((tostring(text):gsub(",%s+", ","))), 1)
+    if r then return { r, g, b } end
+    return nil
+end
 
 local function buildTagPanel(screenGui)
     local W, HGT = 380, 600
     local f = uiWindow(screenGui, "tags", "Nametag editor", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2, 0.5, -HGT / 2))
-    local selUserId, selName, fontIdx = nil, nil, 1
+    local body, add = scrollBody(f, 42)
+    local IW = W - 40
+    local fontIdx, pfpIdx = 1, 1
 
-    local selLbl = label(f, { Position = UDim2.fromOffset(16, 46), Size = UDim2.new(1, -32, 0, 18), Text = "Target: none", TextColor3 = PAL.DIM })
-    local list = make("ScrollingFrame", {
-        Size = UDim2.new(1, -32, 0, 120), Position = UDim2.fromOffset(16, 68), BackgroundColor3 = PAL.CARD,
-        BackgroundTransparency = 0.4, BorderSizePixel = 0, ScrollBarThickness = 2, ScrollBarImageColor3 = PAL.DIM,
-        CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-    }, f)
-    corner(list, 8)
-    make("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder }, list)
-
-    local idBox = uiBox(f, UDim2.fromOffset(16, 196), UDim2.new(1, -32, 0, 28), "or a UserId (for someone who left)")
-    local textBox = uiBox(f, UDim2.fromOffset(16, 232), UDim2.new(1, -32, 0, 28), "Tag text (max 40)")
-    local subBox = uiBox(f, UDim2.fromOffset(16, 268), UDim2.new(1, -32, 0, 28), "Subtitle (optional)")
-    local colorBox = uiBox(f, UDim2.fromOffset(16, 304), UDim2.new(1, -32, 0, 28), "Color: name, #hex, r,g,b", "255,255,255")
-    local rainbowSw = uiSwitch(f, "Rainbow", UDim2.fromOffset(16, 340), W - 32, false, function() end)
-    local sizeSl = uiSlider(f, "Text size", UDim2.fromOffset(16, 372), W - 32, {
+    local tagLbl = label(body, { Position = UDim2.fromOffset(12, add(24)), Size = UDim2.new(1, -24, 0, 20), Text = "Tag: new", TextColor3 = PAL.DIM })
+    local nameBox = uiBox(body, UDim2.fromOffset(12, add(34)), UDim2.fromOffset(IW, 28), "Tag name (shown in taglist)")
+    local textBox = uiBox(body, UDim2.fromOffset(12, add(34)), UDim2.fromOffset(IW, 28), "Tag text (max 40)")
+    local subBox = uiBox(body, UDim2.fromOffset(12, add(34)), UDim2.fromOffset(IW, 28), "Subtitle (optional)")
+    local colorBox = uiBox(body, UDim2.fromOffset(12, add(34)), UDim2.fromOffset(IW, 28), "Text color: name, #hex, r,g,b", "255,255,255")
+    local rainbowSw = uiSwitch(body, "Rainbow text", UDim2.fromOffset(12, add(32)), IW, false, function() end)
+    local sizeSl = uiSlider(body, "Text size", UDim2.fromOffset(12, add(48)), IW, {
         min = 8, max = 48, step = 1, value = 22, format = function(v) return string.format("%d", v) end,
     })
-    local offSl = uiSlider(f, "Height above head", UDim2.fromOffset(16, 420), W - 32, {
+    local offSl = uiSlider(body, "Height above head", UDim2.fromOffset(12, add(48)), IW, {
         min = 0, max = 12, step = 0.5, value = 3, format = function(v) return string.format("%.1f", v) end,
     })
-    local fontBtn = uiButton(f, TAG_FONTS[1], UDim2.new(1, -32, 0, 28), UDim2.fromOffset(16, 470), function()
+    local fontBtn
+    fontBtn = uiButton(body, "Font: " .. TAG_FONTS[1], UDim2.fromOffset(IW, 28), UDim2.fromOffset(12, add(36)), function()
         fontIdx = fontIdx % #TAG_FONTS + 1
-        f:FindFirstChild("FontBtn").Text = TAG_FONTS[fontIdx]
+        fontBtn.Text = "Font: " .. TAG_FONTS[fontIdx]
     end)
-    fontBtn.Name = "FontBtn"
 
-    local function targetId()
-        return selUserId or tonumber(idBox.Text)
+    sectionTitle(body, add, "Backdrop")
+    local bdSw = uiSwitch(body, "Show backdrop", UDim2.fromOffset(12, add(32)), IW, false, function() end)
+    local bdColorBox = uiBox(body, UDim2.fromOffset(12, add(34)), UDim2.fromOffset(IW, 28), "Backdrop color: name, #hex, r,g,b", "18,18,22")
+    local bdAlphaSl = uiSlider(body, "Backdrop transparency", UDim2.fromOffset(12, add(48)), IW, {
+        min = 0, max = 1, step = 0.05, value = 0.35, format = function(v) return string.format("%.2f", v) end,
+    })
+    local bdImageBox = uiBox(body, UDim2.fromOffset(12, add(34)), UDim2.fromOffset(IW, 28), "Backdrop image: id, rbxassetid or image URL (optional)")
+    local bdImgAlphaSl = uiSlider(body, "Image transparency", UDim2.fromOffset(12, add(48)), IW, {
+        min = 0, max = 1, step = 0.05, value = 0.15, format = function(v) return string.format("%.2f", v) end,
+    })
+    local bdRoundSw = uiSwitch(body, "Rounded corners", UDim2.fromOffset(12, add(32)), IW, true, function() end)
+
+    sectionTitle(body, add, "Profile picture")
+    local pfpBtn
+    pfpBtn = uiButton(body, "Picture: " .. PFP_MODES[1][2], UDim2.fromOffset(IW, 28), UDim2.fromOffset(12, add(36)), function()
+        pfpIdx = pfpIdx % #PFP_MODES + 1
+        pfpBtn.Text = "Picture: " .. PFP_MODES[pfpIdx][2]
+    end)
+    local pfpImageBox = uiBox(body, UDim2.fromOffset(12, add(34)), UDim2.fromOffset(IW, 28), "Custom picture: id, rbxassetid or image URL")
+    local pfpRoundSw = uiSwitch(body, "Round picture", UDim2.fromOffset(12, add(32)), IW, true, function() end)
+
+    sectionTitle(body, add, "Clicking")
+    local clickSw = uiSwitch(body, "Click a tag to teleport (not your own)", UDim2.fromOffset(12, add(32)), IW, Cfg.tagClickTp, function(on)
+        Cfg.tagClickTp = on
+        cfgSave()
+        Tags.refreshAll()
+    end)
+
+    local function load(def)
+        Tags.ui.current = def
+        local d = def or Tags.normalize({ name = "" })
+        tagLbl.Text = def and ("Tag: " .. def.name .. "  (" .. #def.members .. " members)") or "Tag: new (Save creates it)"
+        nameBox.Text = def and def.name or ""
+        textBox.Text = d.text or ""
+        subBox.Text = d.sub or ""
+        colorBox.Text = rgbText(d.color)
+        rainbowSw.set(d.rainbow == true)
+        sizeSl.set(tonumber(d.size) or 22)
+        offSl.set(tonumber(d.offset) or 3)
+        fontIdx = table.find(TAG_FONTS, d.font) or 1
+        fontBtn.Text = "Font: " .. TAG_FONTS[fontIdx]
+        bdSw.set(d.backdrop.on == true)
+        bdColorBox.Text = rgbText(d.backdrop.color)
+        bdAlphaSl.set(tonumber(d.backdrop.transparency) or 0.35)
+        bdImageBox.Text = d.backdrop.image or ""
+        bdImgAlphaSl.set(tonumber(d.backdrop.imageTransparency) or 0.15)
+        bdRoundSw.set(d.backdrop.round ~= false)
+        pfpIdx = 1
+        for i, m in ipairs(PFP_MODES) do if m[1] == d.pfp.mode then pfpIdx = i end end
+        pfpBtn.Text = "Picture: " .. PFP_MODES[pfpIdx][2]
+        pfpImageBox.Text = d.pfp.image or ""
+        pfpRoundSw.set(d.pfp.round ~= false)
+        clickSw.set(Cfg.tagClickTp == true)
     end
+    UIAPI.tagEditorLoad = load
 
-    local refreshPlayers
-    local function select(userId, name)
-        selUserId, selName = userId, name
-        selLbl.Text = "Target: " .. (name or "none")
-        local d = userId and Cfg.tags[tostring(userId)]
-        textBox.Text = d and d.text or ""
-        subBox.Text = d and d.sub or ""
-        local c = d and d.color or { 255, 255, 255 }
-        colorBox.Text = string.format("%d,%d,%d", c[1], c[2], c[3])
-        rainbowSw.set(d and d.rainbow or false)
-        sizeSl.set(d and d.size or 22)
-        offSl.set(d and d.offset or 3)
-        fontIdx = table.find(TAG_FONTS, d and d.font or "GothamBold") or 1
-        fontBtn.Text = TAG_FONTS[fontIdx]
-    end
+    local y = add(44)
+    uiButton(body, "Save tag", UDim2.fromOffset((IW - 8) / 2, 32), UDim2.fromOffset(12, y), function()
+        if not tagGuard() then return end
+        local text = textBox.Text:sub(1, 40)
+        if text == "" then note("Tags", "Enter the tag text", RED); return end
+        local color, bdColor = parseRGB(colorBox.Text), parseRGB(bdColorBox.Text)
+        if not color then note("Tags", "Text color: name, #hex, r,g,b", RED); return end
+        if not bdColor then note("Tags", "Backdrop color: name, #hex, r,g,b", RED); return end
+        local mode = PFP_MODES[pfpIdx][1]
+        if mode == "custom" and pfpImageBox.Text:match("^%s*$") then note("Tags", "Enter a custom picture or pick another mode", RED); return end
+        local def = Tags.ui.current
+        local wanted = nameBox.Text:match("^%s*(.-)%s*$"):sub(1, 30)
+        if wanted == "" then wanted = text end
+        local clash = Tags.findDef(wanted)
+        if clash and clash ~= def then note("Tags", "Another tag is already called '" .. wanted .. "'", RED); return end
+        if not def then def = Tags.newDef(wanted) end
+        def.name, def.text, def.sub = wanted, text, subBox.Text:sub(1, 40)
+        def.color, def.rainbow, def.size, def.offset, def.font = color, rainbowSw.get(), sizeSl.get(), offSl.get(), TAG_FONTS[fontIdx]
+        def.backdrop = {
+            on = bdSw.get(), color = bdColor, transparency = bdAlphaSl.get(), image = bdImageBox.Text:match("^%s*(.-)%s*$"),
+            imageTransparency = bdImgAlphaSl.get(), round = bdRoundSw.get(),
+        }
+        def.pfp = { mode = mode, image = pfpImageBox.Text:match("^%s*(.-)%s*$"), round = pfpRoundSw.get() }
+        Tags.save()
+        for _, uid in ipairs(def.members) do Tags.refresh(uid) end
+        load(def)
+        if UIAPI.syncFns.taglist then UIAPI.syncFns.taglist() end
+        note("Tags", "Saved '" .. def.name .. "'" .. (#def.members == 0 and " - add players in taglist" or ""), LIGHT)
+    end)
+    uiButton(body, "Members...", UDim2.fromOffset((IW - 8) / 2, 32), UDim2.fromOffset(12 + (IW + 8) / 2, y), function()
+        if UIAPI.tagListSelect then UIAPI.tagListSelect(Tags.ui.current) end
+        local p = UIAPI.panels.taglist
+        if p then p.Visible = true end
+    end)
+    y = add(40)
+    uiButton(body, "New tag", UDim2.fromOffset((IW - 8) / 2, 32), UDim2.fromOffset(12, y), function() load(nil) end)
+    uiButton(body, "Delete tag", UDim2.fromOffset((IW - 8) / 2, 32), UDim2.fromOffset(12 + (IW + 8) / 2, y), function()
+        if not tagGuard() then return end
+        local def = Tags.ui.current
+        if not def then note("Tags", "Nothing saved yet"); return end
+        Tags.deleteDef(def)
+        load(nil)
+        if UIAPI.syncFns.taglist then UIAPI.syncFns.taglist() end
+        note("Tags", "Deleted '" .. def.name .. "'")
+    end, true)
 
-    refreshPlayers = function()
-        for _, c in ipairs(list:GetChildren()) do
-            if c:IsA("TextButton") then c:Destroy() end
+    f:GetPropertyChangedSignal("Visible"):Connect(function()
+        if f.Visible then
+            if not canEditTags() then f.Visible = false; return end
+            if Tags.ui.current and not table.find(Cfg.tagDefs, Tags.ui.current) then load(nil) end
         end
+    end)
+    load(nil)
+end
+
+local function buildTagListPanel(screenGui)
+    local W, HGT = 400, 600
+    local f = uiWindow(screenGui, "taglist", "Tags", UDim2.fromOffset(W, HGT), UDim2.new(0.5, 30, 0.5, -HGT / 2))
+    local IW = W - 32
+    local picked = {}   -- UserId -> true, players ticked in the server list
+
+    local function list(y, h)
+        local s = make("ScrollingFrame", {
+            Size = UDim2.fromOffset(IW, h), Position = UDim2.fromOffset(16, y), BackgroundColor3 = PAL.CARD,
+            BackgroundTransparency = 0.4, BorderSizePixel = 0, ScrollBarThickness = 2, ScrollBarImageColor3 = PAL.DIM,
+            CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        }, f)
+        corner(s, 8)
+        make("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder }, s)
+        make("UIPadding", { PaddingTop = UDim.new(0, 3), PaddingLeft = UDim.new(0, 3) }, s)
+        return s
+    end
+    local function clear(s)
+        for _, c in ipairs(s:GetChildren()) do
+            if c:IsA("GuiObject") then c:Destroy() end
+        end
+    end
+    local function row(parent, text, order, selected, onClick, side)
+        local b = make("TextButton", {
+            Size = UDim2.new(1, -6, 0, 26), BackgroundColor3 = selected and PAL.ELEVATED or PAL.CARD,
+            BackgroundTransparency = 0.2, BorderSizePixel = 0, AutoButtonColor = false, LayoutOrder = order,
+            Text = text, TextColor3 = PAL.TEXT, Font = Enum.Font.Gotham, TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+        }, parent)
+        corner(b, 6)
+        make("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, side and 34 or 8) }, b)
+        if onClick then b.MouseButton1Click:Connect(onClick) end
+        if side then
+            local x = make("TextButton", {
+                Size = UDim2.fromOffset(26, 22), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 30, 0.5, 0),
+                BackgroundTransparency = 1, Text = side.text, TextColor3 = side.color or PAL.DIM,
+                Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false,
+            }, b)
+            x.MouseButton1Click:Connect(side.fn)
+        end
+        return b
+    end
+
+    label(f, { Position = UDim2.fromOffset(16, 44), Size = UDim2.new(1, -32, 0, 16), Text = "All tags", TextColor3 = PAL.DIM })
+    local tagsList = list(62, 120)
+    local selLbl = label(f, { Position = UDim2.fromOffset(16, 188), Size = UDim2.new(1, -32, 0, 16), Text = "Members", TextColor3 = PAL.DIM })
+    local memberList = list(206, 120)
+    label(f, { Position = UDim2.fromOffset(16, 332), Size = UDim2.new(1, -32, 0, 16), Text = "Players in this server (tick, then Add ticked)", TextColor3 = PAL.DIM })
+    local playerList = list(350, 120)
+    local userBox = uiBox(f, UDim2.fromOffset(16, 478), UDim2.fromOffset(IW - 78, 28), "Names or UserIds, comma separated")
+
+    local refresh
+    local function select(def)
+        Tags.ui.current = def
+        refresh()
+    end
+    UIAPI.tagListSelect = select
+
+    refresh = function()
+        local cur = Tags.ui.current
+        if cur and not table.find(Cfg.tagDefs, cur) then cur = nil; Tags.ui.current = nil end
+        clear(tagsList)
+        if #Cfg.tagDefs == 0 then
+            row(tagsList, "No tags yet - press New tag", 1, false, nil)
+        end
+        for i, def in ipairs(Cfg.tagDefs) do
+            row(tagsList, def.name .. "   \"" .. (def.text or "") .. "\"   " .. #def.members .. " member" .. (#def.members == 1 and "" or "s"),
+                i, def == cur, function() select(def) end)
+        end
+        clear(memberList)
+        selLbl.Text = cur and ("Members of '" .. cur.name .. "'") or "Members (pick a tag above)"
+        if cur then
+            if #cur.members == 0 then row(memberList, "Nobody yet - add players below", 1, false, nil) end
+            for i, uid in ipairs(cur.members) do
+                row(memberList, Tags.memberName(uid), i, false, nil, {
+                    text = "X", color = RED, fn = function()
+                        if not tagGuard() then return end
+                        Tags.removeMember(cur, uid)
+                        refresh()
+                    end,
+                })
+            end
+        end
+        clear(playerList)
         for i, p in ipairs(Players:GetPlayers()) do
-            local b = make("TextButton", {
-                Size = UDim2.new(1, -6, 0, 26), BackgroundColor3 = (selUserId == p.UserId) and PAL.ELEVATED or PAL.CARD,
-                BackgroundTransparency = 0.2, BorderSizePixel = 0, AutoButtonColor = false, LayoutOrder = i,
-                Text = p.DisplayName .. "  (@" .. p.Name .. ")" .. (Cfg.tags[tostring(p.UserId)] and "  [tag]" or ""),
-                TextColor3 = PAL.TEXT, Font = Enum.Font.Gotham, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
-            }, list)
-            corner(b, 6)
-            make("UIPadding", { PaddingLeft = UDim.new(0, 8) }, b)
-            b.MouseButton1Click:Connect(function()
-                idBox.Text = ""
-                select(p.UserId, p.DisplayName)
-                refreshPlayers()
+            local other = Tags.byUser[tostring(p.UserId)]
+            local text = (picked[p.UserId] and "[x]  " or "[  ]  ") .. p.DisplayName .. "  (@" .. p.Name .. ")"
+                .. (other and ("   - " .. other.name) or "")
+            row(playerList, text, i, picked[p.UserId] == true, function()
+                picked[p.UserId] = not picked[p.UserId] or nil
+                refresh()
             end)
         end
     end
 
-    local function guard()
-        if canEditTags() then return true end
-        note("Tags", "Not authorized to edit nametags", RED)
-        return false
+    local function addTo(uids, missing)
+        local cur = Tags.ui.current
+        if not cur then note("Tags", "Pick a tag first", RED); return end
+        if #uids == 0 then note("Tags", "Nobody to add" .. (#missing > 0 and (": not found " .. table.concat(missing, ", ")) or ""), RED); return end
+        local n = Tags.addMembers(cur, uids)
+        note("Tags", "Added " .. n .. " to '" .. cur.name .. "'" .. (#missing > 0 and ("; not found: " .. table.concat(missing, ", ")) or ""), LIGHT)
+        refresh()
     end
 
-    uiButton(f, "Apply tag", UDim2.new(0.5, -20, 0, 32), UDim2.fromOffset(16, 512), function()
-        if not guard() then return end
-        local uid = targetId()
-        if not uid then note("Tags", "Pick a player or enter a UserId", RED); return end
-        local text = textBox.Text:sub(1, 40)
-        if text == "" then note("Tags", "Enter the tag text", RED); return end
-        local r, g, b = parseColorArgs(splitArgs(colorBox.Text), 1)
-        if not r then note("Tags", "Color: name, #hex, r,g,b or r g b", RED); return end
-        Cfg.tags[tostring(uid)] = {
-            text = text, sub = subBox.Text:sub(1, 40), color = { r, g, b }, rainbow = rainbowSw.get(),
-            size = sizeSl.get(), offset = offSl.get(), font = TAG_FONTS[fontIdx],
-        }
-        cfgSave()
-        Tags.refresh(uid)
-        refreshPlayers()
-        note("Tags", "Tag saved", LIGHT)
+    uiButton(f, "Add", UDim2.fromOffset(70, 28), UDim2.fromOffset(16 + IW - 70, 478), function()
+        if not tagGuard() then return end
+        local text = userBox.Text
+        task.spawn(function()
+            local uids, missing = Tags.resolveUsers({ text })
+            addTo(uids, missing)
+            if #uids > 0 then userBox.Text = "" end
+        end)
     end)
-    uiButton(f, "Remove tag", UDim2.new(0.5, -20, 0, 32), UDim2.new(0.5, 4, 0, 512), function()
-        if not guard() then return end
-        local uid = targetId()
-        if not uid or not Cfg.tags[tostring(uid)] then note("Tags", "That target has no tag"); return end
-        Cfg.tags[tostring(uid)] = nil
-        Tags.destroy(uid)
-        cfgSave()
-        refreshPlayers()
-        note("Tags", "Tag removed")
-    end, true)
-    uiButton(f, "Remove ALL tags", UDim2.new(1, -32, 0, 28), UDim2.fromOffset(16, 556), function()
-        if not guard() then return end
-        for k in pairs(Cfg.tags) do Tags.destroy(tonumber(k)) end
-        Cfg.tags = {}
-        cfgSave()
-        refreshPlayers()
-        note("Tags", "All tags removed")
+    local half = (IW - 8) / 2
+    uiButton(f, "Add ticked players", UDim2.fromOffset(half, 30), UDim2.fromOffset(16, 514), function()
+        if not tagGuard() then return end
+        local uids = {}
+        for uid in pairs(picked) do table.insert(uids, uid) end
+        addTo(uids, {})
+        if #uids > 0 then picked = {}; refresh() end
+    end)
+    uiButton(f, "Edit look...", UDim2.fromOffset(half, 30), UDim2.fromOffset(16 + half + 8, 514), function()
+        if UIAPI.tagEditorLoad then UIAPI.tagEditorLoad(Tags.ui.current) end
+        local p = UIAPI.panels.tags
+        if p then p.Visible = true end
+    end)
+    uiButton(f, "New tag", UDim2.fromOffset(half, 30), UDim2.fromOffset(16, 552), function()
+        if not tagGuard() then return end
+        select(Tags.newDef("New tag"))
+        if UIAPI.tagEditorLoad then UIAPI.tagEditorLoad(Tags.ui.current) end
+        local p = UIAPI.panels.tags
+        if p then p.Visible = true end
+    end)
+    uiButton(f, "Delete tag", UDim2.fromOffset(half, 30), UDim2.fromOffset(16 + half + 8, 552), function()
+        if not tagGuard() then return end
+        local cur = Tags.ui.current
+        if not cur then note("Tags", "Pick a tag first"); return end
+        Tags.deleteDef(cur)
+        Tags.ui.current = nil
+        refresh()
+        note("Tags", "Deleted '" .. cur.name .. "'")
     end, true)
 
-    UIAPI.syncFns.tags = function()
-        if f.Visible then refreshPlayers() end
-    end
+    UIAPI.syncFns.taglist = function() if f.Visible then refresh() end end
     f:GetPropertyChangedSignal("Visible"):Connect(function()
         if f.Visible then
             if not canEditTags() then f.Visible = false; return end
-            refreshPlayers()
+            refresh()
         end
     end)
-    refreshPlayers()
+    table.insert(conns, Players.PlayerAdded:Connect(function() UIAPI.syncFns.taglist() end))
+    table.insert(conns, Players.PlayerRemoving:Connect(function(p) picked[p.UserId] = nil; task.defer(UIAPI.syncFns.taglist) end))
+    refresh()
 end
 
 local function buildPanels(screenGui)
@@ -14907,6 +15409,7 @@ local function buildPanels(screenGui)
     buildEspPanel(screenGui)
     buildFloorPanel(screenGui)
     buildTagPanel(screenGui)
+    buildTagListPanel(screenGui)
 end
 
 ------------------------------------------------------------------------
