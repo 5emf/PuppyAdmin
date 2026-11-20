@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-6" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-7" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -9020,9 +9020,9 @@ local function showBrandIntro()
     local subFont = safeFont("SourceSansItalic", Enum.Font.SourceSansItalic)
     local GOLD = Color3.fromRGB(255, 221, 150)
 
-    -- backdrop behind the title (assets/intro/heart_moon.png); skipped while the file is not in the repository
+    -- backdrop behind the title (assets/intro/heart_moon_v2.png); skipped while the file is not in the repository
     local heart
-    local heartAsset = urlImageAsset(SETTINGS.Auras.assetBase .. "assets/intro/heart_moon.png", "intro")
+    local heartAsset = urlImageAsset(SETTINGS.Auras.assetBase .. "assets/intro/heart_moon_v2.png", "intro")
     if heartAsset then
         heart = make("ImageLabel", {
             AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.42, 6),
