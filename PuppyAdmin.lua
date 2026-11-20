@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-27" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-28" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -7932,13 +7932,40 @@ do
         end
     end
 
+    -- which side a neighbouring segment is on: r / l / u / d
+    local function side(a, b)
+        if b.x > a.x then return "r" elseif b.x < a.x then return "l" elseif b.y < a.y then return "u" end
+        return "d"
+    end
+    local CORNER = { ur = "ur", ru = "ur", rd = "rd", dr = "rd", dl = "dl", ld = "dl", lu = "lu", ul = "lu" }
+    -- kinds: head_<facing>, tail_<tip>, body_h / body_v, corner_ur / rd / dl / lu, food
     function Snake.draw(g, put)
         if g.food then put(g.food.x, g.food.y, "food") end
-        for i = #g.body, 1, -1 do
-            local s = g.body[i]
-            put(s.x, s.y, i == 1 and "head" or "body")
+        local b, n = g.body, #g.body
+        for i = n, 1, -1 do
+            local s = b[i]
+            local kind
+            if i == 1 then
+                kind = "head_" .. (n > 1 and side(b[2], s) or "r")
+            elseif i == n then
+                kind = "tail_" .. side(b[i - 1], s)
+            else
+                local a, c = side(s, b[i - 1]), side(s, b[i + 1])
+                if (a == "l" or a == "r") and (c == "l" or c == "r") then kind = "body_h"
+                elseif (a == "u" or a == "d") and (c == "u" or c == "d") then kind = "body_v"
+                else kind = "corner_" .. CORNER[a .. c] end
+            end
+            put(s.x, s.y, kind)
         end
     end
+    Snake.sheet = "assets/games/snake.png"
+    local SNAKE_TILES = {
+        head_r = { 0, 0 }, head_l = { 1, 0 }, head_u = { 2, 0 }, head_d = { 3, 0 },
+        tail_r = { 4, 0 }, tail_l = { 5, 0 }, tail_u = { 6, 0 }, tail_d = { 7, 0 },
+        body_h = { 0, 1 }, body_v = { 1, 1 }, corner_ur = { 2, 1 }, corner_rd = { 3, 1 }, corner_dl = { 4, 1 }, corner_lu = { 5, 1 },
+        food = { 6, 1 },
+    }
+    function Snake.cellSprite(kind) local t = SNAKE_TILES[kind]; if t then return t[1], t[2] end end
 
     function Snake.hud(g) return "Score " .. g.score .. "   Length " .. #g.body end
 
@@ -8104,6 +8131,13 @@ do
         for _, c in ipairs(SHAPES[g.nextKind]) do put(c[1] + 1, c[2] + 1, "p" .. g.nextKind) end
     end
 
+    Stack.sheet = "assets/games/stack_drop.png"
+    function Stack.cellSprite(kind)
+        if kind == "ghost" then return 7, 0 end
+        local n = tonumber(kind:match("^p(%d)$"))
+        if n then return n - 1, 0 end
+    end
+
     function Stack.hud(g) return "Score " .. g.score .. "   Lines " .. g.lines .. "   Level " .. g.level end
 
     -- Treat Chase -------------------------------------------------------
@@ -8130,7 +8164,7 @@ do
     }
     local Chase = {
         id = "chase", title = "Treat Chase", tab = "Chase", cols = #MAZE[1], rows = #MAZE, sprites = true,
-        sheet = "assets/games/treat_chase.png",
+        sheet = "assets/games/treat_chase_v2.png",
         help = "Arrows / WASD steer the puppy. Eat every treat; a bone turns the cats blue so you can chase them. Grab the drumstick for bonus points.",
     }
     MiniGames.chase = Chase
@@ -8521,6 +8555,10 @@ do
         return nil
     end
 
+    -- the flashing walls of a cleared level stay plain colour, so the flash shows
+    local CHASE_TILES = { wall = { 2, 3 }, door = { 3, 3 }, treat = { 0, 3 } }
+    function Chase.cellSprite(kind) local t = CHASE_TILES[kind]; if t then return t[1], t[2] end end
+
     function Chase.hud(g) return "Score " .. g.score .. "   Lives " .. g.lives .. "   Level " .. g.level end
 
 
@@ -8532,7 +8570,7 @@ do
     local StarPup = {
         id = "starpup", title = "Star StarPup", tab = "Star StarPup", cols = 24, rows = 22, sprites = true, hold = true,
         help = "Left / right move (hold), Space or Up fires. Shoot the flea fleet before it lands; the saucer is a bonus.",
-        sheet = "assets/games/star_pup.png",
+        sheet = "assets/games/star_pup_v2.png",
     }
     MiniGames.starpup = StarPup
     local P = {
@@ -8812,6 +8850,9 @@ do
         return nil
     end
 
+    local PUP_TILES = { shield = { 6, 1 }, ground = { 7, 1 } }
+    function StarPup.cellSprite(kind) local t = PUP_TILES[kind]; if t then return t[1], t[2] end end
+
     function StarPup.hud(g) return "Score " .. g.score .. "   Lives " .. g.lives .. "   Wave " .. g.waveNo end
 
     MiniGames.list = { Snake, Stack, Chase, StarPup }
@@ -8845,8 +8886,8 @@ local function buildGamesPanel(screenGui)
     local function style(kind)
         -- maze paths stay faint so the walls and pieces stand out
         if kind == "empty" then return PAL.ELEVATED, mg.sprites and 0.88 or 0.55 end
-        if kind == "head" then return PAL.ACCENT, 0 end
-        if kind == "body" then return PAL.GOOD, 0.1 end
+        if kind:sub(1, 5) == "head_" then return PAL.ACCENT, 0 end
+        if kind:sub(1, 5) == "body_" or kind:sub(1, 5) == "tail_" or kind:sub(1, 7) == "corner_" then return PAL.GOOD, 0.1 end
         if kind == "food" then return Color3.fromRGB(255, 120, 180), 0, 0.7 end
         if kind == "ghost" then return PAL.DIM, 0.75 end
         if kind == "wall" then return PAL.ACCENT, 0.45 end
@@ -8896,10 +8937,25 @@ local function buildGamesPanel(screenGui)
         local d = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(0.3, 0.3),
             BorderSizePixel = 0, Visible = false }, c)
         corner(d, 50)
-        return { frame = c, dot = d }
+        local img = make("ImageLabel", { Size = UDim2.new(1, 1, 1, 1), BackgroundTransparency = 1, Visible = false,
+            ImageRectSize = Vector2.new(64, 64), ZIndex = 2 }, c)
+        return { frame = c, dot = d, img = img }
     end
 
     local function paint(cell, kind)
+        local sheet = sheets[mg.id]
+        local col, row
+        if sheet and mg.cellSprite then col, row = mg.cellSprite(kind) end
+        if col then
+            local ec, et = style("empty")
+            cell.frame.BackgroundColor3, cell.frame.BackgroundTransparency = ec, et
+            cell.dot.Visible = false
+            cell.img.Image = sheet
+            cell.img.ImageRectOffset = Vector2.new(col * 64, row * 64)
+            cell.img.Visible = true
+            return
+        end
+        cell.img.Visible = false
         local color, tr, dot = style(kind)
         if dot then
             local ec, et = style("empty")
@@ -9217,7 +9273,7 @@ local function buildGamesPanel(screenGui)
                 local a = urlImageAsset(SETTINGS.Auras.assetBase .. g.sheet, "games")
                 if a then
                     sheets[g.id] = a
-                    if mg == g then cur = {}; render() end
+                    if mg == g then cur, pcur = {}, {}; render() end
                 end
             end
         end
