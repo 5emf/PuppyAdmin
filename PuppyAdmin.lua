@@ -44,7 +44,7 @@ local SETTINGS = {
     TagSync = {
         owner = "5emf", repo = "PuppyAdmin", branch = "main", path = "tags.json",
         tokenFile = "PuppyAdmin/tagsync_token.txt", -- only on the machine that may write
-        pollSeconds = 60, pushDelay = 4,
+        pollSeconds = 20, pushDelay = 4,
     },
 }
 
@@ -1764,7 +1764,7 @@ end
 -- this one repository with Contents: read and write.
 ------------------------------------------------------------------------
 
-local TagSync = { status = "starting", lastJson = nil, pushQueued = false, warnedReadOnly = false }
+local TagSync = { status = "starting", lastJson = nil, pushQueued = false, warnedReadOnly = false, etag = nil }
 
 do
     local CFG = SETTINGS.TagSync
@@ -1918,32 +1918,50 @@ do
         return true
     end
 
-    -- With a token: the contents API (always current, gives the sha to write
-    -- against). Without: the raw file (cached by GitHub for a few minutes).
-    function TagSync.fetch()
+    -- executors pass headers through with whatever casing the server used ("Etag")
+    local function header(res, name)
+        local want = name:lower()
+        for k, v in pairs(type(res.Headers) == "table" and res.Headers or {}) do
+            if type(k) == "string" and k:lower() == want then return v end
+        end
+        return nil
+    end
+
+    -- The contents API is always current (the raw file is cached by GitHub for
+    -- minutes). Each read sends the last ETag: an unchanged file answers 304,
+    -- which GitHub does not count against the rate limit, so polling is cheap.
+    -- Returns ok, text | "unchanged" | nil (no file), sha.
+    function TagSync.fetch(fresh)
         local token = TagSync.token()
-        if token then
-            local res, err = httpRequest({ Url = apiUrl() .. "?ref=" .. CFG.branch, Method = "GET", Headers = headers(token) })
-            if not res then return false, err end
-            if res.StatusCode == 404 then return true, nil, nil end
-            if res.StatusCode ~= 200 then return false, "GitHub said " .. tostring(res.StatusCode) end
-            local ok, meta = pcall(function() return HttpService:JSONDecode(res.Body) end)
-            if not ok or type(meta) ~= "table" or type(meta.content) ~= "string" then return false, "unexpected reply" end
-            return true, b64decode(meta.content), meta.sha
+        local h = headers(token)
+        if TagSync.etag and not fresh then h["If-None-Match"] = TagSync.etag end
+        local res = httpRequest({ Url = apiUrl() .. "?ref=" .. CFG.branch, Method = "GET", Headers = h })
+        if res then
+            local code = tonumber(res.StatusCode) or 0
+            if code == 304 then return true, "unchanged", nil end
+            if code == 404 then TagSync.etag = nil; return true, nil, nil end
+            if code == 200 then
+                local ok, meta = pcall(function() return HttpService:JSONDecode(res.Body) end)
+                if ok and type(meta) == "table" and type(meta.content) == "string" then
+                    TagSync.etag = header(res, "ETag")
+                    return true, b64decode(meta.content), meta.sha
+                end
+            end
+            if token then return false, "GitHub said " .. tostring(code) end
+            -- no token and the API refused (e.g. rate limit): fall through to the raw file
+        elseif token then
+            return false, "executor has no request() - cannot write tags"
         end
         local url = "https://raw.githubusercontent.com/" .. CFG.owner .. "/" .. CFG.repo .. "/" .. CFG.branch .. "/" .. CFG.path
         local ok, body = pcall(function() return game:HttpGet(url .. "?t=" .. tostring(os.time())) end)
-        if not ok then
-            -- a missing file comes back as an error on most executors
-            return true, nil, nil
-        end
-        if type(body) ~= "string" or body:sub(1, 1) ~= "[" then return true, nil, nil end
+        if not ok or type(body) ~= "string" or body:sub(1, 1) ~= "[" then return true, nil, nil end
         return true, body, nil
     end
 
-    function TagSync.pull()
-        local ok, text, sha = TagSync.fetch()
+    function TagSync.pull(fresh)
+        local ok, text, sha = TagSync.fetch(fresh)
         if not ok then TagSync.status = "read failed: " .. tostring(text); return false, TagSync.status end
+        if text == "unchanged" then TagSync.status = "up to date (" .. #Cfg.tagDefs .. " tags)"; return true, TagSync.status end
         if not text then TagSync.status = "no tags file in the repository yet"; return true, TagSync.status end
         if not apply(text) then TagSync.status = "tags file is not valid"; return false, TagSync.status end
         TagSync.status = "up to date (" .. #Cfg.tagDefs .. " tags)"
@@ -1955,7 +1973,7 @@ do
         if not token then return false, "no token - add one in Settings" end
         local body = encodeTags()
         for attempt = 1, 2 do
-            local ok, text, sha = TagSync.fetch()
+            local ok, text, sha = TagSync.fetch(true)
             if not ok then return false, "read failed: " .. tostring(text) end
             if text == body then TagSync.lastJson = body; return true, "already up to date" end
             local payload = HttpService:JSONEncode({
@@ -1968,6 +1986,7 @@ do
             if not res then return false, err end
             if res.StatusCode == 200 or res.StatusCode == 201 then
                 TagSync.lastJson = body
+                TagSync.etag = nil -- next poll reads the new version
                 return true, "pushed " .. #Cfg.tagDefs .. " tags"
             end
             if res.StatusCode == 401 or res.StatusCode == 403 then
@@ -14263,7 +14282,7 @@ function H.tagsync(a)
     local sub = a[1] and a[1]:lower()
     if sub == "pull" then
         task.spawn(function()
-            local ok, msg = TagSync.pull()
+            local ok, msg = TagSync.pull(true)
             note("Tag sync", msg, ok and LIGHT or RED)
         end)
     elseif sub == "push" then
@@ -16135,7 +16154,7 @@ local function createUI()
         tokenBox.PlaceholderText = TagSync.token() and "token saved - paste a new one, or 'remove'" or "github_pat_... (never type this in chat)"
         if ok and TagSync.token() then
             task.spawn(function()
-                local okPull, status = TagSync.pull()
+                local okPull, status = TagSync.pull(true)
                 note("Tag sync", status, okPull and LIGHT or RED)
             end)
         end
