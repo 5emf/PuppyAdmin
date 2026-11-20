@@ -12826,10 +12826,48 @@ function Novo.purgeBuiltins()
     end
 end
 
+-- Pasted keyframes (Lua table source or the recorder's JSON), the way the
+-- original panel's paste box saved them. Returns ok, display name or reason, path.
+function Novo.importText(raw, wantedName)
+    raw = tostring(raw or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if raw == "" then return false, "Paste keyframe data first" end
+    if not (writefile and readfile) then return false, "Needs writefile/readfile" end
+    local rs = _G._nv_reanimState
+    local ext = "lua"
+    local okJson, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
+    if okJson and type(decoded) == "table" then
+        ext = "json"
+    else
+        if type(rs) ~= "table" or type(rs.loadAnim) ~= "function" then return false, "Reanimation is still starting - try again in a moment" end
+        local okL, data, text = pcall(rs.loadAnim, raw)
+        if not okL or type(data) ~= "table" then
+            return false, "Not keyframes: " .. tostring(okL and text or data):sub(1, 60)
+                .. " (" .. #raw .. " characters - if it was cut off, use a link or a file)"
+        end
+        raw = type(text) == "string" and text or raw
+    end
+    local name = tostring(wantedName or ""):gsub("[^%w %-_%.%(%)]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if name == "" then name = tostring(raw:match('%[%s*["\']([^"\']+)["\']%s*%]') or "pasted"):gsub("[^%w %-_%.%(%)]", ""):sub(1, 40) end
+    if name == "" then name = "pasted" end
+    pcall(function()
+        if not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
+        if not isfolder("PuppyAdmin/custom") then makefolder("PuppyAdmin/custom") end
+    end)
+    local base, n = name, 2
+    while isfile and isfile("PuppyAdmin/custom/" .. name .. "." .. ext) and n <= 50 do name = base .. " " .. n; n = n + 1 end
+    local path = "PuppyAdmin/custom/" .. name .. "." .. ext
+    local okW, err = pcall(writefile, path, raw)
+    if not okW then return false, "Save failed: " .. tostring(err) end
+    addToYourAnimations(name, path, nil)
+    return true, name, path
+end
+
 -- Yields. Returns ok, display name or reason, file path.
 function Novo.importCatalog(raw)
     raw = tostring(raw or ""):match("^%s*(.-)%s*$")
     if raw:match("^https?://") then return importLink(raw) end
+    -- pasted keyframes rather than an ID
+    if #raw > 40 and (raw:find("{", 1, true) or raw:find("Time", 1, true)) then return Novo.importText(raw) end
     local id = raw:match("%d+")
     if not id then return false, "Give an animation or emote ID, or a keyframe file link" end
     if not (writefile and readfile) then return false, "Needs writefile/readfile" end
@@ -15848,16 +15886,79 @@ local function buildReanimPanel(screenGui)
             refreshLibrary()
         end)
         srcBtn.TextSize = 11
-        local importBox = uiBox(page, UDim2.fromOffset(16, 34), UDim2.fromOffset(IW - 78, 28), "Import: animation/emote ID or keyframe link")
-        uiButton(page, "Import", UDim2.fromOffset(70, 28), UDim2.fromOffset(16 + IW - 70, 34), function()
-            local id = importBox.Text
-            importBox.Text = ""
-            H.reanim({ "import", id })
-            task.delay(1, function()
-                source = 1
-                srcBtn.Text = SOURCES[source][2]
-                if refreshLibrary then refreshLibrary(true) end
+        local importBox = uiBox(page, UDim2.fromOffset(16, 34), UDim2.fromOffset(IW - 142, 28), "Import: animation/emote ID or keyframe link")
+        -- after an import: show Your animations, searched to the new entry
+        local function showImported(name)
+            source = 1
+            srcBtn.Text = SOURCES[source][2]
+            search.Text = name or ""
+            if refreshLibrary then refreshLibrary(true) end
+        end
+        local function runImport(fn, ...)
+            local args = { ... }
+            task.spawn(function()
+                if not Novo.ensure() then return end
+                note("Reanim", "Importing...")
+                local ok, name, path = fn(table.unpack(args))
+                if not ok then note("Reanim", tostring(name), RED); return end
+                note("Reanim", "Imported " .. name .. " - in Your animations", LIGHT)
+                local rs = _G._nv_reanimState
+                if Reanim.active and type(rs) == "table" and type(rs.playAnim) == "function" then pcall(rs.playAnim, name, path) end
+                showImported(name)
             end)
+        end
+        uiButton(page, "Import", UDim2.fromOffset(62, 28), UDim2.fromOffset(16 + IW - 134, 34), function()
+            local raw = importBox.Text
+            importBox.Text = ""
+            runImport(Novo.importCatalog, raw)
+        end)
+
+        -- Paste window: a multi-line box keeps the line breaks of pasted
+        -- keyframes (a one-line box joins them, which breaks Lua comments).
+        local paste = make("Frame", {
+            Name = "PasteKeyframes", Position = UDim2.fromOffset(16, 0), Size = UDim2.new(1, -32, 1, -8),
+            BackgroundColor3 = PAL.PANEL, BorderSizePixel = 0, Visible = false, ZIndex = 20,
+        }, page)
+        corner(paste, 10)
+        stroke(paste, PAL.STROKE, 1, 0)
+        label(paste, { Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -24, 0, 18), Text = "Paste keyframes (Lua table or recorder JSON)",
+            Font = Enum.Font.GothamBold, ZIndex = 21 })
+        local pasteName = uiBox(paste, UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 28), "Name (optional)")
+        pasteName.Parent.ZIndex, pasteName.ZIndex = 21, 22
+        local scroller = make("ScrollingFrame", {
+            Position = UDim2.fromOffset(12, 66), Size = UDim2.new(1, -24, 1, -142), BackgroundColor3 = PAL.CARD,
+            BackgroundTransparency = 0.2, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = PAL.DIM,
+            CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y, ZIndex = 21,
+        }, paste)
+        corner(scroller, 8)
+        local pasteBox = make("TextBox", {
+            Size = UDim2.new(1, -12, 0, 0), Position = UDim2.fromOffset(6, 4), AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundTransparency = 1, MultiLine = true, TextWrapped = true, ClearTextOnFocus = false,
+            Text = "", PlaceholderText = "Click here and paste (Ctrl+V)", PlaceholderColor3 = PAL.DIM, TextColor3 = PAL.TEXT,
+            Font = Enum.Font.Code, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 22,
+        }, scroller)
+        local count = label(paste, { Position = UDim2.new(0, 12, 1, -72), Size = UDim2.new(1, -24, 0, 30), TextWrapped = true,
+            Text = "", TextColor3 = PAL.DIM, TextSize = 10, ZIndex = 21, TextYAlignment = Enum.TextYAlignment.Top })
+        pasteBox:GetPropertyChangedSignal("Text"):Connect(function()
+            count.Text = #pasteBox.Text .. " characters. If a long paste gets cut off, use a link in Import or put the file in PuppyAdmin/custom and press Reload files."
+        end)
+        local saveB = uiButton(paste, "Save to Your animations", UDim2.new(0.6, -16, 0, 30), UDim2.new(0, 12, 1, -38), function()
+            local raw, nm = pasteBox.Text, pasteName.Text
+            runImport(function()
+                local ok, name, path = Novo.importText(raw, nm)
+                if ok then
+                    paste.Visible = false
+                    pasteBox.Text, pasteName.Text = "", ""
+                end
+                return ok, name, path
+            end)
+        end)
+        local cancelB = uiButton(paste, "Cancel", UDim2.new(0.4, -12, 0, 30), UDim2.new(0.6, 0, 1, -38), function() paste.Visible = false end)
+        for _, b in ipairs({ saveB, cancelB }) do b.ZIndex = 22 end
+        uiButton(page, "Paste", UDim2.fromOffset(64, 28), UDim2.fromOffset(16 + IW - 64, 34), function()
+            paste.Visible = true
+            count.Text = "Paste Lua keyframes (like recorder files) or recorder JSON, then Save."
         end)
         local hint = label(page, { Position = UDim2.fromOffset(16, 66), Size = UDim2.new(1, -32, 0, 14), TextSize = 10, TextColor3 = PAL.DIM,
             Text = "Click to play.  Right-click or ... for more." })
