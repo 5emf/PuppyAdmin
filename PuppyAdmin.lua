@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-15" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-16" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -8865,6 +8865,42 @@ end
 -- The games are never part of the script or the repository.
 ------------------------------------------------------------------------
 
+-- Reads a game file, trying each path; on failure explains why (yields).
+function UIAPI.gbReadFile(name, paths)
+    local lastErr, sawNil = nil, false
+    for _, p in ipairs(paths) do
+        if p then
+            local ok, d = pcall(readfile, p)
+            if ok and typeof(d) == "buffer" then d = buffer.tostring(d) end
+            if ok and type(d) == "string" and #d > 0 then return d end
+            if not ok then lastErr = tostring(d) else sawNil = true end
+        end
+    end
+    -- why: does the file exist, and can this executor read binary data at all?
+    local exists = false
+    for _, p in ipairs(paths) do
+        if p and pcall(function() exists = exists or isfile(p) end) and exists then break end
+    end
+    local test = "PuppyAdmin/roms/_readtest.bin"
+    local sample = "PK\3\4\0\1\2\255\128\10\13"
+    local verdict
+    local okW = pcall(writefile, test, sample)
+    if not okW then
+        verdict = "this executor cannot write files there"
+    else
+        local okR, back = pcall(readfile, test)
+        if okR and typeof(back) == "buffer" then back = buffer.tostring(back) end
+        if not okR or back == nil then verdict = "this executor returns nothing for binary files"
+        elseif back ~= sample then verdict = "this executor changes binary data when reading (" .. #tostring(back) .. " of " .. #sample .. " bytes came back)"
+        else verdict = "binary reading works, so the file name or type is the problem" end
+        pcall(delfile, test)
+    end
+    local simple = name:gsub("[^%w%.%-_]", "")
+    error("Could not read " .. name .. " (" .. (lastErr or (sawNil and "the executor returned nothing" or "no path worked")) .. "; file found: "
+        .. (exists and "yes" or "no") .. "). Test: " .. verdict .. ". Try renaming it to a short name without spaces, commas, "
+        .. "apostrophes or brackets, e.g. " .. (simple ~= "" and simple or "game.zip") .. ", or unzip it and use the .gb file.", 0)
+end
+
 UIAPI.GB_MODULE = { version = "9253ad542f", bytes = 65090 }
 
 function UIAPI.buildGameBoyPanel(screenGui)
@@ -8888,13 +8924,17 @@ function UIAPI.buildGameBoyPanel(screenGui)
         if makefolder and isfolder and not isfolder(ROM_DIR) then makefolder(ROM_DIR) end
     end)
 
+    local fullPath = {} -- file name -> the path listfiles gave for it
     local function romList()
         local out = {}
         pcall(function()
             for _, p in ipairs(listfiles(ROM_DIR)) do
                 local name = tostring(p):match("([^/\\]+)$")
                 local low = name and name:lower() or ""
-                if low:match("%.gb$") or low:match("%.gbc$") or low:match("%.zip$") then out[#out + 1] = name end
+                if low:match("%.gb$") or low:match("%.gbc$") or low:match("%.zip$") then
+                    out[#out + 1] = name
+                    fullPath[name] = tostring(p)
+                end
             end
         end)
         table.sort(out, function(a, b) return a:lower() < b:lower() end)
@@ -9003,11 +9043,7 @@ function UIAPI.buildGameBoyPanel(screenGui)
                 if not okImg then error(why, 0) end
                 local mod = loadModule()
                 local path = ROM_DIR .. "/" .. name
-                -- some executors return a buffer instead of a string for files
-                local okRead, data = pcall(readfile, path)
-                if not okRead then error("could not read " .. name .. ": " .. tostring(data), 0) end
-                if typeof(data) == "buffer" then data = buffer.tostring(data) end
-                if type(data) ~= "string" then error("reading " .. name .. " gave " .. typeof(data) .. ", not data", 0) end
+                local data = UIAPI.gbReadFile(name, { fullPath[name], path, ROM_DIR .. "\\" .. name })
                 -- zip by content, whatever the file is called
                 if data:find("PK\3\4", 1, true) or name:lower():match("%.zip$") then
                     local rom, inner = mod.Zip.extract(data)
