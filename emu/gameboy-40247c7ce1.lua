@@ -1,4 +1,4 @@
--- PuppyAdmin gameboy 9253ad542f (original Game Boy emulator; games are loaded from your own PuppyAdmin/roms folder)
+-- PuppyAdmin gameboy 40247c7ce1 (original Game Boy emulator; games are loaded from your own PuppyAdmin/roms folder)
 local GB = (function()
 -- Puppy Admin Game Boy core (original DMG). Plain Lua that runs in Luau.
 -- GB.new(romString, saveString?) -> emu   (errors on a ROM it cannot run)
@@ -163,7 +163,183 @@ function GB.new(romStr, saveStr)
     local joySel, dpad, buttons = 0x30, 15, 15     -- 1 = released
     local sb, serialOut = 0, {}
 
+    -- Sound chip: registers, length / envelope / sweep timers and a per-frame
+    -- snapshot of each channel (emu.audio). No samples are generated here: the
+    -- front end plays looping tones at these pitches and volumes.
+    local SND_OR = {
+        [0x10] = 0x80, [0x11] = 0x3F, [0x12] = 0x00, [0x13] = 0xFF, [0x14] = 0xBF, [0x15] = 0xFF,
+        [0x16] = 0x3F, [0x17] = 0x00, [0x18] = 0xFF, [0x19] = 0xBF, [0x1A] = 0x7F, [0x1B] = 0xFF,
+        [0x1C] = 0x9F, [0x1D] = 0xFF, [0x1E] = 0xBF, [0x1F] = 0xFF, [0x20] = 0xFF, [0x21] = 0x00,
+        [0x22] = 0x00, [0x23] = 0xBF, [0x24] = 0x00, [0x25] = 0x00,
+    }
+    local snd = { regs = {}, power = true, seqCount = 0, seqStep = 0, wave = {}, shape = "tri", waveDirty = true, ch = {} }
+    for k = 0x10, 0x25 do snd.regs[k] = 0 end
+    for k = 0, 15 do snd.wave[k] = 0 end
+    for n = 1, 4 do
+        snd.ch[n] = { on = false, dac = false, len = 0, lenOn = false, vol = 0, envVol = 0, envUp = false, envPeriod = 0, envTimer = 0,
+            freq = 0, duty = 2, volCode = 0, sweepTimer = 0, sweepOn = false, shadow = 0 }
+    end
+    local SND_BASE = { 0x10, 0x15, 0x1A, 0x1F }
+
+    local function sweepCalc(c)
+        local r = snd.regs[0x10]
+        local delta = rsh(c.shadow, band(r, 7))
+        local nf = band(r, 8) ~= 0 and (c.shadow - delta) or (c.shadow + delta)
+        if nf > 2047 then c.on = false end
+        return nf
+    end
+
+    local function trigger(n)
+        local c = snd.ch[n]
+        c.on = c.dac
+        if c.len == 0 then c.len = n == 3 and 256 or 64 end
+        if n ~= 3 then
+            c.vol = c.envVol
+            c.envTimer = c.envPeriod == 0 and 8 or c.envPeriod
+        end
+        if n == 1 then
+            local r = snd.regs[0x10]
+            local period, shift = band(rsh(r, 4), 7), band(r, 7)
+            c.shadow = c.freq
+            c.sweepTimer = period == 0 and 8 or period
+            c.sweepOn = period > 0 or shift > 0
+            if shift > 0 then sweepCalc(c) end
+        end
+    end
+
+    local function sndWrite(reg, v)
+        if reg >= 0x30 then
+            snd.wave[reg - 0x30] = v
+            snd.waveDirty = true
+            return
+        end
+        if reg == 0x26 then
+            local on = band(v, 0x80) ~= 0
+            if snd.power and not on then
+                for k = 0x10, 0x25 do snd.regs[k] = 0 end
+                for n = 1, 4 do local c = snd.ch[n]; c.on = false; c.dac = false; c.len = 0; c.lenOn = false end
+            end
+            snd.power = on
+            return
+        end
+        if not snd.power or not SND_OR[reg] then return end
+        snd.regs[reg] = v
+        local n = reg < 0x15 and 1 or (reg < 0x1A and 2 or (reg < 0x1F and 3 or (reg < 0x24 and 4 or 0)))
+        if n == 0 then return end
+        local c = snd.ch[n]
+        local r = reg - SND_BASE[n]
+        if r == 1 then
+            if n == 3 then c.len = 256 - v
+            else
+                c.len = 64 - band(v, 63)
+                if n <= 2 then c.duty = rsh(v, 6) end
+            end
+        elseif r == 2 then
+            if n == 3 then
+                c.volCode = band(rsh(v, 5), 3)
+            else
+                c.envVol, c.envUp, c.envPeriod = rsh(v, 4), band(v, 8) ~= 0, band(v, 7)
+                c.dac = band(v, 0xF8) ~= 0
+                if not c.dac then c.on = false end
+            end
+        elseif r == 0 and n == 3 then
+            c.dac = band(v, 0x80) ~= 0
+            if not c.dac then c.on = false end
+        elseif r == 3 or r == 4 then
+            if n ~= 4 then
+                c.freq = snd.regs[SND_BASE[n] + 3] + band(snd.regs[SND_BASE[n] + 4], 7) * 256
+            end
+            if r == 4 then
+                c.lenOn = band(v, 0x40) ~= 0
+                if band(v, 0x80) ~= 0 then trigger(n) end
+            end
+        end
+    end
+
+    local function sndRead(reg)
+        if reg >= 0x30 then return snd.wave[reg - 0x30] end
+        if reg == 0x26 then
+            local v = 0x70 + (snd.power and 0x80 or 0)
+            for n = 1, 4 do if snd.ch[n].on then v = v + IRQ_BIT[n - 1] end end
+            return v
+        end
+        local m = SND_OR[reg]
+        if not m then return 0xFF end
+        return bor(snd.regs[reg], m)
+    end
+
+    -- 512 Hz: length (256 Hz), sweep (128 Hz), envelope (64 Hz)
+    local function sndStep()
+        local step = snd.seqStep
+        snd.seqStep = (step + 1) % 8
+        if step % 2 == 0 then
+            for n = 1, 4 do
+                local c = snd.ch[n]
+                if c.lenOn and c.len > 0 then
+                    c.len = c.len - 1
+                    if c.len == 0 then c.on = false end
+                end
+            end
+        end
+        if step == 2 or step == 6 then
+            local c = snd.ch[1]
+            c.sweepTimer = c.sweepTimer - 1
+            if c.sweepTimer <= 0 then
+                local r = snd.regs[0x10]
+                local period = band(rsh(r, 4), 7)
+                c.sweepTimer = period == 0 and 8 or period
+                if c.sweepOn and period > 0 and c.on then
+                    local nf = sweepCalc(c)
+                    if nf <= 2047 and band(r, 7) > 0 then
+                        c.shadow, c.freq = nf, nf
+                        snd.regs[0x13] = band(nf, 255)
+                        snd.regs[0x14] = band(snd.regs[0x14], 0xF8) + rsh(nf, 8)
+                        sweepCalc(c)
+                    end
+                end
+            end
+        end
+        if step == 7 then
+            for _, n in ipairs({ 1, 2, 4 }) do
+                local c = snd.ch[n]
+                if c.envPeriod ~= 0 then
+                    c.envTimer = c.envTimer - 1
+                    if c.envTimer <= 0 then
+                        c.envTimer = c.envPeriod
+                        if c.envUp and c.vol < 15 then c.vol = c.vol + 1
+                        elseif not c.envUp and c.vol > 0 then c.vol = c.vol - 1 end
+                    end
+                end
+            end
+        end
+    end
+
+    -- the wave channel's shape, roughly: "tri", "saw" or "sq" (decided when the game changes it)
+    local function waveShape()
+        if not snd.waveDirty then return snd.shape end
+        snd.waveDirty = false
+        local s, distinct, nd = {}, {}, 0
+        for k = 0, 15 do
+            local b = snd.wave[k]
+            s[k * 2 + 1], s[k * 2 + 2] = rsh(b, 4), band(b, 15)
+        end
+        for k = 1, 32 do if not distinct[s[k]] then distinct[s[k]] = true; nd = nd + 1 end end
+        if nd <= 2 then snd.shape = "sq"; return "sq" end
+        local changes, last = 0, 0
+        for k = 2, 32 do
+            local d = s[k] - s[k - 1]
+            local sign = d > 0 and 1 or (d < 0 and -1 or 0)
+            if sign ~= 0 then
+                if last ~= 0 and sign ~= last then changes = changes + 1 end
+                last = sign
+            end
+        end
+        snd.shape = changes <= 2 and "saw" or "tri"
+        return snd.shape
+    end
+
     local function readIO(a)
+        if a >= 0xFF10 and a < 0xFF40 then return sndRead(a - 0xFF00) end
         if a == 0xFF00 then
             local v = 0xC0 + joySel + 15
             if band(joySel, 0x10) == 0 then v = band(v, 0xF0 + dpad) end
@@ -203,6 +379,7 @@ function GB.new(romStr, saveStr)
     local rb, wb
 
     local function writeIO(a, v)
+        if a >= 0xFF10 and a < 0xFF40 then sndWrite(a - 0xFF00, v); return end
         if a == 0xFF00 then joySel = band(v, 0x30)
         elseif a == 0xFF01 then sb = v
         elseif a == 0xFF02 then
@@ -1019,6 +1196,11 @@ function GB.new(romStr, saveStr)
             end
             total = total + cyc
 
+            -- sound sequencer (512 Hz)
+            local sc = snd.seqCount + cyc
+            if sc >= 8192 then sc = sc - 8192; sndStep() end
+            snd.seqCount = sc
+
             -- timer
             divCount = divCount + cyc
             while divCount >= 256 do divCount = divCount - 256; div = (div + 1) % 256 end
@@ -1105,6 +1287,37 @@ function GB.new(romStr, saveStr)
         end
         return concat(parts)
     end
+    -- emu.audio(): { power, master (0..1), c = { [1..4] = { on, freq (Hz), vol (0..1), duty (0-3) | shape | short } } }
+    local snap = { c = { {}, {}, {}, {} } }
+    local WAVE_VOL = { [0] = 0, [1] = 1, [2] = 0.5, [3] = 0.25 }
+    local NOISE_DIV = { [0] = 0.5, 1, 2, 3, 4, 5, 6, 7 }
+    function emu.audio()
+        local r = snd.regs
+        snap.power = snd.power
+        snap.master = (band(rsh(r[0x24], 4), 7) + band(r[0x24], 7) + 2) / 16
+        local pan = r[0x25]
+        for n = 1, 4 do
+            local c, s = snd.ch[n], snap.c[n]
+            s.on = snd.power and c.on and c.dac and band(pan, IRQ_BIT[n - 1] + IRQ_BIT[n - 1] * 16) ~= 0
+            if n <= 2 then
+                s.freq = 131072 / (2048 - c.freq)
+                s.vol = c.vol / 15
+                s.duty = c.duty
+            elseif n == 3 then
+                s.freq = 65536 / (2048 - c.freq)
+                s.vol = WAVE_VOL[c.volCode]
+                s.shape = waveShape()
+            else
+                local nr = r[0x22]
+                s.freq = 524288 / NOISE_DIV[band(nr, 7)] / 2 ^ (rsh(nr, 4) + 1)
+                s.vol = c.vol / 15
+                s.short = band(nr, 8) ~= 0
+            end
+            if s.vol <= 0 then s.on = false end
+        end
+        return snap
+    end
+
     function emu.dirty() return dirty end
     function emu.clearDirty() dirty = false end
     function emu.serial() return concat(serialOut) end

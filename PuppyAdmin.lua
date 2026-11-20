@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-17" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-18" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -362,6 +362,7 @@ local Cfg = {
     uiTextScale = 1,    -- Settings > Text size (0.5 - 2)
     games = {},        -- mini game best scores: game id -> number
     fpsCounter = { on = false }, -- Performance > FPS counter: on, x, y (pixels)
+    gbVolume = 1,      -- Game Boy sound level (0 = off)
 }
 
 local function cfgSave()
@@ -8901,7 +8902,7 @@ function UIAPI.gbReadFile(name, paths)
         .. "apostrophes or brackets, e.g. " .. (simple ~= "" and simple or "game.zip") .. ", or unzip it and use the .gb file.", 0)
 end
 
-UIAPI.GB_MODULE = { version = "9253ad542f", bytes = 65090 }
+UIAPI.GB_MODULE = { version = "40247c7ce1", bytes = 73545 }
 
 function UIAPI.buildGameBoyPanel(screenGui)
     local W, HGT = 360, 470
@@ -8960,8 +8961,98 @@ function UIAPI.buildGameBoyPanel(screenGui)
         Text = "Put .gb or .zip games in your executor's workspace/PuppyAdmin/roms folder, then pick one above.\n\n"
             .. "Keys: arrows / WASD move, X = A, Z = B, Enter = Start, Backspace = Select.",
     })
-    local status = label(f, { Position = UDim2.fromOffset(16, 338), Size = UDim2.fromOffset(W - 32, 16), TextSize = 11,
+    local status = label(f, { Position = UDim2.fromOffset(16, 338), Size = UDim2.fromOffset(W - 32 - 112, 16), TextSize = 11, TextTruncate = Enum.TextTruncate.AtEnd,
         TextColor3 = PAL.DIM, Text = "No game loaded" })
+
+    -- Sound: the emulator reports each channel's pitch and volume every frame;
+    -- these looping tones (assets/gb, downloaded once) are re-pitched to match.
+    -- Low / high register files keep the pitch change within 0.25x - 4x.
+    local SND = { sounds = {}, ready = false, loading = false }
+    local VOLUMES = { 1, 0.75, 0.5, 0.25, 0 }
+    local VOLUME_LABELS = { "Sound 100%", "Sound 75%", "Sound 50%", "Sound 25%", "Sound off" }
+    if type(Cfg.gbVolume) ~= "number" then Cfg.gbVolume = 1 end
+    local BASE_HZ = { lo = 110.25, hi = 1764 }
+    local CHANNEL_GAIN = 0.5
+    local function soundKey(n, c)
+        if n <= 3 then
+            local bank = c.freq < 441 and "lo" or "hi"
+            local name
+            if n <= 2 then name = "sq" .. c.duty .. "_" .. bank
+            else name = (c.shape == "tri" and "tri" or (c.shape == "saw" and "saw" or "sq2")) .. "_" .. bank end
+            local speed = c.freq / BASE_HZ[bank]
+            if speed < 0.25 or speed > 4 then return nil end
+            return name, speed
+        end
+        local name = c.short and "noise7" or "noise"
+        return name, math.clamp(c.freq / (c.short and 22050 or 44100), 0.1, 4)
+    end
+    local function loadSounds()
+        if SND.ready or SND.loading then return end
+        SND.loading = true
+        task.spawn(function()
+            local files = { "noise", "noise7", "saw_hi", "saw_lo", "tri_hi", "tri_lo" }
+            for d = 0, 3 do files[#files + 1] = "sq" .. d .. "_lo"; files[#files + 1] = "sq" .. d .. "_hi" end
+            local ids = {}
+            for _, name in ipairs(files) do
+                ids[name] = urlImageAsset(SETTINGS.Auras.assetBase .. "assets/gb/" .. name .. ".ogg", "gbsnd")
+                if not ids[name] then SND.loading = false; return end
+            end
+            local service = game:GetService("SoundService")
+            local sets = {
+                { "sq0_lo", "sq1_lo", "sq2_lo", "sq3_lo", "sq0_hi", "sq1_hi", "sq2_hi", "sq3_hi" },
+                { "sq0_lo", "sq1_lo", "sq2_lo", "sq3_lo", "sq0_hi", "sq1_hi", "sq2_hi", "sq3_hi" },
+                { "tri_lo", "saw_lo", "sq2_lo", "tri_hi", "saw_hi", "sq2_hi" },
+                { "noise", "noise7" },
+            }
+            for n, list in ipairs(sets) do
+                SND.sounds[n] = {}
+                for _, name in ipairs(list) do
+                    local snd = Instance.new("Sound")
+                    snd.Name = "PuppyAdminGB" .. n .. name
+                    snd.SoundId = ids[name]
+                    snd.Looped = true
+                    snd.Volume = 0
+                    snd.Parent = service
+                    snd:Play()
+                    SND.sounds[n][name] = snd
+                end
+            end
+            SND.ready = true
+        end)
+    end
+    local function muteSound()
+        if not SND.ready then return end
+        for _, set in ipairs(SND.sounds) do
+            for _, snd in pairs(set) do if snd.Volume ~= 0 then snd.Volume = 0 end end
+        end
+    end
+    local function updateSound(a)
+        if not SND.ready then return end
+        local level = Cfg.gbVolume
+        for n = 1, 4 do
+            local c = a.c[n]
+            local key, speed
+            if a.power and c.on and level > 0 then key, speed = soundKey(n, c) end
+            for name, snd in pairs(SND.sounds[n]) do
+                if name == key then
+                    snd.PlaybackSpeed = speed
+                    snd.Volume = c.vol * a.master * level * CHANNEL_GAIN
+                elseif snd.Volume ~= 0 then
+                    snd.Volume = 0
+                end
+            end
+        end
+    end
+    local volDd = uiDropdown(f, "", UDim2.fromOffset(108, 22), UDim2.fromOffset(W - 16 - 108, 335), VOLUME_LABELS,
+        table.find(VOLUMES, Cfg.gbVolume) or 1, function(i)
+            Cfg.gbVolume = VOLUMES[i]
+            cfgSave()
+            if Cfg.gbVolume == 0 then muteSound() end
+        end)
+    volDd.button.TextSize = 11
+    table.insert(cleanups, function()
+        for _, set in ipairs(SND.sounds) do for _, snd in pairs(set) do pcall(function() snd:Destroy() end) end end
+    end)
 
     local image, pixels
     local function makeImage()
@@ -9029,12 +9120,14 @@ function UIAPI.buildGameBoyPanel(screenGui)
     local function setRunning(on)
         running = on and emu ~= nil
         if not running and releaseAll then releaseAll() end
+        if running then loadSounds() else muteSound() end
         UIAPI.gbButtons.pause.Text = running and "Pause" or "Play"
     end
 
     local function loadGame(name)
         task.spawn(function()
             saveNow()
+            muteSound()
             emu, running = nil, false
             overlay.Visible = true
             overlay.Text = "Loading " .. name .. "..."
@@ -9178,7 +9271,11 @@ function UIAPI.buildGameBoyPanel(screenGui)
                 end
                 if acc > 0.1 then acc = 0 end -- falling behind: run slower instead of piling up
             end
-            if ran > 0 then present() end
+            if ran > 0 then
+                present()
+                -- fast-forward is silent
+                if fast or not emu.audio then muteSound() else updateSound(emu.audio()) end
+            end
             framesThisSecond = framesThisSecond + ran
             local now = os.clock()
             if now - secondStart >= 1 then
