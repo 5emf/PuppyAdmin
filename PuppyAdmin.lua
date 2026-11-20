@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-29" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-30" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -363,6 +363,7 @@ local Cfg = {
     games = {},        -- mini game best scores: game id -> number
     fpsCounter = { on = false }, -- Performance > FPS counter: on, x, y (pixels)
     gbVolume = 1,      -- Game Boy sound level (0 = off)
+    floor = {},        -- infinite baseplate: { preset = name, color = { r, g, b } }
     windowScales = {}, -- window name -> size set with the corner grip (1 = normal)
 }
 
@@ -3903,13 +3904,18 @@ end
 -- Infinite baseplate: 2000x2000 tiles spawned around you at floor height
 ------------------------------------------------------------------------
 
+-- default look: leafy grass in a bright lawn green (picked by eye to match the
+-- grass in Mic Up; change it with the colour box in the panel)
+local GRASS_GREEN = Color3.fromRGB(83, 160, 61)
+local LEAFY = (function() local ok, m = pcall(function() return Enum.Material.LeafyGrass end); return ok and m or Enum.Material.Grass end)()
 Baseplate = {
     enabled = false, folder = nil, grid = {}, gen = 0, top = nil,
-    kind = "default", material = Enum.Material.SmoothPlastic, textureId = "", studs = 8, presetIndex = 1,
+    kind = "material", material = LEAFY, color = GRASS_GREEN, textureId = "", studs = 8, presetIndex = 1,
 }
 
 BASEPLATE_PRESETS = {
-    { name = "Default" },
+    { name = "Grass (default)", material = LEAFY, color = GRASS_GREEN },
+    { name = "Dark glass" },
     { name = "Studs", texture = "rbxasset://textures/studs.png" },
     { name = "Inlet", texture = "rbxasset://textures/inlet.png" },
     { name = "Universal", texture = "rbxasset://textures/universal.png" },
@@ -3932,7 +3938,7 @@ local function bpApply(part)
         if ch:IsA("Texture") or ch:IsA("Decal") then ch:Destroy() end
     end
     if Baseplate.kind == "material" then
-        part.Material, part.Color, part.Transparency = Baseplate.material, Color3.new(1, 1, 1), 0
+        part.Material, part.Color, part.Transparency = Baseplate.material, Baseplate.color or Color3.new(1, 1, 1), 0
     elseif Baseplate.kind == "texture" and Baseplate.textureId ~= "" then
         part.Material, part.Color, part.Transparency = Enum.Material.SmoothPlastic, Color3.new(1, 1, 1), 0
         for _, face in ipairs({ Enum.NormalId.Top, Enum.NormalId.Bottom }) do
@@ -4031,12 +4037,42 @@ function Baseplate.usePreset(i)
     Baseplate.presetIndex = i
     if p.material then
         Baseplate.kind, Baseplate.material = "material", p.material
+        Baseplate.color = p.color or Color3.new(1, 1, 1)
     elseif p.texture then
         Baseplate.kind, Baseplate.textureId, Baseplate.studs = "texture", p.texture, 8
     else
         Baseplate.kind = "default"
     end
     bpApplyAll()
+    Baseplate.save()
+end
+
+-- remembered between sessions (Cfg.floor)
+function Baseplate.save()
+    local p = BASEPLATE_PRESETS[Baseplate.presetIndex]
+    local c = Baseplate.color or Color3.new(1, 1, 1)
+    Cfg.floor = { preset = p and p.name or nil, color = { math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5) } }
+    cfgSave()
+end
+function Baseplate.setColor(c)
+    Baseplate.color = c
+    bpApplyAll()
+    Baseplate.save()
+end
+function Baseplate.load()
+    local saved = type(Cfg.floor) == "table" and Cfg.floor or {}
+    for i, p in ipairs(BASEPLATE_PRESETS) do
+        if p.name == saved.preset then
+            Baseplate.presetIndex = i
+            if p.material then Baseplate.kind, Baseplate.material = "material", p.material
+            elseif p.texture then Baseplate.kind, Baseplate.textureId = "texture", p.texture
+            else Baseplate.kind = "default" end
+        end
+    end
+    local c = saved.color
+    if type(c) == "table" and tonumber(c[1]) and tonumber(c[2]) and tonumber(c[3]) then
+        Baseplate.color = Color3.fromRGB(c[1], c[2], c[3])
+    end
 end
 
 -- Accepts rbxasset(s), rbxassetid://, a bare id, a roblox.com link, or an image URL.
@@ -4047,6 +4083,7 @@ function Baseplate.useCustom(raw)
     bpApplyAll()
     return true
 end
+Baseplate.load()
 
 ------------------------------------------------------------------------
 -- ESP (highlight + name/health/distance pill, chams,
@@ -6495,20 +6532,23 @@ end
 ------------------------------------------------------------------------
 
 function buildFloorPanel(screenGui)
-    local W, HGT = 300, 270
+    local W, HGT = 300, 316
     local f = uiWindow(screenGui, "floor", "Infinite baseplate", UDim2.fromOffset(W, HGT), UDim2.new(0.5, 20, 0.5, -HGT / 2))
     local IW = W - 32
     local sw = uiSwitch(f, "Enabled", UDim2.fromOffset(16, 48), IW, Baseplate.enabled, function(on)
         H[on and "infbaseplate" or "uninfbaseplate"]({ "quiet" })
     end)
-    local name = label(f, { Position = UDim2.fromOffset(56, 86), Size = UDim2.new(1, -112, 0, 28), Text = "", TextXAlignment = Enum.TextXAlignment.Center })
-    local function step(d)
-        local n = #BASEPLATE_PRESETS
-        Baseplate.usePreset((Baseplate.presetIndex - 1 + d) % n + 1)
+    local presetNames = {}
+    for i, p in ipairs(BASEPLATE_PRESETS) do presetNames[i] = p.name end
+    local presetDd = uiDropdown(f, "Look: ", UDim2.fromOffset(IW, 28), UDim2.fromOffset(16, 86), function()
+        local l = {}
+        for i, n in ipairs(presetNames) do l[i] = n end
+        if Baseplate.kind == "texture" and not (BASEPLATE_PRESETS[Baseplate.presetIndex] or {}).texture then l[Baseplate.presetIndex] = "Custom texture" end
+        return l
+    end, Baseplate.presetIndex, function(i)
+        Baseplate.usePreset(i)
         UIAPI.sync()
-    end
-    uiButton(f, "<", UDim2.fromOffset(36, 28), UDim2.fromOffset(16, 86), function() step(-1) end)
-    uiButton(f, ">", UDim2.fromOffset(36, 28), UDim2.new(1, -52, 0, 86), function() step(1) end)
+    end)
     local studs = uiSlider(f, "Texture tile size", UDim2.fromOffset(16, 124), IW, {
         min = 2, max = 64, step = 1, value = Baseplate.studs, format = function(v) return string.format("%d studs", v) end,
         onChange = function(v) Baseplate.studs = v; if Baseplate.kind == "texture" then bpApplyAll() end end,
@@ -6519,14 +6559,22 @@ function buildFloorPanel(screenGui)
         note("Baseplate", ok and "Custom texture applied" or tostring(err), ok and LIGHT or RED)
         UIAPI.sync()
     end)
-    label(f, { Position = UDim2.fromOffset(16, 216), Size = UDim2.new(1, -32, 0, 40), TextWrapped = true, TextSize = 11, TextColor3 = PAL.DIM,
+    local colorBox = uiBox(f, UDim2.fromOffset(16, 216), UDim2.new(1, -112, 0, 28), "Colour (material looks): name, #hex or r,g,b")
+    uiButton(f, "Colour", UDim2.fromOffset(72, 28), UDim2.new(1, -88, 0, 216), function()
+        local r, g, b = parseColorArgs(splitArgs((colorBox.Text:gsub(",%s+", ","))), 1)
+        if not r then note("Baseplate", "Colour: a name, #hex or r,g,b", RED); return end
+        Baseplate.setColor(Color3.fromRGB(r, g, b))
+        note("Baseplate", "Floor colour set", LIGHT)
+    end)
+    label(f, { Position = UDim2.fromOffset(16, 254), Size = UDim2.new(1, -32, 0, 48), TextWrapped = true, TextSize = 11, TextColor3 = PAL.DIM,
         TextYAlignment = Enum.TextYAlignment.Top,
-        Text = "Tiles spawn around you at the height of the floor you stood on when it was enabled. Only you see them." })
+        Text = "Tiles spawn around you at the height of the floor you stood on when it was enabled. Only you see them. The colour tints grass, wood, metal and the other materials." })
     UIAPI.syncFns.floor = function()
         if not f.Visible then return end
         sw.set(Baseplate.enabled)
-        local p = BASEPLATE_PRESETS[Baseplate.presetIndex]
-        name.Text = (Baseplate.kind == "texture" and not (p and p.texture == Baseplate.textureId)) and "Custom texture" or (p and p.name or "?")
+        presetDd.set(Baseplate.presetIndex)
+        local c = Baseplate.color or Color3.new(1, 1, 1)
+        if not colorBox:IsFocused() then colorBox.Text = string.format("%d,%d,%d", math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5)) end
         if not studs.isDragging() then studs.set(Baseplate.studs) end
     end
     f:GetPropertyChangedSignal("Visible"):Connect(function() if f.Visible then UIAPI.syncFns.floor() end end)
