@@ -1,9 +1,9 @@
--- PuppyAdmin engine b8ebeec019
+-- PuppyAdmin engine edc7c2355f
 return function(host)
 local _initReanimPanel, _initFlyPanel
 local __DARKLUA_BUNDLE_MODULES = { cache = {} }
 do local function __modImpl()
-return function(env)local _nvL=env._nvL local createInstance=env.createInstance
+return function(env)local _pupL=env._pupL local createInstance=env.createInstance
 local UI_STYLES={transparent={BackgroundTransparency=1,BorderSizePixel=0},button
 ={BackgroundTransparency=1,BorderSizePixel=0,Text='',AutoButtonColor=false},icon
 ={BackgroundTransparency=1,BorderSizePixel=0,ScaleType=Enum.ScaleType.Fit}}local
@@ -33,16 +33,16 @@ refs[node.ref]=object end if node.corner~=nil then local radius=node.corner
 createInstance('UICorner',{CornerRadius=typeof(radius)=='UDim'and radius or UDim
 .new(0,radius),Parent=object})end if node.stroke then adorn('UIStroke',node.
 stroke,object,refs)end if node.scale then adorn('UIScale',node.scale,object,refs
-)end if node.icon~=nil and type(_G._nv_lazyFluent)=='function'then _G.
-_nv_lazyFluent(object,node.icon)end local children=node.children if type(
+)end if node.icon~=nil and type(_G._pup_lazyFluent)=='function'then _G.
+_pup_lazyFluent(object,node.icon)end local children=node.children if type(
 children)=='table'then for index=#children,1,-1 do stackN+=1 stackSpec[stackN]=
-children[index]stackHost[stackN]=object end end end return rootObject end _nvL.
+children[index]stackHost[stackN]=object end end end return rootObject end _pupL.
 ui={mount=function(spec,parent,options)local refs=options and options.refs
 return mountNode(spec,parent,refs)end}end end function __DARKLUA_BUNDLE_MODULES.
 a():typeof(__modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.a if not v then v=
 {c=__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.a=v end return v.c end end
 do
-local function __modImpl()return function(env)local _nvL=env._nvL local _request
+local function __modImpl()return function(env)local _pupL=env._pupL local _request
 =env._request local function pickRequest()local fn=_request if type(fn)~=
 'function'then pcall(function()if syn and type(syn.request)=='function'then fn=
 syn.request end end)end if type(fn)~='function'then pcall(function()if type(
@@ -67,7 +67,7 @@ not seen[v]then seen[v]=true list[#list+1]=v end end end end return list end
 local function bodyOk(body,minLen,expect)if type(body)~='string'or#body<minLen
 then return false end if expect=='lua'then if string.sub(body,1,1)=='{'then
 return false end if string.match(body,'^%s*<')then return false end end return
-true end _nvL._nvHttpGet=function(urls,opts)opts=opts or{}local minLen=tonumber(
+true end _pupL._pupHttpGet=function(urls,opts)opts=opts or{}local minLen=tonumber(
 opts.minLen)or 1 local expect=opts.expect local retries=math.clamp(math.floor(
 tonumber(opts.retries)or 2),0,8)local retryDelay=tonumber(opts.retryDelay)or 0.7
 local list=flattenUrls(urls)for attempt=0,retries do local req=pickRequest()for
@@ -79,11 +79,11 @@ res.Success==true or code==0 or code<400)then return res.Body end end end if not
 skipHttpGet then local ok,data=pcall(function()return game:HttpGet(url,true)end)
 if ok and bodyOk(data,minLen,expect)then return data end end end if attempt<
 retries then task.wait(retryDelay*(1+attempt*0.65))end end return nil end _G.
-_nvHttpGet=_nvL._nvHttpGet end end function __DARKLUA_BUNDLE_MODULES.c():typeof(
+_pupHttpGet=_pupL._pupHttpGet end end function __DARKLUA_BUNDLE_MODULES.c():typeof(
 __modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.c if not v then v={c=
 __modImpl()}__DARKLUA_BUNDLE_MODULES.cache.c=v end return v.c end end
-do local function __modImpl()return function(env)local _nvAny
-=env._nvAny local runService=env.runService local tweenService=env.tweenService
+do local function __modImpl()return function(env)local _pupAny
+=env._pupAny local runService=env.runService local tweenService=env.tweenService
 local fades={}local function propsOf(d)if d:IsA('TextLabel')or d:IsA(
 'TextButton')or d:IsA('TextBox')then return'TextTransparency',
 'BackgroundTransparency'end if d:IsA('ImageLabel')or d:IsA('ImageButton')then
@@ -93,13 +93,13 @@ then return'Transparency'end return nil end local running={}local stepper=nil
 local restMap=setmetatable({},{__mode='k'})local restAll=setmetatable({},{__mode
 ='k'})local function track(d,r)local list=restAll[d]if not list then list=
 setmetatable({},{__mode='k'})restAll[d]=list end list[r]=true end _G.
-_nv_fadeRestOf=function(d)return restMap[d]end _G._nv_fadeRestSet=function(d,
+_pup_fadeRestOf=function(d)return restMap[d]end _G._pup_fadeRestSet=function(d,
 prop,v)local list=restAll[d]if not list then return end for r in list do if r[
 prop]~=nil then r[prop]=v end end end local wrote=setmetatable({},{__mode='k'})
 local function fresh(d,prop)local w=wrote[d]w=w and w[prop]return not(w and math
 .abs(d[prop]-w)<1e-4)end local function restValue(d,prop)local v=d[prop]if
 fresh(d,prop)then return v end local known=restMap[d]return known and known[prop
-]or v end _G._nv_fadeRestValue=restValue local function capture(st,d)if st.rest[
+]or v end _G._pup_fadeRestValue=restValue local function capture(st,d)if st.rest[
 d]then return end if d.Name=='DarkGlow'and d.Parent==st.obj and st.obj:IsA(
 'CanvasGroup')then return end if d.Name=='AccentGlow'then return end local a,b=
 propsOf(d)if not a then return end local lock=d:GetAttribute('NvFadeLock')==true
@@ -121,17 +121,17 @@ anim if not m or not obj.Parent then running[obj]=nil else local t=now-m.start-m
 .delay if t>=0 then local a=m.time>0 and math.min(t/m.time,1)or 1 st.gt=m.from+(
 m.to-m.from)*tweenService:GetValue(a,m.style,m.dir)if a>=1 then st.gt=m.to st.
 anim=nil running[obj]=nil end paint(obj,st)end end end if stepper and not
-_nvAny(running)then stepper:Disconnect()stepper=nil end end local function
-release(st)local goals={}local tracked=_G._nv_propertyTweens if not tracked then
-return goals end local meta=_G._nv_tweenMeta for d,r in st.rest do local live=
+_pupAny(running)then stepper:Disconnect()stepper=nil end end local function
+release(st)local goals={}local tracked=_G._pup_propertyTweens if not tracked then
+return goals end local meta=_G._pup_tweenMeta for d,r in st.rest do local live=
 tracked[d]if live then for prop in r do local m=live[prop]if m then local info=
 meta and meta[m]if info and info.goals and info.goals[prop]~=nil then goals[d]=
 goals[d]or{}goals[d][prop]=info.goals[prop]end pcall(function()m:Cancel()end)
-live[prop]=nil end end end end return goals end _G._nv_frameFadeRest=function(
+live[prop]=nil end end end end return goals end _G._pup_frameFadeRest=function(
 host,inst,prop,value)if not(host and inst and prop)then return end local st=
 stateOf(host)local r=st.rest[inst]if not r then r={}st.rest[inst]=r track(inst,r
 )inst.Destroying:Connect(function()st.rest[inst]=nil end)end r[prop]=value
-paintOne(inst,r,st.gt)end _G._nv_frameFade=function(obj,target,info)local st=
+paintOne(inst,r,st.gt)end _G._pup_frameFade=function(obj,target,info)local st=
 stateOf(obj)if not info and not st.anim and st.gt==target then return nil end
 local goals=release(st)if st.gt==0 and not st.anim then for d,r in st.rest do if
 d:GetAttribute('NvFadeLock')~=true then local g=goals[d]for prop in r do if g
@@ -140,7 +140,7 @@ end end end end st.anim=nil running[obj]=nil if not info or(info.Time<=0 and
 info.DelayTime<=0)then st.gt=target paint(obj,st)return nil end st.anim={from=st
 .gt,to=target,start=os.clock(),delay=info.DelayTime,time=info.Time,style=info.
 EasingStyle,dir=info.EasingDirection}running[obj]=st if not stepper then stepper
-=runService.RenderStepped:Connect(step)end return nil end _G._nv_frameFadeOf=
+=runService.RenderStepped:Connect(step)end return nil end _G._pup_frameFadeOf=
 function(obj)local st=fades[obj]return st and st.gt or 0 end end end function
 __DARKLUA_BUNDLE_MODULES.f():typeof(__modImpl())local v=__DARKLUA_BUNDLE_MODULES
 .cache.f if not v then v={c=__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.f=v end
@@ -152,15 +152,15 @@ local THUMB=Vector2.new(30,18)local HELD=Vector2.new(36,20)local HOLD=TweenInfo.
 new(0.3,Enum.EasingStyle.Exponential,Enum.EasingDirection.Out)local MOVE=
 TweenInfo.new(0.14,Enum.EasingStyle.Quint,Enum.EasingDirection.Out)local JUMP=
 TweenInfo.new(0.3,Enum.EasingStyle.Exponential,Enum.EasingDirection.Out)local
-WHITE=Color3.new(1,1,1)_G._nv_glassSliderSize={track=TRACK_H,thumb=THUMB,held=
+WHITE=Color3.new(1,1,1)_G._pup_glassSliderSize={track=TRACK_H,thumb=THUMB,held=
 HELD}local tinted,lastTheme={},nil local function themed()local c=_G.
-_nv_themeColor return typeof(c)=='Color3'and c:Lerp(WHITE,0.18)or WHITE end
+_pup_themeColor return typeof(c)=='Color3'and c:Lerp(WHITE,0.18)or WHITE end
 local function tint(fill,track)local c=themed()tinted[fill]=track fill.
 BackgroundColor3=c track.BackgroundColor3=c end game:GetService('RunService').
-Heartbeat:Connect(function()local now=_G._nv_themeColor if now==lastTheme then
+Heartbeat:Connect(function()local now=_G._pup_themeColor if now==lastTheme then
 return end lastTheme=now local c=themed()for fill,track in tinted do if fill.
 Parent then fill.BackgroundColor3=c track.BackgroundColor3=c else tinted[fill]=
-nil end end end)function _G._nv_glassKnob(knob)knob.Size=UDim2.fromOffset(THUMB.
+nil end end end)function _G._pup_glassKnob(knob)knob.Size=UDim2.fromOffset(THUMB.
 X,THUMB.Y)knob.BackgroundColor3=WHITE knob.BackgroundTransparency=0 local corner
 =knob:FindFirstChildOfClass('UICorner')or createInstance('UICorner',{Parent=knob
 })corner.CornerRadius=UDim.new(1,0)knob:SetAttribute('NvNoTone',true)local rim=
@@ -170,8 +170,8 @@ createInstance('UIShadow',{Parent=knob,Name='KnobShadow',Color=Color3.new(0,0,0)
 ,BlurRadius=UDim.new(0,8),Offset=UDim2.fromOffset(0,2),Transparency=0.62})end)
 return function(on)local size=on and HELD or THUMB tween(knob,HOLD,{Size=UDim2.
 fromOffset(size.X,size.Y),BackgroundTransparency=on and 0.72 or 0})tween(rim,
-HOLD,{Transparency=on and 0.3 or 1})end end function _G._nv_glassInset(r,width)
-return r,width/2-r*width end function _G._nv_glassSlider(o)local minimum,maximum
+HOLD,{Transparency=on and 0.3 or 1})end end function _G._pup_glassInset(r,width)
+return r,width/2-r*width end function _G._pup_glassSlider(o)local minimum,maximum
 =o.min or 0,o.max or 100 local function snap(v)v=tonumber(v)or minimum if o.
 round~=false then v=math.round(v)end return math.clamp(v,minimum,maximum)end
 local value=snap(o.value)local z=o.z or 20 local width=o.width or UDim.new(1,0)
@@ -186,29 +186,29 @@ createInstance('UIGradient',{Parent=fill,Transparency=NumberSequence.new({
 NumberSequenceKeypoint.new(0,0.78),NumberSequenceKeypoint.new(1,0)})})tint(fill,
 track)local thumb=createInstance('Frame',{Parent=track,Name='Thumb',AnchorPoint=
 Vector2.new(0.5,0.5),BorderSizePixel=0,ZIndex=z+2})local setHeld=_G.
-_nv_glassKnob(thumb)local hit=createInstance('TextButton',{Parent=track,Name=
+_pup_glassKnob(thumb)local hit=createInstance('TextButton',{Parent=track,Name=
 'Adjust',Text='',BackgroundTransparency=1,AutoButtonColor=false,AnchorPoint=
 Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.5),Size=UDim2.new(1,THUMB.X,
 0,32),ZIndex=z+3})hit:SetAttribute('NoPress',true)local held,dragging,pointer=
 false,false,nil local function render(info)local r=maximum==minimum and 0 or(
 value-minimum)/(maximum-minimum)local hw=held and HELD.X or THUMB.X local sc,off
-=_G._nv_glassInset(r,hw)local fillGoal={Size=UDim2.new(sc,off,1,0)}local
+=_G._pup_glassInset(r,hw)local fillGoal={Size=UDim2.new(sc,off,1,0)}local
 thumbGoal={Position=UDim2.new(sc,off,0.5,0)}if info then tween(fill,info,
 fillGoal)tween(thumb,info,thumbGoal)else fill.Size=fillGoal.Size thumb.Position=
 thumbGoal.Position end end local function fromX(x)local w,hw=track.AbsoluteSize.
 X,thumb.AbsoluteSize.X if w<=hw then return value end local r=math.clamp((x-
 track.AbsolutePosition.X-hw/2)/(w-hw),0,1)return snap(minimum+r*(maximum-minimum
 ))end local function update(x,info)local v=fromX(x)if v==value then return end
-value=v if(v==minimum or v==maximum)and _G._nv_haptic then _G._nv_haptic('tick')
+value=v if(v==minimum or v==maximum)and _G._pup_haptic then _G._pup_haptic('tick')
 end render(info or MOVE)if o.onChange then o.onChange(value)end end
 local function stop()if not dragging then return end dragging,pointer,held=false
-,nil,false local cs=_G._nv_csRef if cs and cs._nvDragOwner==hit then cs.
-_nvDragOwner=nil end setHeld(false)render(HOLD)tween(track,MOVE,{
+,nil,false local cs=_G._pup_csRef if cs and cs._pupDragOwner==hit then cs.
+_pupDragOwner=nil end setHeld(false)render(HOLD)tween(track,MOVE,{
 BackgroundTransparency=0.88})if o.onRelease then o.onRelease(value)end end hit.
 InputBegan:Connect(function(input)if input.UserInputType~=Enum.UserInputType.
 MouseButton1 and input.UserInputType~=Enum.UserInputType.Touch then return end
-local cs=_G._nv_csRef if cs and cs._nvDragOwner and cs._nvDragOwner~=hit then
-return end dragging,pointer,held=true,input,true if cs then cs._nvDragOwner=hit
+local cs=_G._pup_csRef if cs and cs._pupDragOwner and cs._pupDragOwner~=hit then
+return end dragging,pointer,held=true,input,true if cs then cs._pupDragOwner=hit
 end setHeld(true)update(input.Position.X,JUMP)render(HOLD)end)hit.MouseEnter:
 Connect(function()tween(track,MOVE,{BackgroundTransparency=0.82})end)hit.
 MouseLeave:Connect(function()if not dragging then tween(track,MOVE,{
@@ -228,7 +228,7 @@ do c:Disconnect()end end)render(nil)return{track=track,fill=fill,thumb=thumb,hit
 function()return value end,dragging=function()return dragging end}end local
 PILL_REST,PILL_HELD=6,9 local GROW=TweenInfo.new(0.2,Enum.EasingStyle.
 Exponential,Enum.EasingDirection.Out)local SHRINK=TweenInfo.new(0.26,Enum.
-EasingStyle.Exponential,Enum.EasingDirection.Out)function _G._nv_appleSlider(o)
+EasingStyle.Exponential,Enum.EasingDirection.Out)function _G._pup_appleSlider(o)
 local minimum,maximum=o.min or 0,o.max or 100 local function snap(v)v=tonumber(v
 )or minimum if o.round~=false then v=math.round(v)end return math.clamp(v,
 minimum,maximum)end local value=snap(o.value)local z=o.z or 20 local width=o.
@@ -250,16 +250,16 @@ fill.Size=goal.Size end end local function setHeight(h,info)tween(track,info,{
 Size=UDim2.new(width.Scale,width.Offset,0,h)})end local function update(x,info)
 local w=track.AbsoluteSize.X if w<=0 then return end local v=snap(minimum+math.
 clamp((x-track.AbsolutePosition.X)/w,0,1)*(maximum-minimum))if v==value then
-return end value=v if(v==minimum or v==maximum)and _G._nv_haptic then _G.
-_nv_haptic('tick')end render(info or MOVE)if o.onChange then o.onChange(value)
+return end value=v if(v==minimum or v==maximum)and _G._pup_haptic then _G.
+_pup_haptic('tick')end render(info or MOVE)if o.onChange then o.onChange(value)
 end end local function stop()if not dragging then return end dragging,pointer=
-false,nil local cs=_G._nv_csRef if cs and cs._nvDragOwner==hit then cs.
-_nvDragOwner=nil end setHeight(PILL_REST,SHRINK)if o.onRelease then o.onRelease(
+false,nil local cs=_G._pup_csRef if cs and cs._pupDragOwner==hit then cs.
+_pupDragOwner=nil end setHeight(PILL_REST,SHRINK)if o.onRelease then o.onRelease(
 value)end end hit.InputBegan:Connect(function(input)if input.UserInputType~=Enum
 .UserInputType.MouseButton1 and input.UserInputType~=Enum.UserInputType.Touch
-then return end local cs=_G._nv_csRef if cs and cs._nvDragOwner and cs.
-_nvDragOwner~=hit then return end dragging,pointer=true,input if cs then cs.
-_nvDragOwner=hit end setHeight(PILL_HELD,GROW)update(input.Position.X,JUMP)end)
+then return end local cs=_G._pup_csRef if cs and cs._pupDragOwner and cs.
+_pupDragOwner~=hit then return end dragging,pointer=true,input if cs then cs.
+_pupDragOwner=hit end setHeight(PILL_HELD,GROW)update(input.Position.X,JUMP)end)
 local conns={}conns[1]=userInputService.InputChanged:Connect(function(input)if
 not dragging then return end if input==pointer or(pointer and pointer.
 UserInputType==Enum.UserInputType.MouseButton1 and input.UserInputType==Enum.
@@ -294,7 +294,7 @@ not ok then return nil end fx.Name='NV_Haptic'if not(feel.wave and pcall(shape,
 fx,feel.wave))then local typed=pcall(function()fx.Type=Enum.HapticEffectType[
 feel.preset]end)if not typed then fx:Destroy()return nil end end if not pcall(
 function()fx.Parent=container end)then fx:Destroy()return nil end cache[kind]=fx
-return fx end local function able()if not supported or _G._nv_haptics==false
+return fx end local function able()if not supported or _G._pup_haptics==false
 then return false end return userInputService.TouchEnabled or userInputService.
 GamepadEnabled or userInputService.VREnabled end local function reset()for kind,
 fx in cache do pcall(fx.Destroy,fx)cache[kind]=nil end end local function fire(
@@ -305,7 +305,7 @@ kind=='toggle'and now-stamp.tap<0.35 then return end elseif now-stamp.strong<0.3
 then return end local fx=cache[kind]if not(fx and fx.Parent)then fx=make(kind)
 end if not fx then return end stamp.any=now if kind=='tap'then stamp.tap=now end
 if not feel.light then stamp.strong=now end pcall(fx.Play,fx)end _G.
-_nv_hapticsReset=function()pcall(reset)end _G._nv_haptic=function(kind,source)
+_pup_hapticsReset=function()pcall(reset)end _G._pup_haptic=function(kind,source)
 pcall(fire,kind,source)end end end function __DARKLUA_BUNDLE_MODULES.i():typeof(
 __modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.i if not v then v={c=
 __modImpl()}__DARKLUA_BUNDLE_MODULES.cache.i=v end return v.c end end
@@ -313,10 +313,10 @@ do
 local function __modImpl()return function(env)local TINT_SAT,RIM_SAT,RIM_LIFT,
 BANNER_SAT=0.35,0.45,0.85,0.5 local TONE_SAT=0.4 local DURATION,SWEEP=1.2,0.45
 local createInstance=env.createInstance local saved={}local attachGlow _G.
-_nv_glassParts=setmetatable({},{__newindex=function(parts,body,rim)rawset(parts,
+_pup_glassParts=setmetatable({},{__newindex=function(parts,body,rim)rawset(parts,
 body,rim)if typeof(body)=='Instance'then body.Destroying:Connect(function()
-rawset(parts,body,nil)saved[body]=nil end)if _G._nv_toneWatch then task.defer(_G
-._nv_toneWatch,body)end if attachGlow then task.defer(attachGlow,body)end end
+rawset(parts,body,nil)saved[body]=nil end)if _G._pup_toneWatch then task.defer(_G
+._pup_toneWatch,body)end if attachGlow then task.defer(attachGlow,body)end end
 end})local from,goal={k=0},{k=0}local progress,t0,conn=1,0,nil local function
 smooth(x)x=math.clamp(x,0,1)return x*x*(3-2*x)end local paintDepth=0
 local function near(a,b)if typeof(a)~='Color3'or typeof(b)~='Color3'then return
@@ -378,7 +378,7 @@ cache)local c=cache and cache[rec.key]if not c then local _,baseSat=rec.base:
 ToHSV()if baseSat>0.2 then c=rec.base else c=shade(rec.base,from,1,rec.amount,
 0.6):Lerp(shade(rec.base,goal,1,rec.amount,0.6),smooth(progress))end if cache
 then cache[rec.key]=c end end rec.wrote=c paintDepth+=1 obj.BackgroundColor3=c
-paintDepth-=1 end _G._nv_toneBg=function(obj,amount)if not obj or fills[obj]then
+paintDepth-=1 end _G._pup_toneBg=function(obj,amount)if not obj or fills[obj]then
 return end local rec={base=obj.BackgroundColor3,amount=amount or 0.3}rec.key=
 'bg|'..rec.amount..'|'..rgbKey(rec.base)fills[obj]=rec obj:
 GetPropertyChangedSignal('BackgroundColor3'):Connect(function()if paintDepth>0
@@ -395,8 +395,8 @@ local function readAccent()local e=smooth(progress)local ca,aa=accentOf(from.
 tint,from.k)local cb,ab=accentOf(goal.tint,goal.k)accent.color=mix(ca,cb,e)or
 WHITE accent.alpha=aa+(ab-aa)*e end local function paintGlow(rec)local sh=rec.
 shadow if not sh.Parent then return end if rec.dark then local seen=math.clamp((
-1-rec.dark.Transparency)/0.55,0,1)local neon=_G._nv_themeLook and _G.
-_nv_themeLook.glow local t=math.max(0,1-(neon or ACCENT_GLOW)*accent.breath*
+1-rec.dark.Transparency)/0.55,0,1)local neon=_G._pup_themeLook and _G.
+_pup_themeLook.glow local t=math.max(0,1-(neon or ACCENT_GLOW)*accent.breath*
 accent.alpha*seen)local on=rec.dark.Enabled and t<0.995 local z=rec.dark.ZIndex+
 (neon and 1 or-1)if sh.ZIndex~=z then sh.ZIndex=z end if not same(sh.Color,
 accent.color)then sh.Color=accent.color end if math.abs(sh.Transparency-t)>0.001
@@ -415,24 +415,24 @@ if not ok or not sh then return end local rec={shadow=sh,dark=dark}glows[body]=
 rec dark:GetPropertyChangedSignal('Transparency'):Connect(function()paintGlow(
 rec)end)dark:GetPropertyChangedSignal('Enabled'):Connect(function()paintGlow(rec
 )end)dark.Destroying:Connect(function()sh:Destroy()end)paintGlow(rec)end _G.
-_nv_glowBreath=function(level)accent.breath=level for _,rec in glows do
-paintGlow(rec)end end _G._nv_paintGlass=function(body,rim)if not active()or not
-body.Parent then return end paint(body,rim)end _G._nv_setTint=function(color,
-duration)if typeof(color)~='Color3'or _G._nv_immersiveMusic==false then color=
-nil end if typeof(_G._nv_themeColor)=='Color3'then color=_G._nv_themeColor end
+_pup_glowBreath=function(level)accent.breath=level for _,rec in glows do
+paintGlow(rec)end end _G._pup_paintGlass=function(body,rim)if not active()or not
+body.Parent then return end paint(body,rim)end _G._pup_setTint=function(color,
+duration)if typeof(color)~='Color3'or _G._pup_immersiveMusic==false then color=
+nil end if typeof(_G._pup_themeColor)=='Color3'then color=_G._pup_themeColor end
 local e=smooth(progress)from={tint=mix(from.tint,goal.tint,e),k=from.k+(goal.k-
 from.k)*e,look=e>=0.5 and goal.look or from.look}goal={tint=color,k=color and 1
-or 0,look=color and _G._nv_themeLook or nil}_G._nv_tintColor=color if _G.
-_nv_repaintSwitches then pcall(_G._nv_repaintSwitches,duration)end progress,t0=0
+or 0,look=color and _G._pup_themeLook or nil}_G._pup_tintColor=color if _G.
+_pup_repaintSwitches then pcall(_G._pup_repaintSwitches,duration)end progress,t0=0
 ,os.clock()duration=duration or DURATION if conn then conn:Disconnect()end conn=
 game:GetService('RunService').RenderStepped:Connect(function()progress=math.
 clamp((os.clock()-t0)/duration,0,1)local cache={}for body,rim in _G.
-_nv_glassParts do if body.Parent then paint(body,rim,cache)end end for obj,rec
+_pup_glassParts do if body.Parent then paint(body,rim,cache)end end for obj,rec
 in fills do if obj.Parent then paintBg(obj,rec,cache)end end readAccent()for _,
 rec in glows do paintGlow(rec)end if progress>=1 then conn:Disconnect()conn=nil
-from={tint=goal.tint,k=goal.k,look=goal.look}end end)end _G._nv_tone=function(g,
+from={tint=goal.tint,k=goal.k,look=goal.look}end end)end _G._pup_tone=function(g,
 rim,amount)if not g then return end g:SetAttribute('NvTintTone',amount or true)
-_G._nv_glassParts[g]=rim or false _G._nv_paintGlass(g,rim or nil)end end end
+_G._pup_glassParts[g]=rim or false _G._pup_paintGlass(g,rim or nil)end end end
 function __DARKLUA_BUNDLE_MODULES.j():typeof(__modImpl())local v=
 __DARKLUA_BUNDLE_MODULES.cache.j if not v then v={c=__modImpl()}
 __DARKLUA_BUNDLE_MODULES.cache.j=v end return v.c end end
@@ -458,35 +458,35 @@ floor(c.R*255+0.5),math.floor(c.G*255+0.5),math.floor(c.B*255+0.5))end function
 theme.parse(s)if type(s)~='string'then return nil end local h=(s:gsub('[%s#]',''
 ))if#h==3 then h=(h:gsub('.','%0%0'))end if not h:match('^%x%x%x%x%x%x$')then
 return nil end return Color3.fromRGB(tonumber(h:sub(1,2),16),tonumber(h:sub(3,4)
-,16),tonumber(h:sub(5,6),16))end _G._nv_hexOf,_G._nv_fromHex=theme.hex,theme.
+,16),tonumber(h:sub(5,6),16))end _G._pup_hexOf,_G._pup_fromHex=theme.hex,theme.
 parse function theme.find(name)for _,p in theme.presets do if p.name==name then
 return p end end return nil end function theme.retint(duration)local preset=
-theme.find(_G._nv_themeName or'')_G._nv_themeLook=preset and preset.look or nil
-_G._nv_themeActive=preset if _G._nv_themeScene then pcall(_G._nv_themeScene)end
-if _G._nv_kit and _G._nv_kit.paintInk then pcall(_G._nv_kit.paintInk)end local
-dock=_G._nv_tabDock if dock and dock.list[1]then task.delay(0.7,dock.retint)end
-local music=type(_G._nv_accent)=='function'and _G._nv_accent()or nil if _G.
-_nv_setTint then pcall(_G._nv_setTint,music,duration)end end function theme.seed
-()return _G._nv_themeCustom or _G._nv_themeColor or theme.presets[2].color end
-_G._nv_themeNames=function()local names={}for _,p in theme.presets do names[#
-names+1]=p.name end return names end _G._nv_themeSet=function(name,color,preview
-)local p=theme.find(name)local was=theme.find(_G._nv_themeName or'')if p then
+theme.find(_G._pup_themeName or'')_G._pup_themeLook=preset and preset.look or nil
+_G._pup_themeActive=preset if _G._pup_themeScene then pcall(_G._pup_themeScene)end
+if _G._pup_kit and _G._pup_kit.paintInk then pcall(_G._pup_kit.paintInk)end local
+dock=_G._pup_tabDock if dock and dock.list[1]then task.delay(0.7,dock.retint)end
+local music=type(_G._pup_accent)=='function'and _G._pup_accent()or nil if _G.
+_pup_setTint then pcall(_G._pup_setTint,music,duration)end end function theme.seed
+()return _G._pup_themeCustom or _G._pup_themeColor or theme.presets[2].color end
+_G._pup_themeNames=function()local names={}for _,p in theme.presets do names[#
+names+1]=p.name end return names end _G._pup_themeSet=function(name,color,preview
+)local p=theme.find(name)local was=theme.find(_G._pup_themeName or'')if p then
 color=p.color elseif typeof(color)=='Color3'then name='Custom'else name,color=
-'Default',nil end if _G._nv_setUiOpacity and _G._nv_getUiOpacity then if p and p
+'Default',nil end if _G._pup_setUiOpacity and _G._pup_getUiOpacity then if p and p
 .opacity then if not(was and was.opacity)then theme.glassFrom={main=_G.
-_nv_getUiOpacity('main'),pop=_G._nv_getUiOpacity('pop')}end _G._nv_setUiOpacity(
-'main',p.opacity,true)_G._nv_setUiOpacity('pop',p.opacity,preview)elseif was and
+_pup_getUiOpacity('main'),pop=_G._pup_getUiOpacity('pop')}end _G._pup_setUiOpacity(
+'main',p.opacity,true)_G._pup_setUiOpacity('pop',p.opacity,preview)elseif was and
 was.opacity then local back=theme.glassFrom or{main=0.92,pop=0.92}_G.
-_nv_setUiOpacity('main',back.main,true)_G._nv_setUiOpacity('pop',back.pop,
+_pup_setUiOpacity('main',back.main,true)_G._pup_setUiOpacity('pop',back.pop,
 preview)if not preview then theme.glassFrom=nil end end end if name=='Custom'
-then _G._nv_themeCustom=color end _G._nv_themeName,_G._nv_themeColor=name,color
-theme.retint(preview and 0.25 or nil)if not preview and _G._nv_saveSettings then
-pcall(_G._nv_saveSettings)end end _G._nv_themeLoad=function()local saved=_G.
-_nv_themeSaved if type(saved)~='table'then return end _G._nv_themeCustom=theme.
-parse(saved.custom)or _G._nv_themeCustom local p=theme.find(saved.name)local
-color=p and p.color or theme.parse(saved.hex)_G._nv_themeName=p and p.name or(
-color and'Custom'or'Default')_G._nv_themeColor=color theme.retint(0.6)end
-function theme.inline(parent,o)o=o or{}local kit=_G._nv_kit local w,z=o.w or 244
+then _G._pup_themeCustom=color end _G._pup_themeName,_G._pup_themeColor=name,color
+theme.retint(preview and 0.25 or nil)if not preview and _G._pup_saveSettings then
+pcall(_G._pup_saveSettings)end end _G._pup_themeLoad=function()local saved=_G.
+_pup_themeSaved if type(saved)~='table'then return end _G._pup_themeCustom=theme.
+parse(saved.custom)or _G._pup_themeCustom local p=theme.find(saved.name)local
+color=p and p.color or theme.parse(saved.hex)_G._pup_themeName=p and p.name or(
+color and'Custom'or'Default')_G._pup_themeColor=color theme.retint(0.6)end
+function theme.inline(parent,o)o=o or{}local kit=_G._pup_kit local w,z=o.w or 244
 ,o.z or 22 local rowH=o.rowH or 30 local textSize=o.textSize or 12 local labelW=
 o.labelW or 70 local LINE=o.line or 30 local SUBTLE=Color3.fromRGB(150,150,156)
 local WHITE,OFF=Color3.fromRGB(242,242,244),Color3.fromRGB(58,58,62)local state=
@@ -498,8 +498,8 @@ AnchorPoint=o.anchor or Vector2.new(0,0),Parent=parent})local function slider(y,
 label)local text=kit.text(holder,label,Enum.Font.GothamBold,textSize,C.TEXT,0,y,
 labelW,LINE)text.ZIndex=z local trackW=w-labelW local track=createInstance(
 'Frame',{Parent=holder,AnchorPoint=Vector2.new(0,0.5),Position=UDim2.fromOffset(
-labelW,y+LINE/2),Size=UDim2.fromOffset(trackW,_G._nv_glassSliderSize and _G.
-_nv_glassSliderSize.track or 4),BorderSizePixel=0,ZIndex=z,BackgroundColor3=OFF}
+labelW,y+LINE/2),Size=UDim2.fromOffset(trackW,_G._pup_glassSliderSize and _G.
+_pup_glassSliderSize.track or 4),BorderSizePixel=0,ZIndex=z,BackgroundColor3=OFF}
 )createInstance('UICorner',{Parent=track,CornerRadius=UDim.new(1,0)})local fill=
 createInstance('Frame',{Parent=track,BorderSizePixel=0,ZIndex=z+1,
 BackgroundColor3=WHITE,Size=UDim2.fromScale(0,1)})createInstance('UICorner',{
@@ -511,10 +511,10 @@ Parent=holder,Text='',AutoButtonColor=false,BackgroundTransparency=1,
 BorderSizePixel=0,Position=UDim2.fromOffset(labelW-10,y),Size=UDim2.fromOffset(
 trackW+20,LINE),ZIndex=z+3})hit:SetAttribute('NoPress',true)hit.MouseEnter:
 Connect(function()if kit.cursor then kit.cursor(nil)end end)local setHeld=_G.
-_nv_glassKnob and _G._nv_glassKnob(knob)return{track=track,fill=fill,knob=knob,
+_pup_glassKnob and _G._pup_glassKnob(knob)return{track=track,fill=fill,knob=knob,
 hit=hit,setHeld=setHeld}end local hue=slider(0,'Hue')local strength=slider(LINE,
 'Strength')hue.track.BackgroundColor3=Color3.new(1,1,1)hue.track.Size=UDim2.
-fromOffset(w-labelW,_G._nv_glassSliderSize and _G._nv_glassSliderSize.track or 6
+fromOffset(w-labelW,_G._pup_glassSliderSize and _G._pup_glassSliderSize.track or 6
 )hue.fill.Visible=false local keys={}for i=0,6 do keys[#keys+1]=
 ColorSequenceKeypoint.new(i/6,Color3.fromHSV((i%6)/6,0.7,1))end createInstance(
 'UIGradient',{Parent=hue.track,Color=ColorSequence.new(keys)})for _,part in{hue.
@@ -538,13 +538,13 @@ TextXAlignment=Enum.TextXAlignment.Left,PlaceholderText='#3874DE',Text=''})
 hexBox.Focused:Connect(function()tween(fieldRim,TweenInfo.new(0.15),{
 Transparency=0.7})end)local function color()return Color3.fromHSV(state.h,state.
 s,state.v)end local function paint(keepHex)local c=color()local hs,ho=_G.
-_nv_glassInset(state.h,hue.knob.Size.X.Offset)hue.knob.Position=UDim2.new(hs,ho,
+_pup_glassInset(state.h,hue.knob.Size.X.Offset)hue.knob.Position=UDim2.new(hs,ho,
 0.5,0)hue.knob.BackgroundColor3=Color3.fromHSV(state.h,0.7,1)local ss,so=_G.
-_nv_glassInset(state.s,strength.knob.Size.X.Offset)strength.fill.Size=UDim2.new(
+_pup_glassInset(state.s,strength.knob.Size.X.Offset)strength.fill.Size=UDim2.new(
 ss,so,1,0)strength.knob.Position=UDim2.new(ss,so,0.5,0)dot.BackgroundColor3=c if
 not keepHex then hexBox.Text=theme.hex(c)end end local function push(save)local
 now=os.clock()if not save and now-state.at<0.06 then state.dirty=true return end
-state.at,state.dirty=now,false _G._nv_themeSet('Custom',color(),not save)if o.
+state.at,state.dirty=now,false _G._pup_themeSet('Custom',color(),not save)if o.
 onChange then pcall(o.onChange)end end local drag local function update()local
 target=drag=='hue'and hue or drag=='strength'and strength or nil if not target
 then return end local x=userInputService:GetMouseLocation().X local p,s=target.
@@ -569,8 +569,8 @@ state.v=c:ToHSV()paint()push(true)else paint()end end)local function sync()if
 drag then return end local c=theme.seed()if theme.hex(c)~=theme.hex(color())then
 state.h,state.s,state.v=c:ToHSV()if state.v<0.5 then state.v=0.9 end end paint(
 userInputService:GetFocusedTextBox()==hexBox)end sync()return holder,sync,LINE*2
-+8+rowH end _G._nv_themePicker=theme.inline function theme.swatches(parent,o)o=o
-or{}local kit=_G._nv_kit local textService=game:GetService('TextService')local
++8+rowH end _G._pup_themePicker=theme.inline function theme.swatches(parent,o)o=o
+or{}local kit=_G._pup_kit local textService=game:GetService('TextService')local
 WHITE,INK=Color3.fromRGB(242,242,244),Color3.fromRGB(18,18,20)local h,gap,z=o.
 size or 30,o.gap or 6,o.z or 22 local fs=o.labelSize or 11 local dotS=math.
 floor(h*0.36+0.5)local names={}for _,p in theme.presets do names[#names+1]=p.
@@ -589,7 +589,7 @@ vertical and UDim2.fromOffset(o.width or 200,total)or UDim2.fromOffset(total,h))
 ,AnchorPoint=o.anchor or Vector2.new(0,0),Position=o.position or UDim2.
 fromOffset(o.x or 0,o.y or 0),Parent=parent})local rainbow={}for i=0,6 do
 rainbow[#rainbow+1]=ColorSequenceKeypoint.new(i/6,Color3.fromHSV((i%6)/6,0.7,1))
-end local paints={}local function refresh()local current=_G._nv_themeName or
+end local paints={}local function refresh()local current=_G._pup_themeName or
 'Default'for _,fn in paints do pcall(fn,current)end end local at=0 for n,name in
 names do local preset=theme.find(name)local sweep=preset and preset.look and
 preset.look.sweep local w=widths[n]local bx,by=o.vertical and 0 or at,o.vertical
@@ -609,50 +609,50 @@ then g.Enabled=not on end label.TextColor3=on and INK or C.TEXT dotRim.Color=on
 and INK or Color3.new(1,1,1)if preset then dot.BackgroundColor3=(preset.opacity
 or sweep)and Color3.new(1,1,1)or preset.color or Color3.fromRGB(44,44,48)dot.
 BackgroundTransparency=preset.opacity and 0.65 or 0 dotGrad.Enabled=sweep~=nil
-elseif typeof(_G._nv_themeCustom)=='Color3'then dot.BackgroundColor3=_G.
-_nv_themeCustom dotGrad.Enabled=false else dot.BackgroundColor3=Color3.new(1,1,1
+elseif typeof(_G._pup_themeCustom)=='Color3'then dot.BackgroundColor3=_G.
+_pup_themeCustom dotGrad.Enabled=false else dot.BackgroundColor3=Color3.new(1,1,1
 )dotGrad.Enabled=true end end b.Activated:Connect(function()if name=='Custom'
-then _G._nv_themeSet('Custom',theme.seed())else _G._nv_themeSet(name)end
+then _G._pup_themeSet('Custom',theme.seed())else _G._pup_themeSet(name)end
 refresh()if o.onPick then pcall(o.onPick,name)end end)at=at+(o.vertical and h or
-w)+gap end refresh()return holder,refresh end _G._nv_themeSwatches=theme.
+w)+gap end refresh()return holder,refresh end _G._pup_themeSwatches=theme.
 swatches local toner={roots={},seen=setmetatable({},{__mode='k'})}toner.skip={
 ImageLabel=true,ImageButton=true,ViewportFrame=true,VideoFrame=true}function
 toner.neutral(c)local _,sat,val=c:ToHSV()return sat<0.14,val end function toner.
-bgFade(d)local r=_G._nv_fadeRestOf and _G._nv_fadeRestOf(d)return r and r.
+bgFade(d)local r=_G._pup_fadeRestOf and _G._pup_fadeRestOf(d)return r and r.
 BackgroundTransparency or d.BackgroundTransparency end function toner.check(d)if
-toner.seen[d]or not d.Parent then return end local parts=_G._nv_glassParts if d:
+toner.seen[d]or not d.Parent then return end local parts=_G._pup_glassParts if d:
 IsA('UIGradient')then if parts[d]~=nil or d:GetAttribute('NvTintTone')~=nil then
 return end local host=d.Parent if not host:IsA('GuiObject')or host:IsA(
 'CanvasGroup')or toner.skip[host.ClassName]or host:GetAttribute('NvNoTone')then
 return end for _,k in d.Color.Keypoints do local gray,val=toner.neutral(k.Value)
-if not gray or val>0.5 then return end end toner.seen[d]=true _G._nv_tone(d,host
+if not gray or val>0.5 then return end end toner.seen[d]=true _G._pup_tone(d,host
 :FindFirstChildOfClass('UIStroke'))return end if not d:IsA('GuiObject')or d:IsA(
 'CanvasGroup')or d:GetAttribute('NvNoTone')then return end if toner.skip[d.
 ClassName]then if d:IsA('ImageLabel')or d:IsA('ImageButton')then local named=d.
 Name if named~='Wallpaper'and named~='NavBg'and named~='HomeBg'and named~=
 'GlobalTabBg'then local iconName=d:GetAttribute('NvIcon')if type(iconName)==
 'string'and iconName~=''then local g=d:FindFirstChild('NvGlyph')if d.Image==''
-and not(g and g.Visible)and _G._nv_setIcon then _G._nv_setIcon(d,iconName)end
+and not(g and g.Visible)and _G._pup_setIcon then _G._pup_setIcon(d,iconName)end
 end end if toner.bgFade(d)<0.35 then local gray,val=toner.neutral(d.
 BackgroundColor3)if gray and val>0.05 and val<0.34 then toner.seen[d]=true _G.
-_nv_toneBg(d,0.4)end end end return end if d:FindFirstChildOfClass('UIGradient')
+_pup_toneBg(d,0.4)end end end return end if d:FindFirstChildOfClass('UIGradient')
 then return end local labelled=(d:IsA('TextButton')or d:IsA('TextLabel'))and d.
 Text~=''local gray,val=toner.neutral(d.BackgroundColor3)if not gray then return
 end local fade=toner.bgFade(d)local amount if fade<0.35 and val>0.05 and val<
 0.34 then amount=0.4 elseif labelled then return elseif fade<0.35 and val>0.9
 and not d:IsA('TextBox')then amount=0.4 elseif fade>=0.8 and val>0.9 then amount
-=0.45 else return end toner.seen[d]=true _G._nv_toneBg(d,amount)end _G.
-_nv_toneFill=function(d,amount)if d then toner.seen[d]=true pcall(_G._nv_toneBg,
+=0.45 else return end toner.seen[d]=true _G._pup_toneBg(d,amount)end _G.
+_pup_toneFill=function(d,amount)if d then toner.seen[d]=true pcall(_G._pup_toneBg,
 d,amount)end end function toner.watch(root)if not root or toner.roots[root]then
 return end toner.roots[root]=true for _,d in root:GetDescendants()do pcall(toner
 .check,d)end root.DescendantAdded:Connect(function(d)task.defer(function()if d.
 Parent then pcall(toner.check,d)end end)end)root.Destroying:Connect(function()
-toner.roots[root]=nil end)end _G._nv_toneNow=function(root)if typeof(root)~=
+toner.roots[root]=nil end)end _G._pup_toneNow=function(root)if typeof(root)~=
 'Instance'then return end pcall(toner.check,root)for _,d in root:GetDescendants(
-)do pcall(toner.check,d)end end _G._nv_toneWatch=function(body)if typeof(body)~=
+)do pcall(toner.check,d)end end _G._pup_toneWatch=function(body)if typeof(body)~=
 'Instance'then return end local root=body:FindFirstAncestorWhichIsA(
 'LayerCollector')if root then toner.watch(root)end end for body in _G.
-_nv_glassParts do pcall(_G._nv_toneWatch,body)end local packs={dir=
+_pup_glassParts do pcall(_G._pup_toneWatch,body)end local packs={dir=
 'PuppyAdmin/themes',base={},value={}}packs.tabs={home=1,commands=2,players=3,music
 =4,scripts=5,settings=6,plus=7}packs.digits=
 [[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/]]for i=1,64
@@ -719,7 +719,7 @@ sub(bytes,1,8)=='\137PNG\r\n\26\n'then writefile(dir..'/'..key..'.png',bytes)
 count+=1 end end end writefile(dir..'/theme.json',game:GetService('HttpService')
 :JSONEncode(raw.theme))writefile(dir..'/packed.txt',stamp)end function packs.
 walk(dir,deep,found)for _,path in listfiles(dir)do if string.match(path,
-'%.nvtheme$')then pcall(packs.unpack,path)elseif isfolder(path)then if isfile(
+'%.puptheme$')or string.match(path,'%.nvtheme$')then pcall(packs.unpack,path)elseif isfolder(path)then if isfile(
 path..'/theme.json')then found[#found+1]=path elseif deep then packs.walk(path,
 false,found)end end end end function packs.scan()for n=#theme.presets,1,-1 do
 local p=theme.presets[n]local base=packs.base[p.name]if base then p.color,p.look
@@ -729,7 +729,7 @@ if not isfolder('PuppyAdmin')then makefolder('PuppyAdmin')end if not isfolder(pa
 dir)then makefolder(packs.dir)end packs.walk(packs.dir,true,{})local found,count
 ={},0 packs.walk(packs.dir,true,found)for _,path in found do local ok,p=pcall(
 packs.read,path)if ok and p then packs.add(p)count+=1 end end return count end
-_G._nv_themePack=function(name)if not packs.clean(name)then return false,
+_G._pup_themePack=function(name)if not packs.clean(name)then return false,
 'Give the name of a folder in PuppyAdmin/themes'end local dir=packs.dir..'/'..name
 if not(isfolder(dir)and isfile(dir..'/theme.json'))then return false,
 'No theme.json in '..dir end local ok,raw=pcall(packs.json,readfile(dir..
@@ -737,18 +737,18 @@ if not(isfolder(dir)and isfile(dir..'/theme.json'))then return false,
 'theme.json needs a name that matches the folder'end local images={}for _,path
 in listfiles(dir)do local key=string.match(path,'([^/\\]+)%.png$')if key and
 packs.clean(key)then images[key]=packs.encode(readfile(path))end end writefile(
-packs.dir..'/'..name..'.nvtheme',game:GetService('HttpService'):JSONEncode({
+packs.dir..'/'..name..'.puptheme',game:GetService('HttpService'):JSONEncode({
 format=1,theme=raw,images=images}))return true,'Saved '..name..
-'.nvtheme in PuppyAdmin/themes'end _G._nv_themeScan=function()local ok,count=
-pcall(packs.scan)local name=_G._nv_themeName local p=theme.find(name or'')if p
-then _G._nv_themeColor=p.color elseif name~='Custom'then _G._nv_themeName,_G.
-_nv_themeColor='Default',nil end theme.retint(0.4)if _G._nv_settingsRefresh then
-pcall(_G._nv_settingsRefresh)end return ok and count or 0 end pcall(packs.scan)
-_G._nv_themeLoad()end end function __DARKLUA_BUNDLE_MODULES.k():typeof(
+'.puptheme in PuppyAdmin/themes'end _G._pup_themeScan=function()local ok,count=
+pcall(packs.scan)local name=_G._pup_themeName local p=theme.find(name or'')if p
+then _G._pup_themeColor=p.color elseif name~='Custom'then _G._pup_themeName,_G.
+_pup_themeColor='Default',nil end theme.retint(0.4)if _G._pup_settingsRefresh then
+pcall(_G._pup_settingsRefresh)end return ok and count or 0 end pcall(packs.scan)
+_G._pup_themeLoad()end end function __DARKLUA_BUNDLE_MODULES.k():typeof(
 __modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.k if not v then v={c=
 __modImpl()}__DARKLUA_BUNDLE_MODULES.cache.k=v end return v.c end end
 do
-local function __modImpl()return function(env)local _nvL=env._nvL local
+local function __modImpl()return function(env)local _pupL=env._pupL local
 _safeLoadstring=env._safeLoadstring local MOLTO_URL=
 'https://molto.pages.dev/source.lua'local MAP={megaphone='megaphone-24-filled',
 trophy='trophy-24-filled',chevronleft='chevron-left-24-filled',delete=
@@ -866,9 +866,9 @@ TextTransparency=img.ImageTransparency end img:GetPropertyChangedSignal(
 Connect(sync)img:GetPropertyChangedSignal('ZIndex'):Connect(function()g.ZIndex=
 img.ZIndex end)img:GetPropertyChangedSignal('Image'):Connect(function()if img.
 Image~=''then g.Visible=false end end)sync()g.Parent=img return g end function
-_G._nv_fluentIcon(name)if type(name)=='string'and(MAP[name]or REMOTE[name])and(
+_G._pup_fluentIcon(name)if type(name)=='string'and(MAP[name]or REMOTE[name])and(
 not ready or sprites[name])then return name end return''end function _G.
-_nv_setIcon(img,name)if typeof(img)~='Instance'then return end if type(name)~=
+_pup_setIcon(img,name)if typeof(img)~='Instance'then return end if type(name)~=
 'string'or name==''then pending[img]=nil img:SetAttribute('NvIcon',nil)plain(img
 ,'')return end local head=string.sub(name,1,8)if head=='rbxasset'or head==
 'rbxthumb'then pending[img]=nil img:SetAttribute('NvIcon',nil)plain(img,name)
@@ -877,11 +877,11 @@ return end img:SetAttribute('NvIcon',name)local s=sprites[name]if s then pending
 FontFace=s[4]end if g.Text~=s[5]then g.Text=s[5]end g.Visible=true return end
 hideGlyph(img)img.Image=s[1]img.ImageRectOffset=s[2]img.ImageRectSize=s[3]return
 end if(MAP[name]or REMOTE[name])and not ready then pending[img]=true end plain(
-img,'')end function _G._nv_lazyFluent(img,name)if img then _G._nv_setIcon(img,
-name)end end if _nvL.iconQueue then for img,name in _nvL.iconQueue do _G.
-_nv_setIcon(img,name)end _nvL.iconQueue=nil end _G._nv_moltoReady=false task.
-spawn(function()local molto for attempt=1,3 do pcall(function()local body=_nvL.
-_nvHttpGet(MOLTO_URL,{minLen=32,expect='lua',retries=2,retryDelay=0.8})local
+img,'')end function _G._pup_lazyFluent(img,name)if img then _G._pup_setIcon(img,
+name)end end if _pupL.iconQueue then for img,name in _pupL.iconQueue do _G.
+_pup_setIcon(img,name)end _pupL.iconQueue=nil end _G._pup_moltoReady=false task.
+spawn(function()local molto for attempt=1,3 do pcall(function()local body=_pupL.
+_pupHttpGet(MOLTO_URL,{minLen=32,expect='lua',retries=2,retryDelay=0.8})local
 chunk=type(body)=='string'and _safeLoadstring(body)if not chunk then return end
 local ok,lib=pcall(chunk)if ok and type(lib)=='table'and type(lib.GetAsset)==
 'function'then molto=lib end end)if molto or attempt==3 then break end task.
@@ -895,19 +895,19 @@ not ok then break end if type(a)=='table'and type(a.Url)=='string'and a.Url~=''
 then local face=typeof(a.FontFace)=='Font'and type(a.Text)=='string'and a.
 FontFace or nil sprites[key]={a.Url,a.ImageRectOffset,a.ImageRectSize,face,face
 and a.Text or nil}end end end for key,url in REMOTE do pcall(function()local
-file='PuppyAdmin/icon_'..key..'.png'if not isfile(file)then local body=_nvL.
-_nvHttpGet(url,{minLen=64,retries=2,retryDelay=0.6})if type(body)~='string'or
+file='PuppyAdmin/icon_'..key..'.png'if not isfile(file)then local body=_pupL.
+_pupHttpGet(url,{minLen=64,retries=2,retryDelay=0.6})if type(body)~='string'or
 body:sub(1,8)~='\137PNG\r\n\26\n'then return end if not isfolder('PuppyAdmin')then
 makefolder('PuppyAdmin')end writefile(file,body)end local asset=getcustomasset(
 file)if type(asset)=='string'and asset~=''then sprites[key]={asset,Vector2.zero,
-Vector2.zero}end end)end ready=true _G._nv_moltoReady=true local queued=pending
+Vector2.zero}end end)end ready=true _G._pup_moltoReady=true local queued=pending
 pending={}for img in queued do local name=img:GetAttribute('NvIcon')if type(name
-)=='string'and name~=''then pcall(_G._nv_setIcon,img,name)end end end)end end
+)=='string'and name~=''then pcall(_G._pup_setIcon,img,name)end end end)end end
 function __DARKLUA_BUNDLE_MODULES.l():typeof(__modImpl())local v=
 __DARKLUA_BUNDLE_MODULES.cache.l if not v then v={c=__modImpl()}
 __DARKLUA_BUNDLE_MODULES.cache.l=v end return v.c end end
 do local function __modImpl()return function(env)local
-_isMobile=env._isMobile local _nvL=env._nvL local userInputService=env.
+_isMobile=env._isMobile local _pupL=env._pupL local userInputService=env.
 userInputService local UNFOCUS_FPS=24 local UNCAPPED=999 local UNFOCUS_DEBOUNCE=
 0.35 local savedCap=nil local capped=false local unfocusToken=0 local
 _weUnlocked=false local function canSetFps()return not _isMobile and typeof(
@@ -921,21 +921,21 @@ applyCap(v)if not canSetFps()then return end local cap=sanitizeCap(v)if cap==nil
 then return end if pcall(setfpscap,cap)then lastApplied=cap end end
 local function applyUnlocked()if not canSetFps()then return end applyCap(
 UNCAPPED)_weUnlocked=true end local function restoreForeground()if not
-canSetFps()then return end if _nvL.unlockFpsEnabled then applyUnlocked()return
-end applyCap(savedCap or UNCAPPED)end _G._nv_applyUnlockFps=function(enabled)
-_nvL.unlockFpsEnabled=enabled and true or false if not canSetFps()then return
-end if capped then return end if _nvL.unlockFpsEnabled then applyUnlocked()
+canSetFps()then return end if _pupL.unlockFpsEnabled then applyUnlocked()return
+end applyCap(savedCap or UNCAPPED)end _G._pup_applyUnlockFps=function(enabled)
+_pupL.unlockFpsEnabled=enabled and true or false if not canSetFps()then return
+end if capped then return end if _pupL.unlockFpsEnabled then applyUnlocked()
 elseif _weUnlocked then _weUnlocked=false applyCap(UNCAPPED)end end _G.
-_nv_applyBgFpsCap=function(enabled)_nvL.bgFpsCapEnabled=enabled and true or
-false unfocusToken=unfocusToken+1 if not canSetFps()then return end if not _nvL.
+_pup_applyBgFpsCap=function(enabled)_pupL.bgFpsCapEnabled=enabled and true or
+false unfocusToken=unfocusToken+1 if not canSetFps()then return end if not _pupL.
 bgFpsCapEnabled and(capped or lastApplied==UNFOCUS_FPS)then capped=false
-restoreForeground()savedCap=nil end end if canSetFps()then if _nvL.
+restoreForeground()savedCap=nil end end if canSetFps()then if _pupL.
 unlockFpsEnabled then applyUnlocked()end userInputService.WindowFocusReleased:
-Connect(function()if not _nvL.bgFpsCapEnabled or capped or not canSetFps()then
+Connect(function()if not _pupL.bgFpsCapEnabled or capped or not canSetFps()then
 return end unfocusToken=unfocusToken+1 local token=unfocusToken task.delay(
-UNFOCUS_DEBOUNCE,function()if token~=unfocusToken then return end if not _nvL.
+UNFOCUS_DEBOUNCE,function()if token~=unfocusToken then return end if not _pupL.
 bgFpsCapEnabled or capped or not canSetFps()then return end savedCap=readFpsCap(
-)if savedCap==UNFOCUS_FPS then savedCap=_nvL.unlockFpsEnabled and UNCAPPED or
+)if savedCap==UNFOCUS_FPS then savedCap=_pupL.unlockFpsEnabled and UNCAPPED or
 nil end applyCap(UNFOCUS_FPS)capped=true end)end)userInputService.WindowFocused:
 Connect(function()unfocusToken=unfocusToken+1 if not(capped or lastApplied==
 UNFOCUS_FPS)or not canSetFps()then return end restoreForeground()capped=false
@@ -944,7 +944,7 @@ __modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.v if not v then v={c=
 __modImpl()}__DARKLUA_BUNDLE_MODULES.cache.v=v end return v.c end end
 do local function
 __modImpl()return function(env,pnl)local _fixedPanels=env._fixedPanels local
-_nvL=env._nvL local screen=env.screen if not pnl or not pnl.Parent then return
+_pupL=env._pupL local screen=env.screen if not pnl or not pnl.Parent then return
 end local cam=workspace.CurrentCamera local vp=cam and cam.ViewportSize local
 vpX=tonumber(vp and vp.X)or 1280 local vpY=tonumber(vp and vp.Y)or 720 if vpX<1
 or vpY<1 then return end local MARGIN=22 local TOP=36 local GAP=10 local us=pnl:
@@ -954,7 +954,7 @@ Size.X.Offset)or 0 local ph=tonumber(pnl.Size.Y.Offset)or 0 if pw<=0 then pw=
 tonumber(pnl.AbsoluteSize.X)or 0 else pw=pw*sc end if ph<=0 then ph=tonumber(pnl
 .AbsoluteSize.Y)or 0 else ph=ph*sc end pw=tonumber(pw)or 0 ph=tonumber(ph)or 0
 if pw<=1 or ph<=1 then return end local padBottom=(tonumber(pnl:GetAttribute(
-'_nvDragPadBottom'))or 0)*sc local totalH=ph+(tonumber(padBottom)or 0)local page
+'_pupDragPadBottom'))or 0)*sc local totalH=ph+(tonumber(padBottom)or 0)local page
 ,soft={},{}local seen={}local function overlapArea(x,y,w,h,r)local ox=math.max(0
 ,math.min(x+w,r.x+r.w)-math.max(x,r.x))local oy=math.max(0,math.min(y+h,r.y+r.h)
 -math.max(y,r.y))return ox*oy end local function addGui(gui,into,pad)if not gui
@@ -964,11 +964,11 @@ not gui:IsA('GuiObject')or gui:IsDescendantOf(pnl)then return end if gui:IsA(
 AbsolutePosition,gui.AbsoluteSize local ow=tonumber(asz and asz.X)or 0 local oh=
 tonumber(asz and asz.Y)or 0 if ow<=8 or oh<=8 then return end seen[gui]=true pad
 =pad or 0 into[#into+1]={x=(tonumber(ap and ap.X)or 0)-pad,y=(tonumber(ap and ap
-.Y)or 0)-pad,w=ow+pad*2,h=oh+pad*2}end local decks=_G._nv_decks if type(decks)==
+.Y)or 0)-pad,w=ow+pad*2,h=oh+pad*2}end local decks=_G._pup_decks if type(decks)==
 'table'then for _,deck in decks do if type(deck)=='table'then for _,card in deck
-do addGui(card,page,GAP)end end end end if _nvL.wrap and _nvL.wrap.Parent then
-local corner=_nvL.wrap.Parent:FindFirstChild('Corner_bl')addGui(corner and
-corner:FindFirstChild('ContentPanel'),page,GAP)addGui(_nvL.wrap,page,GAP)end
+do addGui(card,page,GAP)end end end end if _pupL.wrap and _pupL.wrap.Parent then
+local corner=_pupL.wrap.Parent:FindFirstChild('Corner_bl')addGui(corner and
+corner:FindFirstChild('ContentPanel'),page,GAP)addGui(_pupL.wrap,page,GAP)end
 local host=screen and screen:FindFirstChild('NotifyContainer')if host then for _
 ,ch in host:GetChildren()do if ch:IsA('GuiObject')then addGui(ch,page,GAP)end
 end end for _,other in _fixedPanels do addGui(other,soft,0)end local maxX=math.
@@ -1008,17 +1008,17 @@ __DARKLUA_BUNDLE_MODULES.z():typeof(__modImpl())local v=__DARKLUA_BUNDLE_MODULES
 .cache.z if not v then v={c=__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.z=v end
 return v.c end end
 do local function __modImpl()return function(env)local
-_globalBg=env._globalBg local _globalOv=env._globalOv local _nvL=env._nvL local
+_globalBg=env._globalBg local _globalOv=env._globalOv local _pupL=env._pupL local
 createInstance=env.createInstance local saveSettings=env.saveSettings local MIN=
-0.35 local saved=_nvL.uiOpSaved or{}local uiOp={main=math.clamp(tonumber(saved.
+0.35 local saved=_pupL.uiOpSaved or{}local uiOp={main=math.clamp(tonumber(saved.
 main)or 0.92,MIN,1),pop=math.clamp(tonumber(saved.pop)or 0.92,MIN,1),orig={},own
 ={},fills={},fillSet={},hist=setmetatable({},{__mode='k'}),watch={},touched=
-false,queued=false,later=false}_nvL.uiOp=uiOp _nvL.popRoots=_nvL.popRoots or{}
+false,queued=false,later=false}_pupL.uiOp=uiOp _pupL.popRoots=_pupL.popRoots or{}
 local LAYERS={Wallpaper=true,WpOverlay=true,GlobalTabBg=true,GlobalTabOverlay=
-true}local processFill local function groupOf(obj)local mainRoot=_nvL.wrap and
-_nvL.wrap.Parent if mainRoot and obj:IsDescendantOf(mainRoot)then return'main'
-end local p=obj while p and not p:IsA('LayerCollector')do if _nvL.popRoots[p]or
-p:GetAttribute('_nvDesignW')~=nil or string.sub(p.Name,1,9)=='_nvMorph_'then
+true}local processFill local function groupOf(obj)local mainRoot=_pupL.wrap and
+_pupL.wrap.Parent if mainRoot and obj:IsDescendantOf(mainRoot)then return'main'
+end local p=obj while p and not p:IsA('LayerCollector')do if _pupL.popRoots[p]or
+p:GetAttribute('_pupDesignW')~=nil or string.sub(p.Name,1,9)=='_pupMorph_'then
 return'pop'end p=p.Parent end return'pop'end local function scaled(seq,op)if op
 >=0.999 then return seq end local kps={}for i,kp in seq.Keypoints do kps[i]=
 NumberSequenceKeypoint.new(kp.Time,1-(1-kp.Value)*op,kp.Envelope)end return
@@ -1030,8 +1030,8 @@ FindFirstChildOfClass('UIGradient')if not g then if op>=0.999 then return end g=
 createInstance('UIGradient',{Parent=obj})uiOp.own[obj]=g end end paintGrad(g,op)
 end local function lum(c)return c.R*0.3+c.G*0.59+c.B*0.11 end local fitFill
 fitFill=function(d,prop,grp,eligible,force)local op=uiOp[grp]or 1 local fills,
-fillSet=uiOp.fills,uiOp.fillSet local rv,goals,fadeRest=_G._nv_fadeRestValue,_G.
-_nv_revealBase,_G._nv_fadeRestOf local bases=fills[d]local base=bases and bases[
+fillSet=uiOp.fills,uiOp.fillSet local rv,goals,fadeRest=_G._pup_fadeRestValue,_G.
+_pup_revealBase,_G._pup_fadeRestOf local bases=fills[d]local base=bases and bases[
 prop]local goal=goals and goals[d]local cur=(goal and goal[prop])or(rv and rv(d,
 prop))or d[prop]if base==nil then if op>=0.999 or not eligible then return end
 if cur>=0.3 then uiOp.waiting=uiOp.waiting or setmetatable({},{__mode='k'})if
@@ -1051,7 +1051,7 @@ local function ours(x)return wrote[math.floor(x*1000+0.5)]end if math.abs(cur-
 base)>0.01 and not(last and math.abs(cur-last)<0.01)and not ours(cur)then return
 end local v=1-(1-base)*op wrote[math.floor(v*1000+0.5)]=true sets=sets or{}sets[
 prop]=v fillSet[d]=sets if goal and goal[prop]~=nil then goal[prop]=v end if _G.
-_nv_fadeRestSet then _G._nv_fadeRestSet(d,prop,v)else local r=fadeRest and
+_pup_fadeRestSet then _G._pup_fadeRestSet(d,prop,v)else local r=fadeRest and
 fadeRest(d)if r and r[prop]~=nil then r[prop]=v end end local now=d[prop]local
 atRest=math.abs(now-base)<1e-4 or(last and math.abs(now-last)<1e-4)or ours(now)
 if force or(not goal and(atRest or not rv or math.abs(rv(d,prop)-now)<1e-4))then
@@ -1067,9 +1067,9 @@ then paintGrad(grad,uiOp[grp]or 1)end end else fitFill(d,
 local function apply()if uiOp.main>=0.999 and uiOp.pop>=0.999 and not uiOp.
 touched then return end uiOp.touched=true for grad in uiOp.orig do if not grad.
 Parent then uiOp.orig[grad]=nil end end for obj,g in uiOp.own do if not obj.
-Parent or not g.Parent then uiOp.own[obj]=nil end end for root in _nvL.popRoots
-do if not root.Parent then _nvL.popRoots[root]=nil end end local hosts={}for
-body in(_G._nv_glassParts or{})do local host=body.Parent if host then local grp=
+Parent or not g.Parent then uiOp.own[obj]=nil end end for root in _pupL.popRoots
+do if not root.Parent then _pupL.popRoots[root]=nil end end local hosts={}for
+body in(_G._pup_glassParts or{})do local host=body.Parent if host then local grp=
 groupOf(host)if grp then paintGrad(body,uiOp[grp])hosts[#hosts+1]={host,grp}end
 end end local seen={}for _,h in hosts do local parent=h[1].Name==
 'UtilitySurface'and h[1].Parent or h[1]if parent and not seen[parent]then seen[
@@ -1078,8 +1078,8 @@ parent]=true for _,ch in parent:GetChildren()do if LAYERS[ch.Name]and ch:IsA(
 local glow=h[1]:FindFirstChild('DarkGlow')or(h[1].Parent and h[1].Parent:
 FindFirstChild('DarkGlow'))if glow and glow:IsA('UIShadow')then local t=glow:
 GetAttribute('NvGlowT')if t==nil then t=glow.Transparency end glow.Transparency=
-_G._nv_glowT(glow,t)local op=uiOp[h[2] ]or 1 if _G._nv_fadeRestSet then _G.
-_nv_fadeRestSet(glow,'Transparency',1-0.55*op*op)end end end for _,layer in{
+_G._pup_glowT(glow,t)local op=uiOp[h[2] ]or 1 if _G._pup_fadeRestSet then _G.
+_pup_fadeRestSet(glow,'Transparency',1-0.55*op*op)end end end for _,layer in{
 _globalBg,_globalOv}do if layer and layer.Parent then paintLayer(layer,uiOp.main
 )end end local done={}for obj in uiOp.fills do if not obj.Parent then uiOp.fills
 [obj]=nil uiOp.fillSet[obj]=nil end end for root,conn in uiOp.watch do if not
@@ -1095,23 +1095,23 @@ not done[obj]then done[obj]=true local grp=groupOf(obj)for prop in bases do
 pcall(fitFill,obj,prop,grp,true)end end end end local function queue()if uiOp.
 queued or(uiOp.main>=0.999 and uiOp.pop>=0.999 and not uiOp.touched)then return
 end uiOp.queued=true task.defer(function()uiOp.queued=false pcall(apply)end)end
-_G._nv_setUiOpacity=function(which,value,skipSave)if which~='main'and which~=
+_G._pup_setUiOpacity=function(which,value,skipSave)if which~='main'and which~=
 'pop'then return end uiOp[which]=math.clamp(tonumber(value)or 1,MIN,1)pcall(
 apply)if not skipSave and type(saveSettings)=='function'then pcall(saveSettings)
-end end _G._nv_getUiOpacity=function(which)return uiOp[which]or 1 end _G.
-_nv_glowT=function(sh,t)sh:SetAttribute('NvGlowT',t)local op=uiOp[groupOf(sh)]or
+end end _G._pup_getUiOpacity=function(which)return uiOp[which]or 1 end _G.
+_pup_glowT=function(sh,t)sh:SetAttribute('NvGlowT',t)local op=uiOp[groupOf(sh)]or
 1 return 1-(1-t)*op*op end function uiOp.soon()if uiOp.later or(uiOp.main>=0.999
 and uiOp.pop>=0.999)then return end uiOp.later=true task.delay(0.35,function()
-uiOp.later=false queue()end)end _G._nv_applyUiOpacity=queue _G.
-_nv_applyUiOpacitySoon=uiOp.soon local baseGlass,baseSurface=_G._nv_glass,_G.
-_nv_utilitySurface _G._nv_glass=function(...)local r=baseGlass(...)queue()return
-r end _G._nv_utilitySurface=function(...)local r=baseSurface(...)queue()return r
+uiOp.later=false queue()end)end _G._pup_applyUiOpacity=queue _G.
+_pup_applyUiOpacitySoon=uiOp.soon local baseGlass,baseSurface=_G._pup_glass,_G.
+_pup_utilitySurface _G._pup_glass=function(...)local r=baseGlass(...)queue()return
+r end _G._pup_utilitySurface=function(...)local r=baseSurface(...)queue()return r
 end queue()end end function __DARKLUA_BUNDLE_MODULES.A():typeof(__modImpl())
 local v=__DARKLUA_BUNDLE_MODULES.cache.A if not v then v={c=__modImpl()}
 __DARKLUA_BUNDLE_MODULES.cache.A=v end return v.c end end
 do local function
 __modImpl()return function(env,parent,label,initial,minimum,maximum,onChange,
-formatValue)local createInstance=env.createInstance local cfg=_G._nv_cfg local
+formatValue)local createInstance=env.createInstance local cfg=_G._pup_cfg local
 cfgKey=cfg and cfg.key(parent,label)local userChange=onChange local original=
 initial if cfgKey then initial=math.clamp(tonumber(cfg.read(cfgKey,initial))or
 initial,minimum,maximum)onChange=function(v)if userChange then userChange(v)end
@@ -1127,7 +1127,7 @@ BackgroundTransparency=1,Position=UDim2.fromOffset(4,24),Size=UDim2.fromOffset(
 76,16),Font=Enum.Font.Gotham,TextSize=12,TextColor3=Color3.fromRGB(158,158,158),
 TextXAlignment=Enum.TextXAlignment.Left,ZIndex=162})local function render()info.
 Text=formatValue and formatValue(value)or tostring(value)end local engine=_G.
-_nv_glassSlider({parent=card,position=UDim2.new(0,94,0.5,0),width=UDim.new(1,-
+_pup_glassSlider({parent=card,position=UDim2.new(0,94,0.5,0),width=UDim.new(1,-
 106),z=162,min=minimum,max=maximum,value=value,onChange=function(v)value=v
 render()if onChange then onChange(value)end end})local track,progress,thumb=
 engine.track,engine.fill,engine.thumb local function set(v,notifyChange)v=math.
@@ -1142,7 +1142,7 @@ userChange,value)end end return handle end end function __DARKLUA_BUNDLE_MODULES
 .B():typeof(__modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.B if not v then v
 ={c=__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.B=v end return v.c end end
 do local function
-__modImpl()return function(env)local _nvL=env._nvL local PATH=
+__modImpl()return function(env)local _pupL=env._pupL local PATH=
 'PuppyAdmin/configs.json'local MAX=12 local SKIP={['RadarPanel/Radar']=true,[
 'FakelagPanel/Fakelag']=true,['AimbotPanel/EspMode']=true,['EspPanel/Hitboxes']=
 true,['EspPanel/Tracers']=true,['AimbotPanel/Tracers']=true}local store={values=
@@ -1157,34 +1157,34 @@ makefolder('PuppyAdmin')end writefile(PATH,game:GetService('HttpService'):
 JSONEncode(store))end)end)end local bound,defaults={},{}local cfg={}function cfg
 .key(anchor,label)if typeof(anchor)~='Instance'or type(label)~='string'or label
 ==''then return nil end local p=anchor while p and not p:GetAttribute(
-'_nvDesignW')do p=p.Parent end if not p then return nil end local key=p.Name..
+'_pupDesignW')do p=p.Parent end if not p then return nil end local key=p.Name..
 '/'..label if SKIP[key]then return nil end return key end function cfg.read(key,
 default)defaults[key]=default local v=store.values[key]if v==nil or type(v)~=
 type(default)then return default end return v end function cfg.write(key,value)
 if value==defaults[key]then store.values[key]=nil else store.values[key]=value
 end save()end function cfg.bind(key,setter)bound[key]=setter end function cfg.
-quiet(fn,...)local was=_G._nvQuietNotify _G._nvQuietNotify=true pcall(fn,...)_G.
-_nvQuietNotify=was end local function applyAll(values)store.values={}for k,v in
+quiet(fn,...)local was=_G._pupQuietNotify _G._pupQuietNotify=true pcall(fn,...)_G.
+_pupQuietNotify=was end local function applyAll(values)store.values={}for k,v in
 values do store.values[k]=v end for key,setter in bound do local v=store.values[
 key]if v==nil then v=defaults[key]end if v~=nil then cfg.quiet(setter,v)end end
 save()end local function clean(name)return(tostring(name or''):match(
 '^%s*(.-)%s*$')):sub(1,24)end local function find(name)local n=clean(name):
 lower()for i,e in store.list do if tostring(e.name):lower()==n then return i end
 end return nil end local function reserved(name)return clean(name):lower()==
-'default'end _G._nv_cfg=cfg _G._nv_configs={max=MAX,dateText=function(at)return
+'default'end _G._pup_cfg=cfg _G._pup_configs={max=MAX,dateText=function(at)return
 type(at)=='number'and os.date('%b %d, %H:%M',at)or''end,list=function()return
 store.list end,last=function()return store.last end,has=function(name)return
 find(name)~=nil end,reserved=reserved,save=function(name)name=clean(name)if name
 ==''or reserved(name)then return false end local snap={}for k,v in store.values
 do snap[k]=v end local entry={name=name,at=os.time(),values=snap}local i=find(
 name)if i then store.list[i]=entry elseif#store.list>=MAX then return false else
-table.insert(store.list,1,entry)end store.last=name save()if _nvL.notify then
-pcall(_nvL.notify,'Configs','Saved '..name,3)end return true end,apply=function(
+table.insert(store.list,1,entry)end store.last=name save()if _pupL.notify then
+pcall(_pupL.notify,'Configs','Saved '..name,3)end return true end,apply=function(
 name)local i=find(name)if not i then return false end local entry=store.list[i]
 applyAll(type(entry.values)=='table'and entry.values or{})store.last=entry.name
-save()if _nvL.notify then pcall(_nvL.notify,'Configs','Loaded '..entry.name,3)
-end return true end,reset=function()applyAll({})store.last=nil save()if _nvL.
-notify then pcall(_nvL.notify,'Configs','Back to defaults',3)end end,remove=
+save()if _pupL.notify then pcall(_pupL.notify,'Configs','Loaded '..entry.name,3)
+end return true end,reset=function()applyAll({})store.last=nil save()if _pupL.
+notify then pcall(_pupL.notify,'Configs','Back to defaults',3)end end,remove=
 function(name)local i=find(name)if not i then return end local gone=table.
 remove(store.list,i)if store.last==gone.name then store.last=nil end save()end}
 end end function __DARKLUA_BUNDLE_MODULES.G():typeof(__modImpl())local v=
@@ -1384,12 +1384,12 @@ return K end end function __DARKLUA_BUNDLE_MODULES.I():typeof(__modImpl())local
 v=__DARKLUA_BUNDLE_MODULES.cache.I if not v then v={c=__modImpl()}
 __DARKLUA_BUNDLE_MODULES.cache.I=v end return v.c end end
 do local function
-__modImpl()return function(env,state,panel)local C=env.C local _nvL=env._nvL
+__modImpl()return function(env,state,panel)local C=env.C local _pupL=env._pupL
 local createInstance=env.createInstance local tween=env.tween local
 userInputService=env.userInputService local R={S=state,P=panel,onShow={},eqs=
-setmetatable({},{__mode='k'})}_G._nv_reanimLayout=R --[[PuppyAdmin patch]] R.W,R.H=412,460 panel.Size=UDim2.fromOffset(R.W,R.
+setmetatable({},{__mode='k'})}_G._pup_reanimLayout=R --[[PuppyAdmin patch]] R.W,R.H=412,460 panel.Size=UDim2.fromOffset(R.W,R.
 H)panel:SetAttribute('ContentRevision','Reanimate 7')panel:SetAttribute(
-'_nvDesignW',R.W)panel:SetAttribute('_nvDesignH',R.H)R.WHITE,R.PAPER,R.INK=
+'_pupDesignW',R.W)panel:SetAttribute('_pupDesignH',R.H)R.WHITE,R.PAPER,R.INK=
 Color3.new(1,1,1),Color3.fromRGB(242,242,244),Color3.fromRGB(18,18,20)R.SUBTLE,R
 .HINT,R.OFF=Color3.fromRGB(150,150,156),Color3.fromRGB(118,118,124),Color3.
 fromRGB(58,58,62)R.TILE=Color3.fromRGB(44,44,47)R.TINT={blue={Color3.fromRGB(13,
@@ -1418,7 +1418,7 @@ value,size,z,align)return R.text(parent,value,Enum.Font.GothamBold,size or 13,C.
 TEXT,z,align)end function R.note(parent,value,size,z,align)return R.text(parent,
 value,Enum.Font.GothamMedium,size or 11,R.SUBTLE,z,align)end function R.glyph(
 img,name)if img:GetAttribute('Glyph')==name then return end img:SetAttribute(
-'Glyph',name)pcall(_G._nv_setIcon,img,name=='record'and'video'or name)end
+'Glyph',name)pcall(_G._pup_setIcon,img,name=='record'and'video'or name)end
 function R.icon(parent,name,size,color,z)local i=createInstance('ImageLabel',{
 Parent=parent,BackgroundTransparency=1,BorderSizePixel=0,Size=UDim2.fromOffset(
 size,size),ImageColor3=color or R.SUBTLE,ScaleType=Enum.ScaleType.Fit,ZIndex=z
@@ -1426,7 +1426,7 @@ or R.Z+3})R.glyph(i,name)return i end function R.center(o)o.AnchorPoint=Vector2.
 new(0.5,0.5)o.Position=UDim2.fromScale(0.5,0.5)return o end function R.measure(s
 ,size)local ok,v=pcall(function()return R.textService:GetTextSize(s,size,Enum.
 Font.GothamBold,Vector2.new(1000,100)).X end)return ok and v or#s*7 end function
-R.soft(parent,radius,tint,z,noPress)local kit=_G._nv_kit if kit and kit.
+R.soft(parent,radius,tint,z,noPress)local kit=_G._pup_kit if kit and kit.
 softButton then local d=(radius or 16)*2 local b=kit.softButton(parent,0,0,d,d,
 nil,tint,radius or 16,noPress)b.ZIndex=z or R.Z+1 local lift=b:FindFirstChild(
 'Lift')if lift then lift.ZIndex=b.ZIndex+1 end local g=b:FindFirstChildOfClass(
@@ -1437,7 +1437,7 @@ createInstance('UIGradient',{Parent=b,Name='Soft',Rotation=90,Color=
 ColorSequence.new(Color3.fromRGB(46,46,49),Color3.fromRGB(32,32,35))})if tint
 then b.BackgroundColor3=tint g.Enabled=false end local rim=createInstance(
 'UIStroke',{Parent=b,ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Color=R.WHITE,
-Thickness=1})if not tint and _G._nv_tone then pcall(_G._nv_tone,g,rim)end pcall(
+Thickness=1})if not tint and _G._pup_tone then pcall(_G._pup_tone,g,rim)end pcall(
 function()rim.BorderStrokePosition=Enum.BorderStrokePosition.Inner end)local rl=
 createInstance('UIGradient',{Parent=rim,Rotation=90,Transparency=NumberSequence.
 new({NumberSequenceKeypoint.new(0,0.86),NumberSequenceKeypoint.new(0.4,0.96),
@@ -1446,7 +1446,7 @@ lift.Size=UDim2.fromScale(1,1)lift.BackgroundColor3=R.WHITE R.round(lift,radius)
 b.MouseEnter:Connect(function()tween(lift,TweenInfo.new(0.18),{
 BackgroundTransparency=0.95})end)b.MouseLeave:Connect(function()tween(lift,
 TweenInfo.new(0.18),{BackgroundTransparency=1})end)if noPress then b:
-SetAttribute('NoPress',true)elseif _G._nv_pressable then pcall(_G._nv_pressable,
+SetAttribute('NoPress',true)elseif _G._pup_pressable then pcall(_G._pup_pressable,
 b,0.95)end return b end R.TAP_DOWN=TweenInfo.new(0.1,Enum.EasingStyle.Quint,Enum
 .EasingDirection.Out)R.TAP_UP=TweenInfo.new(0.28,Enum.EasingStyle.Quint,Enum.
 EasingDirection.Out)R.TAP_SPRING=TweenInfo.new(0.46,Enum.EasingStyle.Back,Enum.
@@ -1470,7 +1470,7 @@ NumberSequenceKeypoint.new(0,top or 0.84),NumberSequenceKeypoint.new(0.5,mid or
 0.95),NumberSequenceKeypoint.new(1,low or 0.9)})})return rim end function R.
 group(parent,z)local g=R.frame(parent,'Group',z or R.Z)g.BackgroundColor3=R.
 WHITE g.BackgroundTransparency=0.955 R.round(g,20)R.rim(g)return g end function
-R.accent()local ok,c=pcall(function()return _G._nv_switchAccent()end)return(ok
+R.accent()local ok,c=pcall(function()return _G._pup_switchAccent()end)return(ok
 and typeof(c)=='Color3')and c or R.WHITE end function R.wash(card,radius)local w
 =R.frame(card,'Wash',card.ZIndex)w.Size=UDim2.fromScale(1,1)w.BackgroundColor3=R
 .WHITE w.BackgroundTransparency=1 w:SetAttribute('NvNoTone',true)R.round(w,
@@ -1509,13 +1509,13 @@ fromOffset(36,36)R.round(tile,8)local ic=R.center(R.icon(tile,iconName,17,C.TEXT
 fromOffset(62,13)t.Size=UDim2.new(1,-62-reserve,0,16)local s=R.note(parent,sub,
 11,R.Z+4)s.Position=UDim2.fromOffset(62,31)s.Size=UDim2.new(1,-62-reserve,0,14)
 return tile,t,s,ic end function R.switch(parent,z)local paint,track=_G.
-_nv_switch(parent,false,{clickable=true,z=z or R.Z+3})local cur local function
+_pup_switch(parent,false,{clickable=true,z=z or R.Z+3})local cur local function
 set(on)on=on and true or false if cur==on then return end local first=cur==nil
 cur=on paint(on,not first)end set(false)return set,track end R.KEY_SHORT={
 RightAlt='RAlt',LeftAlt='LAlt',RightControl='RCtrl',LeftControl='LCtrl',
 RightShift='RShift',LeftShift='LShift',Return='Enter'}function R.short(k)if not
 k or k==''or k=='None'then return'None'end if k:find('+',1,true)and _G.
-_nv_keyLabel then return _G._nv_keyLabel(k)end return R.KEY_SHORT[k]or(#k<=6 and
+_pup_keyLabel then return _G._pup_keyLabel(k)end return R.KEY_SHORT[k]or(#k<=6 and
 k or k:sub(1,5)..'.')end function R.keyPill(parent,z)local b=R.soft(parent,14,
 nil,z,true)b.Name='KeyPill'b.AnchorPoint=Vector2.new(1,0.5)b.Size=UDim2.
 fromOffset(64,28)local paper=R.frame(b,'Paper',b.ZIndex+1)paper.Size=UDim2.
@@ -1588,19 +1588,19 @@ name)end table.sort(parts)return table.concat(parts,',')..'#'..R.titleVer end
 function R.stateSig()local a=state.stateAnims or{}return tostring(a.idle and a.
 idle.name)..'|'..tostring(a.walk and a.walk.name)..'|'..tostring(a.jump and a.
 jump.name)..'#'..R.titleVer end function R.playToggle(it)if not _G._reanimAPI
-then _nvL.notify('Reanim','API not loaded yet')return end if R.TR and R.TR.
+then _pupL.notify('Reanim','API not loaded yet')return end if R.TR and R.TR.
 mimicOn and R.TR.mimicOn()then _G._reanimAPI.mimic_stop('Mimic off')end if state
 .reanimCurrentName==it.name then if state.stopCurrent then state.stopCurrent()
 end elseif state.playAnim then state.playAnim(it.name,it.url)R.last=it end end
 function R.toggleFav(it)local name=it.name for i,f in state.favsItems do if f.
 name==name then local slot=R.favSlot(name)if slot then state.favKeybinds[slot]=
 nil end state.saveReanimKeybinds()pcall(function()f.row:Destroy()end)table.
-remove(state.favsItems,i)state.saveFavsItems()R.refreshKb(name)_nvL.notify(
+remove(state.favsItems,i)state.saveFavsItems()R.refreshKb(name)_pupL.notify(
 'Favs','Removed: '..name:sub(1,24))if state.activeTab=='favs'and state.
 reanimRefreshSearch then pcall(state.reanimRefreshSearch)end return end end if
 state.reanimAddItem then state.reanimAddItem(name,it.url,state.favsItems)else
 state.favsItems[#state.favsItems+1]={name=name,url=it.url,row=createInstance(
-'Frame'),nameLbl=createInstance('TextLabel')}end state.saveFavsItems()_nvL.
+'Frame'),nameLbl=createInstance('TextLabel')}end state.saveFavsItems()_pupL.
 notify('Favs','Added: '..name:sub(1,24))end function R.deleteCustom(it)local
 name=it.name if state.reanimCurrentName==name and state.stopCurrent then pcall(
 state.stopCurrent)end local slot=R.favSlot(name)if slot then state.favKeybinds[
@@ -1608,11 +1608,11 @@ slot]=nil state.saveReanimKeybinds()end if delfile and type(it.url)=='string'
 then pcall(delfile,it.url)end for i,c in state.customItems do if c==it then
 table.remove(state.customItems,i)break end end pcall(function()it.row:Destroy()
 end)if state.activeTab=='custom'and state.reanimRefreshSearch then pcall(state.
-reanimRefreshSearch)end _nvL.notify('Reanim','Deleted: '..name:sub(1,24))end
+reanimRefreshSearch)end _pupL.notify('Reanim','Deleted: '..name:sub(1,24))end
 function R.assignState(slot,it)local label=slot:sub(1,1):upper()..slot:sub(2)
 local prev=state.stateAnims[slot]if not it or(prev and prev.name==it.name)then
-state.stateAnims[slot]=nil _nvL.notify('States',label..' cleared')else state.
-stateAnims[slot]={name=it.name,url=it.url}_nvL.notify('States',label..': '..it.
+state.stateAnims[slot]=nil _pupL.notify('States',label..' cleared')else state.
+stateAnims[slot]={name=it.name,url=it.url}_pupL.notify('States',label..': '..it.
 name:sub(1,22))end if state.saveStateAnims then state.saveStateAnims()end if
 state.refreshStateHighlights then pcall(state.refreshStateHighlights)end state.
 manualOverride=false if state.startStateLoop then state.startStateLoop()end if
@@ -1620,15 +1620,15 @@ not state.stateConn and state.reanimCurrentName and state.stopCurrent then state
 .stopCurrent()end if R.paintStates then R.paintStates(true)end end function R.
 stopListen()local L=R.listening if not L then return end R.listening=nil if L.
 conn then pcall(function()L.conn:Disconnect()end)end task.defer(function()if not
-R.listening then _nvL.keybindListening=false end end)if L.done then pcall(L.done
+R.listening then _pupL.keybindListening=false end end)if L.done then pcall(L.done
 )end if R.repaint then R.repaint()end end function R.begin(bind,done)if R.
-listening then R.stopListen()elseif _nvL.keybindListening then return nil end
-_nvL.keybindListening=true local L={bind=bind,done=done}R.listening=L if R.
+listening then R.stopListen()elseif _pupL.keybindListening then return nil end
+_pupL.keybindListening=true local L={bind=bind,done=done}R.listening=L if R.
 repaint then R.repaint()end return L end function R.keyWord(k)return _G.
-_nv_keyLabel and _G._nv_keyLabel(k)or tostring(k)end function R.promptBind(L,
-title,spec)if not _G._nv_bindPrompt then return false end local function stop()
+_pup_keyLabel and _G._pup_keyLabel(k)or tostring(k)end function R.promptBind(L,
+title,spec)if not _G._pup_bindPrompt then return false end local function stop()
 if R.listening==L then R.stopListen()end end spec.saved,spec.closed=stop,stop
-return _G._nv_bindPrompt(title,spec)end function R.bindTitle(bind)local known=R.
+return _G._pup_bindPrompt(title,spec)end function R.bindTitle(bind)local known=R.
 bindNames and R.bindNames[bind]if known then return known end local words=
 tostring(bind):gsub('(%u)',' %1')return words:sub(1,1):upper()..words:sub(2)end
 function R.listenPlay(bind,allowNone)local L=R.begin(bind)if not L then return
@@ -1645,10 +1645,10 @@ KeyCode.Unknown then return end local n=kc.Name if n=='None'or n:sub(1,5)==
 'Mouse'then return end if n=='Escape'then R.stopListen()return end if n==
 'Backspace'or n=='Delete'then if allowNone then state.playBinds[bind]='None'
 state.savePlayBinds()end R.stopListen()return end local sp=R.speedOwner and R.
-speedOwner(n)if sp then if _G._nv_haptic then _G._nv_haptic('error')end _nvL.
+speedOwner(n)if sp then if _G._pup_haptic then _G._pup_haptic('error')end _pupL.
 notify('Keys',n..' is already used by '..sp..'. Pick another key.')return end
-state.playBinds[bind]=n state.savePlayBinds()if _G._nv_haptic then _G.
-_nv_haptic('success')end R.stopListen()end)end function R.listenAnim(it,done)
+state.playBinds[bind]=n state.savePlayBinds()if _G._pup_haptic then _G.
+_pup_haptic('success')end R.stopListen()end)end function R.listenAnim(it,done)
 local name,url=it.name,it.url local L=R.begin('anim:'..name,done)if not L then
 return end local slot=R.favSlot(name)if R.promptBind(L,name,{current=slot,has=
 slot and 1 or 0,verb='plays',apply=function(k)local sp=R.speedOwner and R.
@@ -1662,16 +1662,16 @@ end state.saveReanimKeybinds()R.refreshKb(name)return at and 1 or 0 end})then
 return end L.conn=userInputService.InputBegan:Connect(function(inp,gp)if gp then
 return end local kc=inp.KeyCode if kc==Enum.KeyCode.Backspace or kc==Enum.
 KeyCode.Delete then local slot=R.favSlot(name)if slot then state.favKeybinds[
-slot]=nil _nvL.notify('Favs',name:sub(1,18)..' unbound')end state.
+slot]=nil _pupL.notify('Favs',name:sub(1,18)..' unbound')end state.
 saveReanimKeybinds()R.stopListen()R.refreshKb(name)return end if kc==Enum.
 KeyCode.Escape then R.stopListen()return end if kc==Enum.KeyCode.Unknown then
 return end local kcName=kc.Name local sp=R.speedOwner and R.speedOwner(kcName)if
-sp then if _G._nv_haptic then _G._nv_haptic('error')end _nvL.notify('Favs',
+sp then if _G._pup_haptic then _G._pup_haptic('error')end _pupL.notify('Favs',
 kcName..' is already used by '..sp..'. Pick another key.')return end local owner
 =state.favKeybinds[kcName]local prev=R.favSlot(name)if prev then state.
 favKeybinds[prev]=nil end state.favKeybinds[kcName]={name=name,url=url}state.
-saveReanimKeybinds()if _G._nv_haptic then _G._nv_haptic('success')end R.
-stopListen()if owner then R.refreshKb(owner.name)end R.refreshKb(name)_nvL.
+saveReanimKeybinds()if _G._pup_haptic then _G._pup_haptic('success')end R.
+stopListen()if owner then R.refreshKb(owner.name)end R.refreshKb(name)_pupL.
 notify('Favs',name:sub(1,18)..' - '..kcName)end)end R.LIVE_GROUPS={{'larm',
 'L Arm'},{'head','Head'},{'rarm','R Arm'},{'lleg','L Leg'},{'torso','Torso'},{
 'rleg','R Leg'}}R.PARTS15={head={{'Head','Head'}},torso={{'UpperTorso','Upper'},
@@ -1707,8 +1707,8 @@ ResizeGrip=true,UtilitySurface=true,Wallpaper=true,WpOverlay=true,PanelOverlay=
 true,BlueCornerGlow=true,SurfaceShine=true,Surface=true,DarkGlow=true,ScaleProbe
 =true,Legacy=true,ReanimLayer=true}local legacy=R.frame(panel,'Legacy',151)
 legacy.Size=UDim2.fromScale(1,1)legacy.Visible=false function R.park(ch)if ch.
-Parent==panel and ch:IsA('GuiObject')and not KEEP[ch.Name]and ch.Name:sub(1,3)~=
-'_nv'then ch.Parent=legacy end end for _,ch in panel:GetChildren()do R.park(ch)
+Parent==panel and ch:IsA('GuiObject')and not KEEP[ch.Name]and ch.Name:sub(1,4)~=
+'_pup'then ch.Parent=legacy end end for _,ch in panel:GetChildren()do R.park(ch)
 end panel.ChildAdded:Connect(function(ch)task.defer(function()pcall(R.park,ch)
 end)end)local layer=R.frame(panel,'ReanimLayer',R.Z)layer.Size=UDim2.fromScale(1
 ,1)layer.Visible=false R.layer=layer local bar=panel:FindFirstChild('TitleBar')
@@ -1782,12 +1782,12 @@ a,BackgroundTransparency=on and 0.78 or(P.over and 0.95 or 1)})go(pIcon,{
 ImageColor3=ink})go(pGlow,{Color=a,Transparency=on and(P.over and 0.82 or 0.88)
 or 1})end pwr.MouseEnter:Connect(function()P.over=true paintPower(true)end)pwr.
 MouseLeave:Connect(function()P.over=false paintPower(true)end)pwr.Activated:
-Connect(function()if _G._nv_haptic then pcall(_G._nv_haptic,'toggle')end if
-state.toggleReanim then state.toggleReanim()else _nvL.notify('Reanim',
+Connect(function()if _G._pup_haptic then pcall(_G._pup_haptic,'toggle')end if
+state.toggleReanim then state.toggleReanim()else _pupL.notify('Reanim',
 'Reanimate is not ready yet')end if R.repaint then R.repaint()end end)function R
 .setPower(on)R.paintRail()on=on and true or false local hex=R.accent():ToHex()if
 P.on==on and P.hex==hex then return end local first=P.on==nil P.on,P.hex=on,hex
-paintPower(not first)end if _G._nv_pressable then pcall(_G._nv_pressable,pwr,
+paintPower(not first)end if _G._pup_pressable then pcall(_G._pup_pressable,pwr,
 0.94)end R.power=pwr local shown local function titleName(name,animate)local sl=
 R.secLabel if not sl or shown==name then return end shown=name sl.Text=name if
 animate then local x=18+R.measure('Reanimate',18)+8 sl.TextTransparency=1 sl.
@@ -1798,8 +1798,8 @@ local b,ic=item(c[1],c[3],y)b:SetAttribute('NoPress',true)b.MouseEnter:Connect(
 function()titleName(c[2],true)if R.chipKey~=c[1]then tween(ic,R.FAST,{
 ImageColor3=C.TEXT})end end)b.MouseLeave:Connect(function()local n=activeName()
 if n then titleName(n,true)end if R.chipKey~=c[1]then tween(ic,R.FAST,{
-ImageColor3=R.SUBTLE})end end)b.Activated:Connect(function()if _G._nv_haptic
-then pcall(_G._nv_haptic,'tick')end if R.section~=c[1]then R.show(c[1])end end)
+ImageColor3=R.SUBTLE})end end)b.Activated:Connect(function()if _G._pup_haptic
+then pcall(_G._pup_haptic,'tick')end if R.section~=c[1]then R.show(c[1])end end)
 ic:SetAttribute('NvNoTone',true)R.chips[c[1] ]={button=b,icon=ic,y=y,name=c[2],
 glow=iconGlow(ic)}end function R.layoutChips(sel,animate)R.chipKey=sel local e=R
 .chips[sel]if e then titleName(e.name,animate)end for k,c in R.chips do if c.
@@ -1886,31 +1886,31 @@ b.Visible=false end end)if on then task.defer(function()pcall(function()data:
 CaptureFocus()end)end)end end G.setImport=setImport import.Activated:Connect(
 function()setImport(true)end)close.Activated:Connect(function()setImport(false)
 end)save.Activated:Connect(function()local raw=tostring(data.Text or''):gsub(
-'^%s+',''):gsub('%s+$','')if raw==''then _nvL.notify('Reanim',
-'Paste keyframe data first')return end if not writefile then _nvL.notify(
+'^%s+',''):gsub('%s+$','')if raw==''then _pupL.notify('Reanim',
+'Paste keyframe data first')return end if not writefile then _pupL.notify(
 'Reanim','writefile not available')return end local function write(nm)nm=
 tostring(nm or''):gsub('[^%w %-_]',''):gsub('^%s+',''):gsub('%s+$','')if nm==''
 then nm='pasted'end local ext='lua'local okJson,decoded=pcall(function()return
 game:GetService('HttpService'):JSONDecode(raw)end)if okJson and type(decoded)==
 'table'then ext='json'elseif state.loadAnim then local data,text=state.loadAnim(
-raw)if not data then _nvL.notify('Reanim','Not saved: '..text)return end raw=
+raw)if not data then _pupL.notify('Reanim','Not saved: '..text)return end raw=
 text end if isfolder and makefolder then if not isfolder('PuppyAdmin')then
 makefolder('PuppyAdmin')end if not isfolder('PuppyAdmin/custom')then makefolder(
 'PuppyAdmin/custom')end end local base,n=nm,2 while isfile and isfile(
 'PuppyAdmin/custom/'..nm..'.'..ext)do nm=base..' '..n n+=1 end local path=
 'PuppyAdmin/custom/'..nm..'.'..ext local wok,werr=pcall(writefile,path,raw)if not
-wok then _nvL.notify('Reanim','Save failed: '..tostring(werr))return end data.
-Text=''setImport(false)if _nvL.reloadCustom then task.spawn(_nvL.reloadCustom)
-end _nvL.notify('Reanim','Saved: '..nm:sub(1,24))end write(raw:match(
+wok then _pupL.notify('Reanim','Save failed: '..tostring(werr))return end data.
+Text=''setImport(false)if _pupL.reloadCustom then task.spawn(_pupL.reloadCustom)
+end _pupL.notify('Reanim','Saved: '..nm:sub(1,24))end write(raw:match(
 '%[%s*["\']([^"\']+)["\']%s*%]'))end)local scroll=createInstance(
 'ScrollingFrame',{Parent=page,Name='List',BackgroundTransparency=1,
 BorderSizePixel=0,Position=UDim2.fromOffset(0,44),Size=UDim2.new(1,0,1,-44),
 ScrollBarThickness=0,ScrollingDirection=Enum.ScrollingDirection.Y,CanvasSize=
-UDim2.new(),ZIndex=R.Z+2})G.scroll=scroll scroll:SetAttribute('_nvFade',true)
+UDim2.new(),ZIndex=R.Z+2})G.scroll=scroll scroll:SetAttribute('_pupFade',true)
 local edge=createInstance('UIGradient',{Parent=page,Rotation=90})function G.edge
 ()local H=page.AbsoluteSize.Y local view=scroll.AbsoluteWindowSize.Y if H<=1 or
 view<=1 or not scroll.Visible then edge.Enabled=false return end local y,_,s=_G.
-_nv_scrollView(scroll)local a=math.clamp((scroll.AbsolutePosition.Y-page.
+_pup_scrollView(scroll)local a=math.clamp((scroll.AbsolutePosition.Y-page.
 AbsolutePosition.Y)/H,0,0.9)local above=y*s local below=math.max(scroll.
 CanvasSize.Y.Offset*s-view-above,0)local room=(1-a)*0.45 local topLen=math.min(
 math.min(above,36*s)/H,room)local bottomLen=math.min(math.min(below,36*s)/H,room
@@ -1920,7 +1920,7 @@ keys[#keys+1]=K(a+topLen,0)end if bottomLen>0.002 then keys[#keys+1]=K(1-
 bottomLen,0)end keys[#keys+1]=K(1,bottomLen>0.002 and 1 or 0)edge.Enabled=#keys>
 2 or bottomLen>0.002 edge.Transparency=NumberSequence.new(keys)end for _,prop in
 {'AbsoluteCanvasSize','CanvasSize','Visible'}do scroll:GetPropertyChangedSignal(
-prop):Connect(G.edge)end _G._nv_onScrollMoved(scroll,G.edge)page:
+prop):Connect(G.edge)end _G._pup_onScrollMoved(scroll,G.edge)page:
 GetPropertyChangedSignal('AbsoluteSize'):Connect(G.edge)local empty=R.frame(page
 ,'Empty',R.Z+2)empty.Position=UDim2.fromOffset(0,44)empty.Size=UDim2.new(1,0,1,-
 44)empty.Visible=false local eIcon=R.icon(empty,'library',22,R.SUBTLE,R.Z+3)
@@ -1998,7 +1998,7 @@ and'doclist')or nil t.icon.Visible=not playing and glyph~=nil if glyph then R.
 glyph(t.icon,glyph)end t.icon.ImageColor3=on and R.WHITE or R.SUBTLE t.icon.
 ImageTransparency=on and 0 or 0.35 end function G.paintAll()for _,t in G.shown
 do G.paintRow(t,true)end end function G.render(force)local y,win=_G.
-_nv_scrollView(scroll)local view=math.max(win,480)local lo=math.max(1,math.
+_pup_scrollView(scroll)local view=math.max(win,480)local lo=math.max(1,math.
 floor(y/G.ROW))local hi=math.min(#G.items,math.floor((y+view)/G.ROW)+2)if not
 force and lo==G.lo and hi==G.hi then return end G.lo,G.hi=lo,hi for i,t in G.
 shown do if i<lo or i>hi then t.button.Visible=false t.item=nil t.hold=nil G.
@@ -2006,7 +2006,7 @@ shown[i]=nil G.free[#G.free+1]=t end end for i=lo,hi do local t=G.shown[i]local
 it=G.items[i]if not t then t=table.remove(G.free)or G.newRow()G.shown[i]=t end t
 .button.Position=UDim2.fromOffset(0,(i-1)*G.ROW)if force or t.item~=it then t.
 item=it G.paintRow(t,false)end t.button.Visible=true end end _G.
-_nv_onScrollMoved(scroll,function()G.render(false)end)scroll:
+_pup_onScrollMoved(scroll,function()G.render(false)end)scroll:
 GetPropertyChangedSignal('AbsoluteSize'):Connect(function()G.render(false)end)
 function G.sourceList()if G.source=='favs'then return state.favsItems or{}end if
 G.source=='custom'then return state.customItems or{}end if G.source=='pick'then
@@ -2083,10 +2083,10 @@ Color3.fromRGB(30,30,33),BackgroundTransparency=1,BorderSizePixel=0,Size=UDim2.
 fromOffset(212,0),ZIndex=401,Visible=false,GroupTransparency=1})M.menu=menu
 local backing=R.frame(menu,'Backing',1)backing.Size=UDim2.fromScale(1,1)backing.
 BackgroundColor3=Color3.fromRGB(10,10,12)backing:SetAttribute('NvNoTone',true)R.
-round(backing,16)if not(_G._nv_glass and pcall(_G._nv_glass,menu,16))then menu.
+round(backing,16)if not(_G._pup_glass and pcall(_G._pup_glass,menu,16))then menu.
 BackgroundTransparency=0 R.round(menu,16)createInstance('UIStroke',{Parent=menu,
 Color=R.WHITE,Transparency=0.9,ApplyStrokeMode=Enum.ApplyStrokeMode.Border})end
-if _nvL.popRoots then _nvL.popRoots[menu]=true end function M.rename(row,label,
+if _pupL.popRoots then _pupL.popRoots[menu]=true end function M.rename(row,label,
 it)if M.editing then return end local ed={row=row}M.editing=ed if R.listening
 then R.stopListen()end tween(label,R.FAST,{TextTransparency=1})local box=
 createInstance('TextBox',{Parent=row,BackgroundTransparency=1,BorderSizePixel=0,
@@ -2105,7 +2105,7 @@ box.Text>40 then box.Text=box.Text:sub(1,40)end end)function ed.finish(save)if
 ed.done then return end ed.done=true if M.editing==ed then M.editing=nil end if
 save then local before=R.title(it.name)R.setTitle(it.name,box.Text)local after=R
 .title(it.name)R.closeMenu()if R.G then R.G.paintAll()end R.repaint()if after~=
-before then _nvL.notify('Reanim',after==it.name and'Name reset to '..after:sub(1
+before then _pupL.notify('Reanim',after==it.name and'Name reset to '..after:sub(1
 ,24)or'Renamed to '..after:sub(1,24))end return end tween(box,R.FAST,{
 TextTransparency=1})tween(hint,R.FAST,{TextTransparency=1})tween(rim,R.FAST,{
 Transparency=1})tween(label,R.QUICK,{TextTransparency=0})tween(row,R.FAST,{
@@ -2133,7 +2133,7 @@ end,nil,nil,R.TINT.teal[2]}entries[#entries+1]={'star',fav and
 local slot=R.favSlot(it.name)entries[#entries+1]={'keyboard','Set key',nil,slot
 and R.short(slot)or'None','key'}entries[#entries+1]={'edit','Rename',nil,nil,
 'rename'}if R.titles[it.name]then entries[#entries+1]={'reset','Reset name',
-function()R.setTitle(it.name,nil)_nvL.notify('Reanim','Name reset to '..it.name:
+function()R.setTitle(it.name,nil)_pupL.notify('Reanim','Name reset to '..it.name:
 sub(1,24))end}end entries[#entries+1]={sep=true}for _,s in R.SLOTS do local cur=
 state.stateAnims[s[1] ]local isOn=cur~=nil and cur.name==it.name entries[#
 entries+1]={isOn and'check'or s[3],(isOn and'Stop using for 'or'Use for ')..s[2]
@@ -2170,7 +2170,7 @@ s=R.scaleOf()local rel=(anchor.AbsolutePosition-panel.AbsolutePosition)/s local
 pw,ph=panel.AbsoluteSize.X/s,panel.AbsoluteSize.Y/s local x=math.clamp(rel.X+
 anchor.AbsoluteSize.X/s-212,10,math.max(10,pw-222))local yy=rel.Y+anchor.
 AbsoluteSize.Y/s+4 if yy+h>ph-10 then yy=rel.Y-h-4 end yy=math.clamp(yy,10,math.
-max(10,ph-h-10))local op=_G._nv_getUiOpacity and _G._nv_getUiOpacity('pop')or 1
+max(10,ph-h-10))local op=_G._pup_getUiOpacity and _G._pup_getUiOpacity('pop')or 1
 backing.BackgroundTransparency=op>=0.999 and 1 or 0.38 menu.Position=UDim2.
 fromOffset(x,yy+(yy<rel.Y and 6 or-6))menu.Visible=true catcher.Visible=true
 menu.GroupTransparency=1 tween(menu,R.QUICK,{GroupTransparency=0,Position=UDim2.
@@ -2292,7 +2292,7 @@ local s=rec and('Recording '..R.fmt(R.recElapsed()))or(state.reanimActive and
 'Saves up to one minute'or'Reanimate first')if sub.Text~=s then sub.Text=s end R
 .paintKey(key,'record')if R.recentSig()~=P.sig then R.refreshRecent()end end R.
 onShow.record=function()R.refreshRecent()R.paintRecord()end end)()end do(
-function()local K=__DARKLUA_BUNDLE_MODULES.I()()_G._nv_keyframeRecorder=K local
+function()local K=__DARKLUA_BUNDLE_MODULES.I()()_G._pup_keyframeRecorder=K local
 page=R.newPage('copy')local sc=R.scrollPage(page)local P={ver=0}R.KP=P local top
 =R.group(sc,R.Z+2)top.Size=UDim2.new(1,0,0,120)local copyTile,title,sub=R.head(
 top,'spectate',R.TINT.purple,'Keyframe recorder','',94)P.tile=copyTile local go=
@@ -2378,30 +2378,30 @@ Vector2.new(1,0.5)del.Position=UDim2.new(1,-16,0.5,0)del.Size=UDim2.fromOffset(
 30,30)local di=R.center(R.icon(del,'clear',12,C.TEXT,R.Z+6))del.MouseEnter:
 Connect(function()tween(di,R.FAST,{ImageColor3=R.TINT.red[2]})end)del.MouseLeave
 :Connect(function()tween(di,R.FAST,{ImageColor3=C.TEXT})end)local function
-playIt()if not state.reanimActive then _nvL.notify('Reanim','Reanimate first')
+playIt()if not state.reanimActive then _pupL.notify('Reanim','Reanimate first')
 return end R.playToggle({name=rec.name,url=rec.path})end row.Activated:Connect(
 playIt)play.Activated:Connect(playIt)add.Activated:Connect(function()if state.
 addRecordingToCustom then state.addRecordingToCustom(rec)end end)del.Activated:
 Connect(function()if state.reanimCurrentName==rec.name and state.stopCurrent
 then pcall(state.stopCurrent)end if R.last and R.last.url==rec.path then R.last=
 nil end K.remove(rec)if state.localAnimCache then state.localAnimCache[rec.path]
-=nil end P.ver+=1 P.refresh()_nvL.notify('Reanim','Deleted '..rec.name:sub(1,24)
+=nil end P.ver+=1 P.refresh()_pupL.notify('Reanim','Deleted '..rec.name:sub(1,24)
 )end)if i<n then R.rule(list,i*52,56,R.Z+4)end end end local function finish(s)P
-.dropRow(s)local kfs,why=s.build()if not kfs then _nvL.notify('Reanim','@'..s.
+.dropRow(s)local kfs,why=s.build()if not kfs then _pupL.notify('Reanim','@'..s.
 player.Name..': '..(why or'Recording too short'))R.repaint()return end local rec
 ,err=K.save(s.player.Name..' '..os.date('%H-%M-%S'),kfs,{player=s.player.Name,
-rig=s.rig})if not rec then _nvL.notify('Reanim','Save failed: '..tostring(err))R
+rig=s.rig})if not rec then _pupL.notify('Reanim','Save failed: '..tostring(err))R
 .repaint()return end if state.localAnimCache then state.localAnimCache[rec.path]
-=nil end P.ver+=1 P.refresh()_nvL.notify('Reanim','Saved '..rec.name:sub(1,24))R
+=nil end P.ver+=1 P.refresh()_pupL.notify('Reanim','Saved '..rec.name:sub(1,24))R
 .repaint()end function P.go()local text=box.Text local typed=text:match('%S')~=
 nil local fresh=P.fresh(text)if#fresh>0 and R.TR and R.TR.blockedByMimic and R.
 TR.blockedByMimic()then return end if#fresh==0 then if not typed and#P.rows>0
-then for _,r in table.clone(P.rows)do r.s.stop()end return end _nvL.notify(
+then for _,r in table.clone(P.rows)do r.s.stop()end return end _pupL.notify(
 'Reanim',(not typed and'Type a username first')or(#P.targets(text)>0 and
 'Already recording them')or'No player matches')return end local started=0 for _,
-plr in fresh do if#P.rows>=P.MAX then _nvL.notify('Reanim','Up to '..P.MAX..
+plr in fresh do if#P.rows>=P.MAX then _pupL.notify('Reanim','Up to '..P.MAX..
 ' players at once')break end local s,err=K.start(plr)if s then s.onStop=finish P
-.addRow(s)started+=1 else _nvL.notify('Reanim','@'..plr.Name..': '..tostring(err
+.addRow(s)started+=1 else _pupL.notify('Reanim','@'..plr.Name..': '..tostring(err
 ))end end if started>0 then box.Text=''end R.repaint()end go.Activated:Connect(P
 .go)box.FocusLost:Connect(function(enter)if enter then P.go()return end local
 names={}for _,plr in P.targets(box.Text)do names[#names+1]=plr.Name end if#names
@@ -2506,7 +2506,7 @@ MouseButton1Down:Connect(function()if not state.liveActive then return end local
 tok={}R.lvHold=tok fill.Size=UDim2.fromScale(0,1)tween(fill,TweenInfo.new(0.6,
 Enum.EasingStyle.Linear),{Size=UDim2.fromScale(1,1)})tween(rl,R.QUICK,{
 TextColor3=R.TINT.red[2]})task.delay(0.6,function()if R.lvHold==tok and state.
-liveActive then holdOff()R.zeroAll()_nvL.notify('Reanim','All limbs reset')end
+liveActive then holdOff()R.zeroAll()_pupL.notify('Reanim','All limbs reset')end
 end)end)rs.MouseButton1Up:Connect(function()if R.lvHold then holdOff()if state.
 liveActive then R.zeroPart()end end end)rs.MouseLeave:Connect(function()if R.
 lvHold then holdOff()end end)local r8=L.row(6,'Full rotation',
@@ -2602,7 +2602,7 @@ label=l,icon=ic}end do local r=row(g,2,'Delay','Seconds behind them',176)local v
 =R.bold(r,'',11,R.Z+5,Enum.TextXAlignment.Right)v.AnchorPoint=Vector2.new(1,0.5)
 v.Position=UDim2.new(1,-16,0.5,0)v.Size=UDim2.fromOffset(40,20)function TR.
 delayText(sec)return sec<=0 and'Off'or string.format('%.1fs',sec)end local s=(_G
-._nv_appleSlider or _G._nv_glassSlider)({parent=r,anchor=Vector2.new(1,0.5),
+._pup_appleSlider or _G._pup_glassSlider)({parent=r,anchor=Vector2.new(1,0.5),
 position=UDim2.new(1,-62,0.5,0),width=UDim.new(0,110),z=R.Z+5,min=0,max=(state.
 SYNC_DELAY_MAX or 5)*10,value=math.round((state.syncDelay or 0)*10),onChange=
 function(n)if state.pairHost then return end if state.syncPaired and state.
@@ -2647,8 +2647,8 @@ setLegs,TR.legsKey=header(g,'run',R.TINT.purple,'Long legs',
 'legs')do local r=row(g,1,'Length','How far your legs stretch',176)local v=R.
 bold(r,'',11,R.Z+5,Enum.TextXAlignment.Right)v.AnchorPoint=Vector2.new(1,0.5)v.
 Position=UDim2.new(1,-16,0.5,0)v.Size=UDim2.fromOffset(40,20)local function
-lenText(n)return string.format('%.1fx',n/10)end local s=(_G._nv_appleSlider or
-_G._nv_glassSlider)({parent=r,anchor=Vector2.new(1,0.5),position=UDim2.new(1,-62
+lenText(n)return string.format('%.1fx',n/10)end local s=(_G._pup_appleSlider or
+_G._pup_glassSlider)({parent=r,anchor=Vector2.new(1,0.5),position=UDim2.new(1,-62
 ,0.5,0),width=UDim.new(0,110),z=R.Z+5,min=15,max=60,value=math.round((state.
 legsLength or 2.5)*10),onChange=function(n)if state.setLegsLength then state.
 setLegsLength(n/10)end v.Text=lenText(n)end,onRelease=function()R.repaint()end})
@@ -2662,7 +2662,7 @@ state.spiderOn)end,'spider')do local r=row(g,1,'Height',
 'How high your body hangs',176)local v=R.bold(r,'',11,R.Z+5,Enum.TextXAlignment.
 Right)v.AnchorPoint=Vector2.new(1,0.5)v.Position=UDim2.new(1,-16,0.5,0)v.Size=
 UDim2.fromOffset(40,20)local function hText(n)return string.format('%.1fx',n/10)
-end local s=(_G._nv_appleSlider or _G._nv_glassSlider)({parent=r,anchor=Vector2.
+end local s=(_G._pup_appleSlider or _G._pup_glassSlider)({parent=r,anchor=Vector2.
 new(1,0.5),position=UDim2.new(1,-62,0.5,0),width=UDim.new(0,110),z=R.Z+5,min=2,
 max=20,value=math.round((state.spiderHeight or 0.4)*10),onChange=function(n)if
 state.setSpiderHeight then state.setSpiderHeight(n/10)end v.Text=hText(n)end,
@@ -2672,8 +2672,8 @@ spiderHeight={slider=s,label=v,text=hText}end do local r=row(g,2,'Reach',
 'How far your legs crawl out',176)local v=R.bold(r,'',11,R.Z+5,Enum.
 TextXAlignment.Right)v.AnchorPoint=Vector2.new(1,0.5)v.Position=UDim2.new(1,-16,
 0.5,0)v.Size=UDim2.fromOffset(40,20)local function rText(n)return string.format(
-n%2==0 and'%dx'or'%.1fx',n/2)end local s=(_G._nv_appleSlider or _G.
-_nv_glassSlider)({parent=r,anchor=Vector2.new(1,0.5),position=UDim2.new(1,-62,
+n%2==0 and'%dx'or'%.1fx',n/2)end local s=(_G._pup_appleSlider or _G.
+_pup_glassSlider)({parent=r,anchor=Vector2.new(1,0.5),position=UDim2.new(1,-62,
 0.5,0),width=UDim.new(0,110),z=R.Z+5,min=2,max=50,value=math.round((state.
 spiderSpan or 1)*2),onChange=function(n)if state.setSpiderSpan then state.
 setSpiderSpan(n/2)end v.Text=rText(n)end,onRelease=function()R.repaint()end})if
@@ -2714,23 +2714,23 @@ cur and R.TINT.blue[2]or nil}end if#list==0 then entries[#entries+1]={'people',
 local api=_G._reanimAPI return(api and api.mimic_start)and api or nil end
 function TR.mimicOn()local api=TR.mimicApi()return api~=nil and api.
 mimic_active()==true end function TR.blockedByMimic()if not TR.mimicOn()then
-return false end _nvL.notify('Reanim','Turn off Mimic first')return true end
+return false end _pupL.notify('Reanim','Turn off Mimic first')return true end
 function TR.mimicBusy()if state.isSyncing and state.isSyncing()then return'Sync'
 end if state.recordActive then return'Record'end if R.KP and R.KP.rows and#R.KP.
 rows>0 then return'Copy'end if state.liveActive then return'Live mode'end return
 nil end function TR.startMimic()local api=TR.mimicApi()if not(api and state.
-reanimActive)then _nvL.notify('Mimic','Reanimate first')return end local busy=TR
-.mimicBusy()if busy then _nvL.notify('Mimic','Turn off '..busy..' first')return
-end local plr=state.mimicTarget if not(plr and plr.Parent)then _nvL.notify(
+reanimActive)then _pupL.notify('Mimic','Reanimate first')return end local busy=TR
+.mimicBusy()if busy then _pupL.notify('Mimic','Turn off '..busy..' first')return
+end local plr=state.mimicTarget if not(plr and plr.Parent)then _pupL.notify(
 'Mimic','Pick a player first')return end if state.reanimCurrentName and state.
 stopCurrent then pcall(state.stopCurrent)end local ok,err=api.mimic_start(plr)if
-ok then state.manualOverride=true _nvL.notify('Mimic','Moving with '..plr.
-DisplayName)else _nvL.notify('Mimic',tostring(err or'Could not start'))end end
+ok then state.manualOverride=true _pupL.notify('Mimic','Moving with '..plr.
+DisplayName)else _pupL.notify('Mimic',tostring(err or'Could not start'))end end
 function TR.hookMimic()local mapi=TR.mimicApi()if not mapi or TR.mimicHooked or
 not mapi.mimic_on_stop then return end TR.mimicHooked=true mapi.mimic_on_stop(
 function(reason)if not state.reanimCurrentName and not state.liveActive then
 state.manualOverride=false if state.startStateLoop then pcall(state.
-startStateLoop)end end if reason then _nvL.notify('Mimic',reason)end R.repaint()
+startStateLoop)end end if reason then _pupL.notify('Mimic',reason)end R.repaint()
 end)end if not state._mimicWrapped then state._mimicWrapped=true for k,flag in{
 toggleRecording='recordActive',toggleLive='liveActive'}do local f=state[k]if f
 then state[k]=function(...)if not state[flag]and R.TR.blockedByMimic()then
@@ -2981,10 +2981,10 @@ Connect(function(inp,gp)if gp or inp.UserInputType~=Enum.UserInputType.Keyboard
 then return end local kc=inp.KeyCode if kc==Enum.KeyCode.Unknown then return end
 local n=kc.Name if n=='Escape'then R.stopListen()return end if n=='Backspace'or
 n=='Delete'then sb.key=nil state.saveSpeedBinds()R.stopListen()return end local
-owner=R.keyOwner(n,sb)if owner then if _G._nv_haptic then _G._nv_haptic('error')
-end _nvL.notify('Speeds',n..' is already used by '..owner..'. Pick another key.'
-)return end sb.key,sb.fresh=n,nil state.saveSpeedBinds()if _G._nv_haptic then _G
-._nv_haptic('success')end R.stopListen()_nvL.notify('Speeds',n..' switches to '
+owner=R.keyOwner(n,sb)if owner then if _G._pup_haptic then _G._pup_haptic('error')
+end _pupL.notify('Speeds',n..' is already used by '..owner..'. Pick another key.'
+)return end sb.key,sb.fresh=n,nil state.saveSpeedBinds()if _G._pup_haptic then _G
+._pup_haptic('success')end R.stopListen()_pupL.notify('Speeds',n..' switches to '
 ..speedText(sb)..'. Press it again to go back.')end)end function K.makeRow(sb)
 local row=createInstance('CanvasGroup',{Parent=pg,Name='Speed',
 BackgroundTransparency=1,BorderSizePixel=0,Size=UDim2.new(1,0,0,48),ZIndex=R.Z+3
@@ -3001,7 +3001,7 @@ local p=R.keyPill(row,R.Z+5)p.button.Position=UDim2.new(1,-50,0.5,0)p.button.
 Activated:Connect(function()R.listenSpeed(sb)end)glassButton(UDim2.new(1,-30,0.5
 ,0),'clear').Activated:Connect(function()R.removeSpeed(sb)end)R.rule(row,47,16,R
 .Z+4)return{row=row,label=lbl,pill=p,bind=sb,id='speed:'..tostring(sb)}end add.
-Activated:Connect(function()if _nvL.keybindListening and not R.listening then
+Activated:Connect(function()if _pupL.keybindListening and not R.listening then
 return end local cur=state.speedStep and state.speedStep()or 10 local sb={speed=
 cur~=10 and cur or 20,fresh=true}state.speedBinds[#state.speedBinds+1]=sb local
 r=K.makeRow(sb)r.row.GroupTransparency=1 r.row.Position=UDim2.fromOffset(0,4*48+
@@ -3025,7 +3025,7 @@ url=b.url})end)local x=R.soft(row,14,nil,R.Z+5)x.AnchorPoint=Vector2.new(1,0.5)x
 .Position=UDim2.new(1,-16,0.5,0)x.Size=UDim2.fromOffset(28,28)R.center(R.icon(x,
 'clear',12,C.TEXT,R.Z+7))x.Activated:Connect(function()if state.favKeybinds[k]==
 b then state.favKeybinds[k]=nil state.saveReanimKeybinds()R.refreshKb(b.name)
-_nvL.notify('Favs',tostring(b.name):sub(1,18)..' unbound')end R.refreshAnimKeys(
+_pupL.notify('Favs',tostring(b.name):sub(1,18)..' unbound')end R.refreshAnimKeys(
 )end)K.anim[#K.anim+1]={pill=p,key=k,name=b.name}if i<#list then R.rule(ag,i*48,
 16,R.Z+4)end end end function R.paintKeys()for k,p in K.pills do R.paintKey(p,k)
 end K.paintSpeeds()if R.kbSig()~=K.sig then R.refreshAnimKeys()end for _,a in K.
@@ -3041,12 +3041,12 @@ ZIndex=R.Z+2})R.round(b,16)local ic=R.center(R.icon(b,icon,size,C.TEXT,R.Z+4))
 local function rest()return(b.Name=='Reverse'and B.rev)and 0.86 or 1 end b.
 MouseEnter:Connect(function()tween(b,R.FAST,{BackgroundTransparency=math.min(
 rest(),0.92)})end)b.MouseLeave:Connect(function()tween(b,R.FAST,{
-BackgroundTransparency=rest()})end)if _G._nv_pressable then pcall(_G.
-_nv_pressable,b,0.9)end return b,ic end local rev,play,stop rev,B.revIcon=disc(
+BackgroundTransparency=rest()})end)if _G._pup_pressable then pcall(_G.
+_pup_pressable,b,0.9)end return b,ic end local rev,play,stop rev,B.revIcon=disc(
 'Reverse','previous',16,-8)stop,B.stopIcon=disc('Stop','stop',15,-42)play,B.
 playIcon=disc('Play','play',22,-76)play.Activated:Connect(function()if state.
 reanimCurrentName then state.togglePause()elseif state.reanimPaused then state.
-setPause(false)elseif R.last then R.playToggle(R.last)else _nvL.notify('Reanim',
+setPause(false)elseif R.last then R.playToggle(R.last)else _pupL.notify('Reanim',
 'Pick an animation first')end R.repaint()end)stop.Activated:Connect(function()if
 state.stopCurrent and state.reanimCurrentName then state.stopCurrent()end R.
 repaint()end)rev.Activated:Connect(function()if state.toggleRewind then state.
@@ -3057,11 +3057,11 @@ Vector2.new(0.5,0.5)si.Position=UDim2.new(0,20,0.5,0)local sv=R.bold(srow,'1.0x'
 ,11,R.Z+3,Enum.TextXAlignment.Right)sv.AnchorPoint=Vector2.new(1,0.5)sv.Position
 =UDim2.new(1,-4,0.5,0)sv.Size=UDim2.fromOffset(40,16)local function stepText(n)
 return(state.reanimDir==-1 and'-'or'')..string.format('%.1fx',n/10)end local sp
-if _G._nv_appleSlider then sp=_G._nv_appleSlider({parent=srow,anchor=Vector2.
+if _G._pup_appleSlider then sp=_G._pup_appleSlider({parent=srow,anchor=Vector2.
 new(0,0.5),position=UDim2.new(0,50,0.5,0),width=UDim.new(1,-50-52),z=R.Z+3,min=1
 ,max=30,value=state.speedStep and state.speedStep()or 10,onChange=function(n)if
 state.setReanimSpeedStep then state.setReanimSpeedStep(n)end sv.Text=stepText(n)
-end,onRelease=function(n)local cfg=_G._nv_cfg if cfg and cfg.write then pcall(
+end,onRelease=function(n)local cfg=_G._pup_cfg if cfg and cfg.write then pcall(
 cfg.write,'ReanimPanel/Speed',n)end end})end if sp and sp.fill then sp.fill.
 BackgroundTransparency=0.32 end R.speedBar={slider=sp,label=sv,text=stepText}
 function R.paintBar()local name=state.reanimCurrentName R.glyph(B.playIcon,(name
@@ -3083,8 +3083,8 @@ panel.Visible and os.clock()-t0<1 do if os.clock()-t0>0.1 and not(surf and surf.
 Parent and not surf.Visible)then break end task.wait()end if R.introTok~=tok or
 not panel.Visible then return end if R.pageKey=='list'then pcall(R.G.render,true
 )end local page=R.pages[R.pageKey]if page then page.GroupTransparency=1 page.
-Position=UDim2.fromOffset(0,8)end R.layer.Visible=true if _G._nv_reveal then
-pcall(_G._nv_reveal,R.chipRow,0,6)pcall(_G._nv_reveal,R.bar,0.14,6)end pcall(R.
+Position=UDim2.fromOffset(0,8)end R.layer.Visible=true if _G._pup_reveal then
+pcall(_G._pup_reveal,R.chipRow,0,6)pcall(_G._pup_reveal,R.bar,0.14,6)end pcall(R.
 sync)if page then tween(page,TweenInfo.new(0.4,Enum.EasingStyle.Quint,Enum.
 EasingDirection.Out,0,false,0.12),{GroupTransparency=0,Position=UDim2.new()})end
 end)end end)()end do(function()function R.sync()R.paintHero()R.paintBar()local
@@ -3107,14 +3107,14 @@ layer.Visible=false R.closeMenu(true)R.stopListen()end end)R.show('library',true
 typeof(__modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.J if not v then v={c=
 __modImpl()}__DARKLUA_BUNDLE_MODULES.cache.J=v end return v.c end end
 do
-local function __modImpl()return function(env,pnl,showAt)local _nvL=env._nvL
+local function __modImpl()return function(env,pnl,showAt)local _pupL=env._pupL
 local runService=env.runService local screen=env.screen local tween=env.tween
 local tweenService=env.tweenService local userInputService=env.userInputService
-local bag=_G._nvPlaceBag if not bag then bag={q={}}_G._nvPlaceBag=bag end bag.q[
+local bag=_G._pupPlaceBag if not bag then bag={q={}}_G._pupPlaceBag=bag end bag.q[
 #bag.q+1]={pnl=pnl,showAt=showAt}if bag.busy then return end local function kick
 ()if bag.busy then return end local item=table.remove(bag.q,1)if not item then
 return end if not item.pnl or not item.pnl.Parent then kick()return end bag.busy
-=true local zoomFit=_G._nv_panelZooms(item.pnl)local refs={}local host=_nvL.ui.
+=true local zoomFit=_G._pup_panelZooms(item.pnl)local refs={}local host=_pupL.ui.
 mount({'Frame',ref='host',Name='PlaceGuide',Size=UDim2.fromScale(1,1),
 BackgroundTransparency=1,BorderSizePixel=0,Active=true,ZIndex=500,children={{
 'TextLabel',ref='prompt',Name='Prompt',BackgroundTransparency=1,AnchorPoint=
@@ -3129,7 +3129,7 @@ BorderSizePixel=0,Visible=false,Active=false,ZIndex=502,corner=20,children={{
 Rotation=90,Color=ColorSequence.new(Color3.fromRGB(46,46,49),Color3.fromRGB(32,
 32,35))}}}}}}},screen,{refs=refs})local prompt,box,stroke=refs.prompt,refs.box,
 refs.stroke host:SetAttribute('NvFade',true)pcall(function()stroke.LineJoinMode=
-Enum.LineJoinMode.Round end)if _G._nv_tone then pcall(_G._nv_tone,refs.
+Enum.LineJoinMode.Round end)if _G._pup_tone then pcall(_G._pup_tone,refs.
 strokeGrad,stroke)end local function paint(x,y,w,h)box.Position=UDim2.
 fromOffset(x,y)box.Size=UDim2.fromOffset(math.max(w,1),math.max(h,1))box.Visible
 =true end local alive=true local conns={}local origin,last,dragInput
@@ -3138,14 +3138,14 @@ end end local function pointer(input)if input and input.UserInputType==Enum.
 UserInputType.Touch then local inset=game:GetService('GuiService'):GetGuiInset()
 return Vector2.new(input.Position.X+inset.X,input.Position.Y+inset.Y)end return
 userInputService:GetMouseLocation()end local function metrics()local designW=
-tonumber(item.pnl:GetAttribute('_nvDesignW'))or item.pnl.Size.X.Offset local
-designH=tonumber(item.pnl:GetAttribute('_nvDesignH'))or item.pnl.Size.Y.Offset
+tonumber(item.pnl:GetAttribute('_pupDesignW'))or item.pnl.Size.X.Offset local
+designH=tonumber(item.pnl:GetAttribute('_pupDesignH'))or item.pnl.Size.Y.Offset
 designW,designH=math.max(1,designW),math.max(1,designH)local cam=workspace.
 CurrentCamera local vp=cam and cam.ViewportSize or Vector2.new(1280,720)local
 vpX,vpY,margin=vp.X,vp.Y,8 local gs=tonumber(_G._getScale and _G._getScale())or
 1 if gs<=0 then gs=1 end local maxFit=math.min((vpX-24)/designW,(vpY-24)/designH
 )maxFit=math.max(tonumber(maxFit)or 0.35,0.35)local sc=math.min(gs,maxFit)if sc
-<=0 then sc=1 end local padRaw=tonumber(item.pnl:GetAttribute('_nvDragPadBottom'
+<=0 then sc=1 end local padRaw=tonumber(item.pnl:GetAttribute('_pupDragPadBottom'
 ))or 0 local pad=padRaw*sc local minW,minH=designW*sc,designH*sc local screenW=
 math.max(minW,vpX-margin*2)local screenH=math.max(minH,vpY-margin*2-pad)local
 maxZ=math.max(sc,math.min(sc*1.8,(vpX-margin*2)/designW,(vpY-margin*2)/(designH+
@@ -3184,7 +3184,7 @@ finish(fitted)return end settleFrom,settleTo,settleStart=raw,fitted,os.clock()
 end end)conns[#conns+1]=glideConn end finish=function(rect)if not alive then
 return end alive=false drop()if rect then paint(rect.x,rect.y,rect.w,rect.h)end
 local info=TweenInfo.new(0.34,Enum.EasingStyle.Quint,Enum.EasingDirection.Out)
-tween(host,info,{GroupTransparency=1})task.delay(0.36,function()_nvL.discard(
+tween(host,info,{GroupTransparency=1})task.delay(0.36,function()_pupL.discard(
 host)if rect and item.pnl.Parent and item.showAt then item.showAt(rect)end bag.
 busy=false kick()end)end conns[#conns+1]=userInputService.InputBegan:Connect(
 function(input)if not alive then return end if input.UserInputType==Enum.
@@ -3212,7 +3212,7 @@ __DARKLUA_BUNDLE_MODULES.K():typeof(__modImpl())local v=__DARKLUA_BUNDLE_MODULES
 return v.c end end
 do local function __modImpl()return function(env)local tween=
 env.tween local W={file='PuppyAdmin/windows.json',panels=setmetatable({},{__mode=
-'k'}),pending={}}_G._nv_windows=W local hs=game:GetService('HttpService')
+'k'}),pending={}}_G._pup_windows=W local hs=game:GetService('HttpService')
 local function viewport()local cam=workspace.CurrentCamera local vp=cam and cam.
 ViewportSize if not vp or vp.X<1 or vp.Y<1 then return 1280,720 end return vp.X,
 vp.Y end local function safeTop(pnl)local host=pnl.Parent if not(host and host:
@@ -3227,13 +3227,13 @@ ap.X,ap.Y end function W.place(pnl,e,glide)if not(pnl and pnl.Parent and
 tonumber(e.x)and tonumber(e.y))then return end local vx,vy=viewport()local ax,ay
 =tonumber(e.ax)or pnl.AnchorPoint.X,tonumber(e.ay)or pnl.AnchorPoint.Y local sw,
 sh=pnl.AbsoluteSize.X,pnl.AbsoluteSize.Y if tonumber(e.w)and tonumber(e.h)and
-not _G._nv_panelZooms(pnl)then local dw=tonumber(pnl:GetAttribute('_nvDesignW'))
-or pnl.Size.X.Offset local dh=tonumber(pnl:GetAttribute('_nvDesignH'))or pnl.
+not _G._pup_panelZooms(pnl)then local dw=tonumber(pnl:GetAttribute('_pupDesignW'))
+or pnl.Size.X.Offset local dh=tonumber(pnl:GetAttribute('_pupDesignH'))or pnl.
 Size.Y.Offset local k=sw/math.max(1,pnl.Size.X.Offset)local _,_,capW,capH=_G.
-_nv_panelLimits(pnl,true)pnl.Size=UDim2.fromOffset(math.clamp(e.w,dw,capW),math.
+_pup_panelLimits(pnl,true)pnl.Size=UDim2.fromOffset(math.clamp(e.w,dw,capW),math.
 clamp(e.h,dh,capH))sw,sh=pnl.Size.X.Offset*k,pnl.Size.Y.Offset*k end local us=
 pnl:FindFirstChildOfClass('UIScale')local pad=(tonumber(pnl:GetAttribute(
-'_nvDragPadBottom'))or 0)*((us and us.Scale)or 1)local minX,maxX=8+ax*sw,vx-8-(1
+'_pupDragPadBottom'))or 0)*((us and us.Scale)or 1)local minX,maxX=8+ax*sw,vx-8-(1
 -ax)*sw local minY,maxY=safeTop(pnl)+ay*sh,vy-8-pad-(1-ay)*sh local x=minX>maxX
 and minX or math.clamp(e.x*vx,minX,maxX)local y=minY>maxY and minY or math.
 clamp(e.y*vy,minY,maxY)local goal=UDim2.fromOffset(x,y)pnl.AnchorPoint=Vector2.
@@ -3249,7 +3249,7 @@ tonumber(e.x),y=tonumber(e.y),ax=tonumber(e.ax),ay=tonumber(e.ay),w=tonumber(e.w
 if pnl.Parent and pnl:GetAttribute('NvOpenCmd')==cmd then return pnl end end
 return nil end function W.isOpen(cmd)local pnl=W.panelFor(cmd)return pnl~=nil
 and pnl.Visible end function W.save()W.dirty=false if type(writefile)~=
-'function'then return end W.load()local list,seen={},{}if _G._nv_saveWindows
+'function'then return end W.load()local list,seen={},{}if _G._pup_saveWindows
 then for pnl in W.panels do local cmd=pnl.Parent and pnl.Visible and pnl:
 GetAttribute('NvOpenCmd')if cmd and not seen[cmd]then seen[cmd]=true local x,y,
 ax,ay=W.spotOf(pnl)list[#list+1]={cmd=cmd,title=W.titleOf(pnl)or cmd,x=x,y=y,ax=
@@ -3258,13 +3258,13 @@ pending do if not seen[e.cmd]then seen[e.cmd]=true list[#list+1]=e end end
 pcall(function()local json=hs:JSONEncode({windows=list})if json==W.written then
 return end if isfolder and not isfolder('PuppyAdmin')and makefolder then
 makefolder('PuppyAdmin')end writefile(W.file,json)W.written=json end)end function
-W.changed()if W.dirty or not _G._nv_saveWindows then return end W.dirty=true
+W.changed()if W.dirty or not _G._pup_saveWindows then return end W.dirty=true
 task.delay(1,W.save)end function W.track(pnl)W.panels[pnl]=true pnl:
 GetPropertyChangedSignal('Visible'):Connect(function()if pnl.Visible and _G.
-_nvRunningCmd and not pnl:GetAttribute('NvOpenCmd')then pnl:SetAttribute(
-'NvOpenCmd',_G._nvRunningCmd)end if pnl.Visible and(W.quiet or 0)>0 and not W.
+_pupRunningCmd and not pnl:GetAttribute('NvOpenCmd')then pnl:SetAttribute(
+'NvOpenCmd',_G._pupRunningCmd)end if pnl.Visible and(W.quiet or 0)>0 and not W.
 placing then W.tuck(pnl)end if pnl:GetAttribute('NvOpenCmd')then W.changed()end
-end)end function W.tuck(pnl)local dock=_G._nv_tabDock if not(dock and dock.
+end)end function W.tuck(pnl)local dock=_G._pup_tabDock if not(dock and dock.
 parkQuiet and dock.parkQuiet(pnl))then pnl.Visible=false end end function W.
 runQuiet(fn)W.quiet=(W.quiet or 0)+1 local before=W.visibleSet()local ok,ran=
 pcall(fn)for pnl in W.panels do if pnl.Parent then if before[pnl]then if not pnl
@@ -3277,14 +3277,14 @@ before[pnl]and not pnl:GetAttribute('NvOpenCmd')then pnl:SetAttribute(
 'NvOpenCmd',cmd)W.changed()end end end function W.forget(cmd)for i=#W.pending,1,
 -1 do if W.pending[i].cmd==cmd then table.remove(W.pending,i)end end W.save()end
 function W.open(cmd)local entry for _,e in W.pending do if e.cmd==cmd then entry
-=e break end end W.forget(cmd)if W.isOpen(cmd)or not _G._nv_execCmd then return
-end local quiet={}_G._nvQuietNotify=quiet W.placing=true pcall(_G._nv_execCmd,
+=e break end end W.forget(cmd)if W.isOpen(cmd)or not _G._pup_execCmd then return
+end local quiet={}_G._pupQuietNotify=quiet W.placing=true pcall(_G._pup_execCmd,
 cmd,false)task.delay(0.1,function()W.placing=false end)task.delay(0.5,function()
-if _G._nvQuietNotify==quiet then _G._nvQuietNotify=nil end end)if not(entry and
+if _G._pupQuietNotify==quiet then _G._pupQuietNotify=nil end end)if not(entry and
 entry.x)then return end W.place(W.panelFor(cmd),entry,false)task.delay(0.3,
 function()local pnl=W.panelFor(cmd)if pnl and pnl.Visible then W.place(pnl,entry
 ,true)end end)end task.spawn(function()while true do task.wait(45)if _G.
-_nv_saveWindows and not W.dirty then W.save()end end end)function W.restoreAll(
+_pup_saveWindows and not W.dirty then W.save()end end end)function W.restoreAll(
 onDone)if W.restoring then return end W.restoring=true local list=table.clone(W.
 pending)task.spawn(function()for i,e in list do if i>1 then task.wait(0.35)end W
 .open(e.cmd)end W.restoring=false if onDone then onDone()end end)end end end
@@ -3293,8 +3293,8 @@ __DARKLUA_BUNDLE_MODULES.cache.L if not v then v={c=__modImpl()}
 __DARKLUA_BUNDLE_MODULES.cache.L=v end return v.c end end
 do
 local function __modImpl()return function(env,w,h,anchorX,anchorY)local C=env.C
-local _fixedPanels=env._fixedPanels local _nvFloatCloseRest=env.
-_nvFloatCloseRest local _nvL=env._nvL local createInstance=env.createInstance
+local _fixedPanels=env._fixedPanels local _pupFloatCloseRest=env.
+_pupFloatCloseRest local _pupL=env._pupL local createInstance=env.createInstance
 local runService=env.runService local screen=env.screen local tween=env.tween
 local userInputService=env.userInputService w=tonumber(w)or 220 h=tonumber(h)or
 100 anchorX=tonumber(anchorX)or 0.5 anchorY=tonumber(anchorY)or 0.5 local pnl=
@@ -3307,69 +3307,69 @@ tonumber(vp and vp.Y)or 720 local sc=tonumber(_G._getScale and _G._getScale())or
 anchorY)if minX>maxX then minX,maxX=maxX,minX end if minY>maxY then minY,maxY=
 maxY,minY end local px=math.clamp(anchorX*vpX,minX,maxX)local py=math.clamp(
 anchorY*vpY,minY,maxY)pnl.Position=UDim2.new(0,px,0,py)end pnl.BackgroundColor3=
-C.PANEL pnl.BackgroundTransparency=0 pnl.BorderSizePixel=0 _G._nv_windows.track(
+C.PANEL pnl.BackgroundTransparency=0 pnl.BorderSizePixel=0 _G._pup_windows.track(
 pnl)pnl.ZIndex=150 pnl.Active=true pnl.Visible=false pnl.ClipsDescendants=false
-pnl:SetAttribute('_nvDesignW',w)pnl:SetAttribute('_nvDesignH',h)createInstance(
+pnl:SetAttribute('_pupDesignW',w)pnl:SetAttribute('_pupDesignH',h)createInstance(
 'UICorner',{Parent=pnl,CornerRadius=UDim.new(0,14)})local pStroke=
 createInstance('UIStroke',{Parent=pnl,Color=C.STROKE,Thickness=1,Transparency=
 0.45,ApplyStrokeMode=Enum.ApplyStrokeMode.Border})pcall(function()pStroke.
-LineJoinMode=Enum.LineJoinMode.Round end)_G._nv_utilitySurface(pnl)_fixedPanels[
+LineJoinMode=Enum.LineJoinMode.Round end)_G._pup_utilitySurface(pnl)_fixedPanels[
 #_fixedPanels+1]=pnl local pnlUIScale=createInstance('UIScale',{Parent=pnl})
-local function _computePanelScale()if pnl:GetAttribute('_nvPlaceHold')then
-return pnlUIScale.Scale end local forced=pnl:GetAttribute('_nvPlaceScale')if
+local function _computePanelScale()if pnl:GetAttribute('_pupPlaceHold')then
+return pnlUIScale.Scale end local forced=pnl:GetAttribute('_pupPlaceScale')if
 type(forced)=='number'and forced>0 then return forced end local vp2=workspace.
 CurrentCamera and workspace.CurrentCamera.ViewportSize local vp2X=tonumber(vp2
 and vp2.X)or 1280 local vp2Y=tonumber(vp2 and vp2.Y)or 720 local globalSc=
 tonumber(_G._getScale and _G._getScale())or 1 if globalSc<=0 then globalSc=1 end
 local SAFE_MARGIN=24 local maxFitScale=math.min((vp2X-SAFE_MARGIN)/math.max(w,
 pnl.Size.X.Offset),(vp2Y-SAFE_MARGIN)/(math.max(h,pnl.Size.Y.Offset)+(tonumber(
-pnl:GetAttribute('_nvDragPadBottom'))or 0)))maxFitScale=math.max(tonumber(
-maxFitScale)or 0.35,0.35)local userZoom=tonumber(pnl:GetAttribute('_nvUserZoom')
+pnl:GetAttribute('_pupDragPadBottom'))or 0)))maxFitScale=math.max(tonumber(
+maxFitScale)or 0.35,0.35)local userZoom=tonumber(pnl:GetAttribute('_pupUserZoom')
 )if userZoom and userZoom>0 then return math.min(userZoom,maxFitScale)end return
 math.min(globalSc,maxFitScale)end pnlUIScale.Scale=_computePanelScale()_G.
 _floatingPanelScales=_G._floatingPanelScales or{}_G._floatingPanelScales[#_G.
 _floatingPanelScales+1]={instance=pnlUIScale,recompute=_computePanelScale}pnl:
 GetPropertyChangedSignal('Visible'):Connect(function()if not pnl.Visible then
-return end if pnl:GetAttribute('_nvPlaceGo')then pnl:SetAttribute('_nvPlaceGo',
-nil)elseif _nvL.placeWindows and not pnl:GetAttribute('_nvDockBack')and not(_G.
-_nv_windows and(_G._nv_windows.placing or _G._nv_windows.restoring or(_G.
-_nv_windows.quiet or 0)>0))and type(_G._nv_askPlaceWindow)=='function'then pnl.
-Visible=false _G._nv_askPlaceWindow(pnl,function(rect)if not pnl.Parent or pnl.
-Visible then return end if not _G._nvPlaceRects then _G._nvPlaceRects=
-setmetatable({},{__mode='k'})end _G._nvPlaceRects[pnl]=rect pnl:SetAttribute(
-'_nvPlaceGo',true)pnl.Visible=true end)return end local placed=_G._nvPlaceRects
-and _G._nvPlaceRects[pnl]if placed then _G._nvPlaceRects[pnl]=nil end pnl:
-SetAttribute('_nvClosing',nil)if _G._nv_toneNow then pcall(_G._nv_toneNow,pnl)
-end pnl:SetAttribute('_nvCloseTok',(tonumber(pnl:GetAttribute('_nvCloseTok'))or
-0)+1)if _G._nv_frameFadeOf and _G._nv_frameFadeOf(pnl)>0.001 and _G.
-_nv_frameFade then _G._nv_frameFade(pnl,0)end local closeAx=pnl:GetAttribute(
-'_nvCloseAx')if typeof(closeAx)=='number'then pnl.AnchorPoint=Vector2.new(
-closeAx,tonumber(pnl:GetAttribute('_nvCloseAy'))or 0.5)pnl:SetAttribute(
-'_nvCloseAx',nil)pnl:SetAttribute('_nvCloseAy',nil)end local rest=
-_nvFloatCloseRest[pnl]if rest then pnl.Position=rest tween(pnl,TweenInfo.new(0),
-{Position=rest})_nvFloatCloseRest[pnl]=nil end pnl.BackgroundTransparency=1 if
-placed then pnl:SetAttribute('_nvPlaceScale',placed.scale)else pnl:SetAttribute(
-'_nvPlaceScale',nil)if pnl:GetAttribute('_nvStretched')then local dw=tonumber(
-pnl:GetAttribute('_nvDesignW'))local dh=tonumber(pnl:GetAttribute('_nvDesignH'))
+return end if pnl:GetAttribute('_pupPlaceGo')then pnl:SetAttribute('_pupPlaceGo',
+nil)elseif _pupL.placeWindows and not pnl:GetAttribute('_pupDockBack')and not(_G.
+_pup_windows and(_G._pup_windows.placing or _G._pup_windows.restoring or(_G.
+_pup_windows.quiet or 0)>0))and type(_G._pup_askPlaceWindow)=='function'then pnl.
+Visible=false _G._pup_askPlaceWindow(pnl,function(rect)if not pnl.Parent or pnl.
+Visible then return end if not _G._pupPlaceRects then _G._pupPlaceRects=
+setmetatable({},{__mode='k'})end _G._pupPlaceRects[pnl]=rect pnl:SetAttribute(
+'_pupPlaceGo',true)pnl.Visible=true end)return end local placed=_G._pupPlaceRects
+and _G._pupPlaceRects[pnl]if placed then _G._pupPlaceRects[pnl]=nil end pnl:
+SetAttribute('_pupClosing',nil)if _G._pup_toneNow then pcall(_G._pup_toneNow,pnl)
+end pnl:SetAttribute('_pupCloseTok',(tonumber(pnl:GetAttribute('_pupCloseTok'))or
+0)+1)if _G._pup_frameFadeOf and _G._pup_frameFadeOf(pnl)>0.001 and _G.
+_pup_frameFade then _G._pup_frameFade(pnl,0)end local closeAx=pnl:GetAttribute(
+'_pupCloseAx')if typeof(closeAx)=='number'then pnl.AnchorPoint=Vector2.new(
+closeAx,tonumber(pnl:GetAttribute('_pupCloseAy'))or 0.5)pnl:SetAttribute(
+'_pupCloseAx',nil)pnl:SetAttribute('_pupCloseAy',nil)end local rest=
+_pupFloatCloseRest[pnl]if rest then pnl.Position=rest tween(pnl,TweenInfo.new(0),
+{Position=rest})_pupFloatCloseRest[pnl]=nil end pnl.BackgroundTransparency=1 if
+placed then pnl:SetAttribute('_pupPlaceScale',placed.scale)else pnl:SetAttribute(
+'_pupPlaceScale',nil)if pnl:GetAttribute('_pupStretched')then local dw=tonumber(
+pnl:GetAttribute('_pupDesignW'))local dh=tonumber(pnl:GetAttribute('_pupDesignH'))
 if dw and dh then pnl.Size=UDim2.fromOffset(dw,dh)end pnl:SetAttribute(
-'_nvStretched',nil)end end local targetScale=tonumber(_computePanelScale())or 1
+'_pupStretched',nil)end end local targetScale=tonumber(_computePanelScale())or 1
 if targetScale<=0 then targetScale=1 end local docked=pnl:GetAttribute(
-'_nvDockBack')pnl:SetAttribute('_nvDockBack',nil)if not placed then tween(
+'_pupDockBack')pnl:SetAttribute('_pupDockBack',nil)if not placed then tween(
 pnlUIScale,TweenInfo.new(0),{Scale=targetScale})if not docked and type(_G.
-_nv_placeFloatingPanel)=='function'then pcall(_G._nv_placeFloatingPanel,pnl)end
-end if docked and _G._nv_tabDock then _G._nv_tabDock.applySpot(pnl,targetScale)
+_pup_placeFloatingPanel)=='function'then pcall(_G._pup_placeFloatingPanel,pnl)end
+end if docked and _G._pup_tabDock then _G._pup_tabDock.applySpot(pnl,targetScale)
 end local sh=pnl:FindFirstChild('DarkGlow')if sh then pcall(function()sh.
-Transparency=_G._nv_glowT(sh,0.45)end)end local surface=pnl:FindFirstChild(
+Transparency=_G._pup_glowT(sh,0.45)end)end local surface=pnl:FindFirstChild(
 'UtilitySurface')if surface then surface.Visible=true end local edge=pnl:
 FindFirstChildOfClass('UIStroke')or(surface and surface:FindFirstChildOfClass(
 'UIStroke'))if edge then edge.Enabled=true end if placed and type(_G.
-_nv_playPlacedOpen)=='function'then _G._nv_playPlacedOpen(pnl,pnlUIScale,placed)
-else pnlUIScale.Scale=targetScale if not(docked and _G._nv_tabDock and _G.
-_nv_tabDock.arrive(pnl))then local restPos=pnl.Position pnl.Position=restPos+
+_pup_playPlacedOpen)=='function'then _G._pup_playPlacedOpen(pnl,pnlUIScale,placed)
+else pnlUIScale.Scale=targetScale if not(docked and _G._pup_tabDock and _G.
+_pup_tabDock.arrive(pnl))then local restPos=pnl.Position pnl.Position=restPos+
 UDim2.fromOffset(0,10)tween(pnl,TweenInfo.new(0.26,Enum.EasingStyle.Quint,Enum.
-EasingDirection.Out),{Position=restPos})end end if _G._nv_scrollFadeAll then
-task.defer(pcall,_G._nv_scrollFadeAll,pnl)end end)do local function stretchable(
-)return not _G._nv_panelZooms(pnl)end local rsz=createInstance('TextButton',{
+EasingDirection.Out),{Position=restPos})end end if _G._pup_scrollFadeAll then
+task.defer(pcall,_G._pup_scrollFadeAll,pnl)end end)do local function stretchable(
+)return not _G._pup_panelZooms(pnl)end local rsz=createInstance('TextButton',{
 Parent=pnl,Name='ResizeHandle',AnchorPoint=Vector2.new(1,1),Position=UDim2.new(1
 ,16,1,16),Size=UDim2.new(0,44,0,44),BackgroundTransparency=1,Text='',
 AutoButtonColor=false,ZIndex=900})local _rzing=false rsz.MouseEnter:Connect(
@@ -3381,12 +3381,12 @@ h local _rzConn,_rzEndConn,_rzFocusConn local function stopResize()_rzing=false
 pcall(function()userInputService.MouseIcon=''end)if _rzConn then _rzConn:
 Disconnect()_rzConn=nil end if _rzEndConn then _rzEndConn:Disconnect()_rzEndConn
 =nil end if _rzFocusConn then _rzFocusConn:Disconnect()_rzFocusConn=nil end if
-_cs and _cs._nvDragOwner==rsz then _cs._nvDragOwner=nil end end local function
+_cs and _cs._pupDragOwner==rsz then _cs._pupDragOwner=nil end end local function
 updateResize()if not _rzing or not pnl.Parent then return end local sc=
 pnlUIScale.Scale if sc<=0 then sc=1 end local d=userInputService:
 GetMouseLocation()-_rzStartM local cam=workspace.CurrentCamera local vp=cam and
 cam.ViewportSize or Vector2.new(1280,720)local ap=pnl.AbsolutePosition local
-minW,minH,capW,capH=_G._nv_panelLimits(pnl)local maxW=math.max(minW,math.min(
+minW,minH,capW,capH=_G._pup_panelLimits(pnl)local maxW=math.max(minW,math.min(
 capW,(vp.X-ap.X-6)/sc))local maxH=math.max(minH,math.min(capH,(vp.Y-ap.Y-6)/sc))
 local nextW=math.clamp(_rzStartW+d.X/sc,minW,maxW)local nextH=math.clamp(
 _rzStartH+d.Y/sc,minH,maxH)if nextW~=pnl.Size.X.Offset or nextH~=pnl.Size.Y.
@@ -3395,12 +3395,12 @@ Position=UDim2.new(0,_rzStartPosX+(nextW-_rzStartW)*apt.X*sc,0,_rzStartPosY+(
 nextH-_rzStartH)*apt.Y*sc)end end rsz.InputBegan:Connect(function(inp)if inp.
 UserInputType~=Enum.UserInputType.MouseButton1 and inp.UserInputType~=Enum.
 UserInputType.Touch then return end if not stretchable()then return end if _cs
-and _cs._nvDragOwner~=nil and _cs._nvDragOwner~=rsz then return end local vp=
+and _cs._pupDragOwner~=nil and _cs._pupDragOwner~=rsz then return end local vp=
 workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(
 1280,720)_rzStartPosX=pnl.Position.X.Offset+pnl.Position.X.Scale*vp.X
 _rzStartPosY=pnl.Position.Y.Offset+pnl.Position.Y.Scale*vp.Y _rzStartM=
 userInputService:GetMouseLocation()_rzStartW=pnl.Size.X.Offset _rzStartH=pnl.
-Size.Y.Offset _rzing=true if _cs then _cs._nvDragOwner=rsz end _rzConn=
+Size.Y.Offset _rzing=true if _cs then _cs._pupDragOwner=rsz end _rzConn=
 runService.RenderStepped:Connect(function()updateResize()end)_rzEndConn=
 userInputService.InputEnded:Connect(function(ended)if ended.UserInputType==Enum.
 UserInputType.MouseButton1 or ended.UserInputType==Enum.UserInputType.Touch then
@@ -3411,7 +3411,7 @@ stopResize()end end)end return pnl end end function __DARKLUA_BUNDLE_MODULES.N()
 __modImpl()}__DARKLUA_BUNDLE_MODULES.cache.N=v end return v.c end end
 do
 local function __modImpl()return function(env,pnl,title,onClose)local C=env.C
-local _nvFloatCloseRest=env._nvFloatCloseRest local _nvL=env._nvL local
+local _pupFloatCloseRest=env._pupFloatCloseRest local _pupL=env._pupL local
 createInstance=env.createInstance local tween=env.tween local BAR_H=tonumber(pnl
 :GetAttribute('UtilityTitleHeight'))or 34 local BTN=28 local CLOSE_RIGHT=14
 local HEAD_H=BAR_H+14 local MIN_GAP=4 local bar=createInstance('Frame',{Parent=
@@ -3433,7 +3433,7 @@ Color3.new(1,1,1),BorderSizePixel=0,ZIndex=153,AutoButtonColor=false})
 createInstance('UICorner',{Parent=closeBtn,CornerRadius=UDim.new(1,0)})local
 closeIcon=createInstance('ImageLabel',{Parent=closeBtn,BackgroundTransparency=1,
 Size=UDim2.new(0,16,0,16),Position=UDim2.new(0.5,0,0.5,0),AnchorPoint=Vector2.
-new(0.5,0.5)})if _G._nv_lazyFluent then _G._nv_lazyFluent(closeIcon,'clear')end
+new(0.5,0.5)})if _G._pup_lazyFluent then _G._pup_lazyFluent(closeIcon,'clear')end
 closeIcon.ImageColor3=Color3.new(1,1,1)closeIcon.ImageTransparency=0.35
 closeIcon.Size=UDim2.new(0,17,0,17)closeIcon.ZIndex=154 local minBtn=
 createInstance('TextButton',{Parent=bar,Name='MinimizeBtn',Text='',Size=UDim2.
@@ -3442,8 +3442,8 @@ new(0,BTN,0,BTN),Position=UDim2.new(1,-(CLOSE_RIGHT+BTN+MIN_GAP+BTN),0.5,-BTN/2)
 ZIndex=153,AutoButtonColor=false})createInstance('UICorner',{Parent=minBtn,
 CornerRadius=UDim.new(1,0)})local minIcon=createInstance('ImageLabel',{Parent=
 minBtn,BackgroundTransparency=1,Size=UDim2.new(0,16,0,16),Position=UDim2.new(0.5
-,0,0.5,0),AnchorPoint=Vector2.new(0.5,0.5)})if _G._nv_lazyFluent then _G.
-_nv_lazyFluent(minIcon,'chevrondown')end minIcon.ImageColor3=Color3.new(1,1,1)
+,0,0.5,0),AnchorPoint=Vector2.new(0.5,0.5)})if _G._pup_lazyFluent then _G.
+_pup_lazyFluent(minIcon,'chevrondown')end minIcon.ImageColor3=Color3.new(1,1,1)
 minIcon.ImageTransparency=0.35 minIcon.Size=UDim2.new(0,16,0,16)minIcon.ZIndex=
 154 local function panelScale()local us=pnl:FindFirstChildOfClass('UIScale')
 return(us and us.Scale)or 1 end local function viewport()local cam=workspace.
@@ -3462,7 +3462,7 @@ local topX=px-ax*pnl.Size.X.Offset*sc local topY=py-ay*pnl.Size.Y.Offset*sc
 return UDim2.fromOffset(topX+ax*newW*sc,topY+ay*newH*sc)end local function
 clampPosFor(w,h,px,py)local vp=viewport()local sc=panelScale()if sc<=0 then sc=1
 end local sw,sh=w*sc,h*sc local ax,ay=pnl.AnchorPoint.X,pnl.AnchorPoint.Y local
-pad=(tonumber(pnl:GetAttribute('_nvDragPadBottom'))or 0)*sc local margin,topMin=
+pad=(tonumber(pnl:GetAttribute('_pupDragPadBottom'))or 0)*sc local margin,topMin=
 8,topLimit()local minX,maxX=margin+sw*ax,vp.X-margin-sw*(1-ax)local minY,maxY=
 topMin+sh*ay,vp.Y-margin-pad-sh*(1-ay)if minX>maxX then px=minX else px=math.
 clamp(px,minX,maxX)end if minY>maxY then py=minY else py=math.clamp(py,minY,maxY
@@ -3491,16 +3491,16 @@ Vector2.zero ch.Position=UDim2.fromOffset(pos.X.Scale*w+pos.X.Offset-ap.X*sw,pos
 local function unpinBody()if not pinned then return end for ch,rest in pinned do
 if ch.Parent==pnl then ch.AnchorPoint=rest[3]ch.Position=rest[2]ch.Size=rest[1]
 end end pinned=nil end local fadedBody={}local function fadeBody(hiding,dur,
-delay)if not _G._nv_frameFade then return end if hiding then table.clear(
+delay)if not _G._pup_frameFade then return end if hiding then table.clear(
 fadedBody)for _,ch in pnl:GetChildren()do if ch:IsA('GuiObject')and ch.Visible
 and not isTitleChrome(ch)then fadedBody[#fadedBody+1]=ch end end end local ti=
 nil if dur>0 then ti=TweenInfo.new(dur,hiding and Enum.EasingStyle.Quad or Enum.
 EasingStyle.Quint,Enum.EasingDirection.Out,0,false,delay or 0)end for _,ch in
-fadedBody do if ch.Parent then pcall(_G._nv_frameFade,ch,hiding and 1 or 0,ti)
+fadedBody do if ch.Parent then pcall(_G._pup_frameFade,ch,hiding and 1 or 0,ti)
 end end if not hiding and not ti then table.clear(fadedBody)end end
 local function settleBody()fadeBody(false,0)unpinBody()end local fadeRest=
 setmetatable({},{__mode='k'})local function findMinFade()for _,ch in pnl:
-GetChildren()do if ch:IsA('GuiObject')and ch:GetAttribute('_nvMinFade')then
+GetChildren()do if ch:IsA('GuiObject')and ch:GetAttribute('_pupMinFade')then
 return ch end end return nil end local function cacheFadeTargets(root)if
 fadeRest[root]then return fadeRest[root]end local entries={}local function add(
 obj,prop)if obj and prop then entries[#entries+1]={obj=obj,prop=prop,rest=obj[
@@ -3514,15 +3514,15 @@ if d.BackgroundTransparency<0.99 then add(d,'BackgroundTransparency')end elseif
 d:IsA('UIStroke')then add(d,'Transparency')end end fadeRest[root]=entries return
 entries end local function setMinFadeChrome(root,hiding)if not root then return
 end local function visit(obj)if obj:IsA('UIStroke')then if hiding then if obj:
-GetAttribute('_nvMinStrokeRest')==nil then obj:SetAttribute('_nvMinStrokeRest',
-obj.Transparency)obj:SetAttribute('_nvMinStrokeEn',obj.Enabled and 1 or 0)end
+GetAttribute('_pupMinStrokeRest')==nil then obj:SetAttribute('_pupMinStrokeRest',
+obj.Transparency)obj:SetAttribute('_pupMinStrokeEn',obj.Enabled and 1 or 0)end
 obj.Transparency=1 obj.Enabled=false else local en=obj:GetAttribute(
-'_nvMinStrokeEn')local rest=obj:GetAttribute('_nvMinStrokeRest')obj.Enabled=en~=
+'_pupMinStrokeEn')local rest=obj:GetAttribute('_pupMinStrokeRest')obj.Enabled=en~=
 0 if typeof(rest)=='number'then obj.Transparency=rest end end elseif obj.Name==
 'BlueCornerGlow'and obj:IsA('GuiObject')then if hiding then if obj:GetAttribute(
-'_nvMinGlowRest')==nil then obj:SetAttribute('_nvMinGlowRest',obj.
+'_pupMinGlowRest')==nil then obj:SetAttribute('_pupMinGlowRest',obj.
 BackgroundTransparency)end obj.BackgroundTransparency=1 obj.Visible=false else
-local rest=obj:GetAttribute('_nvMinGlowRest')obj.Visible=_nvL.currentThemeName~=
+local rest=obj:GetAttribute('_pupMinGlowRest')obj.Visible=_pupL.currentThemeName~=
 'Modern'if typeof(rest)=='number'then obj.BackgroundTransparency=rest else obj.
 BackgroundTransparency=0.78 end end end end visit(root)for _,d in root:
 GetDescendants()do visit(d)end end local function fadeExtra(root,hiding,dur)if
@@ -3540,9 +3540,9 @@ e.obj.Parent then last=tween(e.obj,ti,{[e.prop]=hiding and 1 or e.rest})end end
 if not hiding then task.delay(dur,function()if root and root.Parent then
 setMinFadeChrome(root,false)end end)end return last end local function
 resetExtraLayout(extra)if not extra then return end local gap=tonumber(extra:
-GetAttribute('_nvMinDockGap'))or 0 local h=tonumber(extra:GetAttribute(
-'_nvMinDockH'))or extra.Size.Y.Offset extra.Size=UDim2.new(1,0,0,h)extra.
-Position=UDim2.new(0,0,1,gap)pnl:SetAttribute('_nvDragPadBottom',h+gap)end local
+GetAttribute('_pupMinDockGap'))or 0 local h=tonumber(extra:GetAttribute(
+'_pupMinDockH'))or extra.Size.Y.Offset extra.Size=UDim2.new(1,0,0,h)extra.
+Position=UDim2.new(0,0,1,gap)pnl:SetAttribute('_pupDragPadBottom',h+gap)end local
 closing=false local minimized=false local animating=false local expandW,expandH=
 pnl.Size.X.Offset,pnl.Size.Y.Offset local origClips=pnl.ClipsDescendants
 local function syncExpandFromPanel()if not minimized then expandW=math.max(pnl.
@@ -3551,27 +3551,27 @@ GetPropertyChangedSignal('Size'):Connect(function()if animating or minimized
 then return end syncExpandFromPanel()end)local function panelBg()return pnl:
 FindFirstChild('UtilitySurface')and 1 or 0 end minBtn.MouseButton1Click:Connect(
 function()if closing or animating or not pnl.Parent then return end animating=
-true local tok=(pnl:GetAttribute('_nvMinTok')or 0)+1 pnl:SetAttribute(
-'_nvMinTok',tok)pnl.BackgroundTransparency=panelBg()local extra=findMinFade()
-local function alive()return(pnl:GetAttribute('_nvMinTok')or 0)==tok and pnl.
+true local tok=(pnl:GetAttribute('_pupMinTok')or 0)+1 pnl:SetAttribute(
+'_pupMinTok',tok)pnl.BackgroundTransparency=panelBg()local extra=findMinFade()
+local function alive()return(pnl:GetAttribute('_pupMinTok')or 0)==tok and pnl.
 Parent~=nil end if not minimized then syncExpandFromPanel()pnl:SetAttribute(
-'_nvMinimized',true)pnl:SetAttribute('_nvMinAnim',true)setResizeVisible(false)
+'_pupMinimized',true)pnl:SetAttribute('_pupMinAnim',true)setResizeVisible(false)
 pinBody(expandW,expandH)fadeBody(true,0.22)local shutW,shutH=expandW,HEAD_H
 local fadeDur=0.2 local shutTi=TweenInfo.new(0.4,Enum.EasingStyle.Quint,Enum.
 EasingDirection.InOut)local function beginCollapse()if not alive()then animating
-=false pnl:SetAttribute('_nvMinAnim',nil)return end if extra then if extra:IsA(
+=false pnl:SetAttribute('_pupMinAnim',nil)return end if extra then if extra:IsA(
 'CanvasGroup')then extra.GroupTransparency=1 end setMinFadeChrome(extra,true)
 extra.Visible=false resetExtraLayout(extra)end pnl.ClipsDescendants=true local
 shutPos=posKeepingTop(shutW,shutH)shutPos=clampPosFor(shutW,shutH,shutPos.X.
 Offset,shutPos.Y.Offset)tween(pnl,shutTi,{Size=UDim2.new(0,shutW,0,shutH),
 Position=shutPos})task.delay(0.42,function()if not alive()then animating=false
-pnl:SetAttribute('_nvMinAnim',nil)return end hideBodyForMin(extra)pnl.
+pnl:SetAttribute('_pupMinAnim',nil)return end hideBodyForMin(extra)pnl.
 BackgroundTransparency=panelBg()minimized=true animating=false pnl:SetAttribute(
-'_nvMinAnim',nil)end)end if extra then extra.Visible=true resetExtraLayout(extra
+'_pupMinAnim',nil)end)end if extra then extra.Visible=true resetExtraLayout(extra
 )if extra:IsA('CanvasGroup')then extra.GroupTransparency=0 end local fadeTw=
 fadeExtra(extra,true,fadeDur)if fadeTw then fadeTw.Completed:Connect(
 beginCollapse)else beginCollapse()end else beginCollapse()end else pnl:
-SetAttribute('_nvMinAnim',true)local openW,openH=expandW,expandH local keepPos=
+SetAttribute('_pupMinAnim',true)local openW,openH=expandW,expandH local keepPos=
 posKeepingTop(openW,openH)local finalPos=clampPosFor(openW,openH,keepPos.X.
 Offset,keepPos.Y.Offset)pnl.ClipsDescendants=true pnl.BackgroundTransparency=
 panelBg()pinBody(openW,openH)restoreBodyAfterMin()fadeBody(false,0.36,0.08)if
@@ -3579,8 +3579,8 @@ extra then extra.Visible=false if extra:IsA('CanvasGroup')then extra.
 GroupTransparency=1 end end local openTi=TweenInfo.new(0.44,Enum.EasingStyle.
 Quint,Enum.EasingDirection.Out)local fadeDur=0.32 tween(pnl,openTi,{Size=UDim2.
 new(0,openW,0,openH),Position=finalPos})task.delay(0.45,function()if not alive()
-then animating=false pnl:SetAttribute('_nvMinAnim',nil)return end minimized=
-false pnl:SetAttribute('_nvMinimized',false)pnl:SetAttribute('_nvMinAnim',nil)
+then animating=false pnl:SetAttribute('_pupMinAnim',nil)return end minimized=
+false pnl:SetAttribute('_pupMinimized',false)pnl:SetAttribute('_pupMinAnim',nil)
 pnl.BackgroundTransparency=panelBg()unpinBody()pnl.ClipsDescendants=origClips
 setResizeVisible(true)if extra then resetExtraLayout(extra)extra.Visible=true if
 extra:IsA('CanvasGroup')then extra.GroupTransparency=1 end setMinFadeChrome(
@@ -3590,8 +3590,8 @@ Offset~=py then tween(pnl,TweenInfo.new(0.2,Enum.EasingStyle.Quint,Enum.
 EasingDirection.Out),{Position=c})end task.delay(fadeDur,function()if alive()
 then animating=false end end)if not extra then animating=false end end)end end)
 pnl:GetPropertyChangedSignal('Visible'):Connect(function()if pnl.Visible then
-return end if not(minimized or pnl:GetAttribute('_nvMinimized'))then return end
-animating=false minimized=false pnl:SetAttribute('_nvMinimized',false)pcall(
+return end if not(minimized or pnl:GetAttribute('_pupMinimized'))then return end
+animating=false minimized=false pnl:SetAttribute('_pupMinimized',false)pcall(
 restoreBodyAfterMin)pcall(settleBody)pcall(function()setResizeVisible(true)end)
 pnl.ClipsDescendants=origClips if expandW and expandH then local keep=
 posKeepingTop(expandW,expandH)pnl.Size=UDim2.new(0,expandW,0,expandH)pnl.
@@ -3604,45 +3604,45 @@ Connect(function()if closing then return end tween(closeIcon,TweenInfo.new(0.15)
 ,{ImageTransparency=0})end)closeBtn.MouseLeave:Connect(function()if closing then
 return end tween(closeIcon,TweenInfo.new(0.2),{ImageTransparency=0.35})end)
 local function doClose()if closing or animating then return end closing=true pnl
-:SetAttribute('_nvClosing',true)tween(closeIcon,TweenInfo.new(0),{
+:SetAttribute('_pupClosing',true)tween(closeIcon,TweenInfo.new(0),{
 ImageTransparency=closeIcon.ImageTransparency})tween(minIcon,TweenInfo.new(0),{
 ImageTransparency=minIcon.ImageTransparency})local CLOSE_DUR=0.5 local ti=
 TweenInfo.new(CLOSE_DUR,Enum.EasingStyle.Quint,Enum.EasingDirection.Out)local
 restPos=pnl.Position local restAnchor=pnl.AnchorPoint local panelScale=pnl:
 FindFirstChildOfClass('UIScale')local restScale=panelScale and panelScale.Scale
-or nil local wasMinimized=minimized local tok=(pnl:GetAttribute('_nvCloseTok')or
-0)+1 pnl:SetAttribute('_nvCloseTok',tok)_nvFloatCloseRest[pnl]=restPos pnl:
-SetAttribute('_nvCloseAx',restAnchor.X)pnl:SetAttribute('_nvCloseAy',restAnchor.
+or nil local wasMinimized=minimized local tok=(pnl:GetAttribute('_pupCloseTok')or
+0)+1 pnl:SetAttribute('_pupCloseTok',tok)_pupFloatCloseRest[pnl]=restPos pnl:
+SetAttribute('_pupCloseAx',restAnchor.X)pnl:SetAttribute('_pupCloseAy',restAnchor.
 Y)local sc=(panelScale and panelScale.Scale)or 1 if sc<=0 then sc=1 end local vp
 =viewport()local px=restPos.X.Offset+restPos.X.Scale*vp.X local py=restPos.Y.
 Offset+restPos.Y.Scale*vp.Y local cx=px+(0.5-restAnchor.X)*pnl.Size.X.Offset*sc
 local cy=py+(0.5-restAnchor.Y)*pnl.Size.Y.Offset*sc pnl.AnchorPoint=Vector2.new(
 0.5,0.5)pnl.Position=UDim2.fromOffset(cx,cy)pnl:SetAttribute('NvFade',true)
 tween(pnl,ti,{GroupTransparency=1})tween(pnl,ti,{Position=UDim2.fromOffset(cx,cy
-+14)})task.delay(CLOSE_DUR+0.02,function()if(pnl:GetAttribute('_nvCloseTok')or 0
-)~=tok then closing=false pnl:SetAttribute('_nvClosing',nil)return end if
++14)})task.delay(CLOSE_DUR+0.02,function()if(pnl:GetAttribute('_pupCloseTok')or 0
+)~=tok then closing=false pnl:SetAttribute('_pupClosing',nil)return end if
 onClose then onClose()end if pnl.Parent then pnl.AnchorPoint=restAnchor pnl:
-SetAttribute('_nvCloseAx',nil)pnl:SetAttribute('_nvCloseAy',nil)pnl.Position=
-restPos if _G._nv_frameFade then _G._nv_frameFade(pnl,0)end if panelScale and
+SetAttribute('_pupCloseAx',nil)pnl:SetAttribute('_pupCloseAy',nil)pnl.Position=
+restPos if _G._pup_frameFade then _G._pup_frameFade(pnl,0)end if panelScale and
 restScale then tween(panelScale,TweenInfo.new(0),{Scale=restScale})end local
 glow=pnl:FindFirstChild('DarkGlow')if glow then pcall(function()glow.
-Transparency=_G._nv_glowT(glow,0.45)end)end if wasMinimized then minimized=false
-pnl:SetAttribute('_nvMinimized',false)local openPos=posKeepingTop(expandW,
+Transparency=_G._pup_glowT(glow,0.45)end)end if wasMinimized then minimized=false
+pnl:SetAttribute('_pupMinimized',false)local openPos=posKeepingTop(expandW,
 expandH)openPos=clampPosFor(expandW,expandH,openPos.X.Offset,openPos.Y.Offset)
 pnl.Size=UDim2.new(0,expandW,0,expandH)pnl.Position=openPos pnl.ClipsDescendants
 =origClips setResizeVisible(true)restoreBodyAfterMin()settleBody()local extra=
 findMinFade()if extra then resetExtraLayout(extra)extra.Visible=true if extra:
 IsA('CanvasGroup')then extra.GroupTransparency=0 end fadeExtra(extra,false,0)end
-end end _nvFloatCloseRest[pnl]=nil if closeIcon.Parent then closeIcon.Rotation=0
+end end _pupFloatCloseRest[pnl]=nil if closeIcon.Parent then closeIcon.Rotation=0
 closeIcon.ImageTransparency=0.45 end if minIcon.Parent then minIcon.
-ImageTransparency=0.45 end pnl:SetAttribute('_nvClosing',nil)closing=false end)
+ImageTransparency=0.45 end pnl:SetAttribute('_pupClosing',nil)closing=false end)
 end closeBtn.MouseButton1Click:Connect(function()if closing or animating or not
-pnl.Visible then return end local dock=_G._nv_tabDock if dock then if dock.
+pnl.Visible then return end local dock=_G._pup_tabDock if dock then if dock.
 docked(pnl)then return end if dock.park(pnl,onClose)then dock.armClose(pnl)
-return end dock.settle(pnl)end doClose()end)_G._nv_panelClosers=_G.
-_nv_panelClosers or setmetatable({},{__mode='k'})_G._nv_panelClosers[pnl]=
-doClose _G._nv_panelOnClose=_G._nv_panelOnClose or setmetatable({},{__mode='k'})
-_G._nv_panelOnClose[pnl]=onClose closeBtn.MouseEnter:Connect(function()if
+return end dock.settle(pnl)end doClose()end)_G._pup_panelClosers=_G.
+_pup_panelClosers or setmetatable({},{__mode='k'})_G._pup_panelClosers[pnl]=
+doClose _G._pup_panelOnClose=_G._pup_panelOnClose or setmetatable({},{__mode='k'})
+_G._pup_panelOnClose[pnl]=onClose closeBtn.MouseEnter:Connect(function()if
 closing then return end tween(closeIcon,TweenInfo.new(0.15,Enum.EasingStyle.
 Quint),{ImageTransparency=0})end)closeBtn.MouseLeave:Connect(function()if
 closing then return end tween(closeIcon,TweenInfo.new(0.2,Enum.EasingStyle.Quint
@@ -3652,7 +3652,7 @@ __DARKLUA_BUNDLE_MODULES.O():typeof(__modImpl())local v=__DARKLUA_BUNDLE_MODULES
 return v.c end end
 do
 local function __modImpl()return function(env)local _isMobile=env._isMobile
-local _mv=env._mv local _nvL=env._nvL local createInstance=env.createInstance
+local _mv=env._mv local _pupL=env._pupL local createInstance=env.createInstance
 local getRootPart=env.getRootPart local runService=env.runService local
 userInputService=env.userInputService local function restoreFlyHumanoid(h,root)
 if h then pcall(function()h.PlatformStand=false h.Sit=false h.AutoRotate=true h:
@@ -3668,23 +3668,23 @@ AssemblyLinearVelocity=Vector3.new(0,0,0)root.AssemblyAngularVelocity=Vector3.
 new(0,0,0)end)end pcall(function()local cam=workspace.CurrentCamera if cam then
 cam.CameraType=Enum.CameraType.Custom end end)end local function
 destroyNamedFlyMovers(root)if not root then return end pcall(function()local vel
-=root:FindFirstChild('_nvFlyVel')local gyro=root:FindFirstChild('_nvFlyGyro')if
-vel then vel:Destroy()end if gyro then gyro:Destroy()end end)end _nvL.
+=root:FindFirstChild('_pupFlyVel')local gyro=root:FindFirstChild('_pupFlyGyro')if
+vel then vel:Destroy()end if gyro then gyro:Destroy()end end)end _pupL.
 setFlySpeed=function(v)_mv.iyflyspeed=v if _G._flySlider and _G._flySlider.
 setValue then _G._flySlider.setValue(v)end if _mv._flyControl then if _mv.
 _flyControl.F~=0 then _mv._flyControl.F=v end if _mv._flyControl.B~=0 then _mv.
 _flyControl.B=-v end if _mv._flyControl.L~=0 then _mv._flyControl.L=-v end if
 _mv._flyControl.R~=0 then _mv._flyControl.R=v end if _mv._flyControl.Q~=0 then
 _mv._flyControl.Q=v*2 end if _mv._flyControl.E~=0 then _mv._flyControl.E=-v*2
-end end end _nvL.sFLY=function(vfly)if _isMobile then _nvL.mobilefly(vfly)return
-end local char=_nvL.lp.Character or _nvL.lp.CharacterAdded:Wait()local humanoid=
+end end end _pupL.sFLY=function(vfly)if _isMobile then _pupL.mobilefly(vfly)return
+end local char=_pupL.lp.Character or _pupL.lp.CharacterAdded:Wait()local humanoid=
 char:FindFirstChildOfClass('Humanoid')if not humanoid then repeat task.wait()
 until char:FindFirstChildOfClass('Humanoid')humanoid=char:FindFirstChildOfClass(
 'Humanoid')end if _mv.flyKeyDown or _mv.flyKeyUp then _mv.flyKeyDown:Disconnect(
 )_mv.flyKeyUp:Disconnect()end local T=getRootPart(char)destroyNamedFlyMovers(T)
 local CONTROL={F=0,B=0,L=0,R=0,Q=0,E=0}_mv._flyControl=CONTROL local SPEED=0
 local function FLY()_mv.FLYING=true local BG=createInstance('BodyGyro')local BV=
-createInstance('BodyVelocity')BG.Name='_nvFlyGyro'BV.Name='_nvFlyVel'BG.P=9e4 BG
+createInstance('BodyVelocity')BG.Name='_pupFlyGyro'BV.Name='_pupFlyVel'BG.P=9e4 BG
 .Parent=T BV.Parent=T BG.MaxTorque=Vector3.new(9e9,9e9,9e9)BG.CFrame=T.CFrame BV
 .Velocity=Vector3.new(0,0,0)BV.MaxForce=Vector3.new(9e9,9e9,9e9)local smoothVel=
 Vector3.new(0,0,0)pcall(function()humanoid.Sit=false humanoid.AutoRotate=false
@@ -3693,9 +3693,9 @@ PlatformStand=true end)pcall(function()local cam=workspace.CurrentCamera if cam
 then cam.CameraType=Enum.CameraType.Custom end end)task.spawn(function()repeat
 local dt=task.wait()if not _mv.FLYING then break end local camera=workspace.
 CurrentCamera if not camera or not BV.Parent then break end if not T or not T.
-Parent then T=getRootPart(_nvL.lp.Character)if T then BG.Parent=T BV.Parent=T
-end end if not humanoid or not humanoid.Parent then humanoid=_nvL.lp.Character
-and _nvL.lp.Character:FindFirstChildOfClass('Humanoid')end if not vfly and
+Parent then T=getRootPart(_pupL.lp.Character)if T then BG.Parent=T BV.Parent=T
+end end if not humanoid or not humanoid.Parent then humanoid=_pupL.lp.Character
+and _pupL.lp.Character:FindFirstChildOfClass('Humanoid')end if not vfly and
 humanoid and humanoid.PlatformStand~=true then humanoid.PlatformStand=true end
 local baseSpeed=(vfly and _mv.vehicleflyspeed or _mv.iyflyspeed)local fB=0 local
 lR=0 local qE=0 if not userInputService:GetFocusedTextBox()then if
@@ -3707,7 +3707,7 @@ qE+1 end if userInputService:IsKeyDown(Enum.KeyCode.Q)then qE=qE-1 end end if
 userInputService:IsKeyDown(Enum.KeyCode.Space)then qE=qE+1 end if
 userInputService:IsKeyDown(Enum.KeyCode.LeftControl)or userInputService:
 IsKeyDown(Enum.KeyCode.RightControl)then qE=qE-1 end end local superMode=_G.
-_nvSuperfly and _G._nvSuperfly.enabled local superMouse=superMode and _mv.
+_pupSuperfly and _G._pupSuperfly.enabled local superMouse=superMode and _mv.
 _flyMouseHeld local camCF=camera.CFrame local look=camCF.LookVector local right=
 camCF.RightVector local dir=Vector3.new(0,0,0)if superMouse then dir=dir+look
 end if fB~=0 then dir=dir+look*fB end if lR~=0 then dir=dir+right*lR end if qE~=
@@ -3743,60 +3743,60 @@ function(input,processed)if processed then return end if input.UserInputType==
 Enum.UserInputType.MouseButton1 then _mv._flyMouseHeld=true end end)_mv.
 flyMouseUp=userInputService.InputEnded:Connect(function(input)if input.
 UserInputType==Enum.UserInputType.MouseButton1 then _mv._flyMouseHeld=false end
-end)FLY()end _nvL.NOFLY=function()if _G._nvSuperfly and _G._nvSuperfly.enabled
-then _G._nvSuperfly.enabled=false if _G._nvSuperfly.conn then _G._nvSuperfly.
-conn:Disconnect()_G._nvSuperfly.conn=nil end if _G._nvSuperfly.stopTracks then
-pcall(_G._nvSuperfly.stopTracks)end if _G._flyToggleSet then _G._flyToggleSet(
-false)end end if _isMobile then _nvL.unmobilefly()return end _mv.FLYING=false
+end)FLY()end _pupL.NOFLY=function()if _G._pupSuperfly and _G._pupSuperfly.enabled
+then _G._pupSuperfly.enabled=false if _G._pupSuperfly.conn then _G._pupSuperfly.
+conn:Disconnect()_G._pupSuperfly.conn=nil end if _G._pupSuperfly.stopTracks then
+pcall(_G._pupSuperfly.stopTracks)end if _G._flyToggleSet then _G._flyToggleSet(
+false)end end if _isMobile then _pupL.unmobilefly()return end _mv.FLYING=false
 _mv._flyControl=nil if _mv.flyKeyDown then pcall(function()_mv.flyKeyDown:
 Disconnect()end)_mv.flyKeyDown=nil end if _mv.flyKeyUp then pcall(function()_mv.
 flyKeyUp:Disconnect()end)_mv.flyKeyUp=nil end if _mv.flyMouseDown then _mv.
 flyMouseDown:Disconnect()_mv.flyMouseDown=nil end if _mv.flyMouseUp then _mv.
 flyMouseUp:Disconnect()_mv.flyMouseUp=nil end _mv._flyMouseHeld=false local char
-=_nvL.lp.Character local h=char and char:FindFirstChildOfClass('Humanoid')local
+=_pupL.lp.Character local h=char and char:FindFirstChildOfClass('Humanoid')local
 root=char and getRootPart(char)destroyNamedFlyMovers(root)restoreFlyHumanoid(h,
 root)end do local _mflyVelName=tostring(math.random(100000000,999999999))local
 _mflyGyroName=tostring(math.random(100000000,999999999))local _mfly1,_mfly2,
-_mflyTouch1,_mflyTouch2 _nvL.unmobilefly=function()pcall(function()_mv.FLYING=
-false local root=getRootPart(_nvL.lp.Character)if root and root:FindFirstChild(
+_mflyTouch1,_mflyTouch2 _pupL.unmobilefly=function()pcall(function()_mv.FLYING=
+false local root=getRootPart(_pupL.lp.Character)if root and root:FindFirstChild(
 _mflyVelName)then root:FindFirstChild(_mflyVelName):Destroy()end if root and
 root:FindFirstChild(_mflyGyroName)then root:FindFirstChild(_mflyGyroName):
-Destroy()end local h=_nvL.lp.Character and _nvL.lp.Character:
+Destroy()end local h=_pupL.lp.Character and _pupL.lp.Character:
 FindFirstChildOfClass('Humanoid')restoreFlyHumanoid(h,root)if _mfly1 then _mfly1
 :Disconnect()end if _mfly2 then _mfly2:Disconnect()end if _mflyTouch1 then
 _mflyTouch1:Disconnect()_mflyTouch1=nil end if _mflyTouch2 then _mflyTouch2:
-Disconnect()_mflyTouch2=nil end _mv._flyMouseHeld=false end)end _nvL.mobilefly=
-function(vfly)_nvL.unmobilefly()_mv.FLYING=true local root=getRootPart(_nvL.lp.
+Disconnect()_mflyTouch2=nil end _mv._flyMouseHeld=false end)end _pupL.mobilefly=
+function(vfly)_pupL.unmobilefly()_mv.FLYING=true local root=getRootPart(_pupL.lp.
 Character)local camera=workspace.CurrentCamera local v3inf=Vector3.new(9e9,9e9,
 9e9)local v3zero=Vector3.new(0,0,0)local _v3none=Vector3.new()local bv=
 createInstance('BodyVelocity',{Name=_mflyVelName,Parent=root,MaxForce=v3zero,
 Velocity=v3zero})local bg=createInstance('BodyGyro',{Name=_mflyGyroName,Parent=
-root,MaxTorque=v3inf,P=1000,D=50})local ok,controlModule=pcall(require,_nvL.lp.
+root,MaxTorque=v3inf,P=1000,D=50})local ok,controlModule=pcall(require,_pupL.lp.
 PlayerScripts:WaitForChild('PlayerModule',5):WaitForChild('ControlModule',5))if
 not ok or not controlModule then return end _mv._flyMouseHeld=false _mflyTouch1=
 userInputService.InputBegan:Connect(function(input,processed)if processed then
 return end if input.UserInputType==Enum.UserInputType.Touch then _mv.
 _flyMouseHeld=true end end)_mflyTouch2=userInputService.InputEnded:Connect(
 function(input)if input.UserInputType==Enum.UserInputType.Touch then _mv.
-_flyMouseHeld=false end end)_mfly1=_nvL.lp.CharacterAdded:Connect(function()
-local newRoot=getRootPart(_nvL.lp.Character)local bv2=createInstance(
+_flyMouseHeld=false end end)_mfly1=_pupL.lp.CharacterAdded:Connect(function()
+local newRoot=getRootPart(_pupL.lp.Character)local bv2=createInstance(
 'BodyVelocity',{Name=_mflyVelName,Parent=newRoot,MaxForce=v3zero,Velocity=v3zero
 })local bg2=createInstance('BodyGyro',{Name=_mflyGyroName,Parent=newRoot,
-MaxTorque=v3inf,P=1000,D=50})if not vfly then local h=_nvL.lp.Character and _nvL
+MaxTorque=v3inf,P=1000,D=50})if not vfly then local h=_pupL.lp.Character and _pupL
 .lp.Character:FindFirstChildOfClass('Humanoid')if h then pcall(function()h.Sit=
 false h.AutoRotate=false h:SetStateEnabled(Enum.HumanoidStateType.Jumping,false)
-h.PlatformStand=true end)end end end)if not vfly then local h=_nvL.lp.Character
-and _nvL.lp.Character:FindFirstChildOfClass('Humanoid')if h then pcall(function(
+h.PlatformStand=true end)end end end)if not vfly then local h=_pupL.lp.Character
+and _pupL.lp.Character:FindFirstChildOfClass('Humanoid')if h then pcall(function(
 )h.Sit=false h.AutoRotate=false h:SetStateEnabled(Enum.HumanoidStateType.Jumping
 ,false)h.PlatformStand=true end)end end local mSmooth=Vector3.new(0,0,0)_mfly2=
-runService.RenderStepped:Connect(function(dt)root=getRootPart(_nvL.lp.Character)
+runService.RenderStepped:Connect(function(dt)root=getRootPart(_pupL.lp.Character)
 camera=workspace.CurrentCamera if not root then return end local VH=root:
 FindFirstChild(_mflyVelName)local GH=root:FindFirstChild(_mflyGyroName)local
-humanoid=_nvL.lp.Character:FindFirstChildOfClass('Humanoid')if not(humanoid and
+humanoid=_pupL.lp.Character:FindFirstChildOfClass('Humanoid')if not(humanoid and
 VH and GH)then return end VH.MaxForce=v3inf GH.MaxTorque=v3inf if not vfly and
 humanoid.PlatformStand~=true then humanoid.PlatformStand=true end local spd=(
 vfly and _mv.vehicleflyspeed or _mv.iyflyspeed)*50 local superMode=_G.
-_nvSuperfly and _G._nvSuperfly.enabled local target,moving if superMode then
+_pupSuperfly and _G._pupSuperfly.enabled local target,moving if superMode then
 moving=_mv._flyMouseHeld==true target=moving and(camera.CFrame.LookVector*spd)or
 Vector3.new(0,0,0)else local dir=controlModule:GetMoveVector()target=(camera.
 CFrame.RightVector*(dir.X*spd))-(camera.CFrame.LookVector*(dir.Z*spd))moving=dir
@@ -3809,13 +3809,13 @@ exp(-dt*14))end)end end end end function __DARKLUA_BUNDLE_MODULES.Q():typeof(
 __modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.Q if not v then v={c=
 __modImpl()}__DARKLUA_BUNDLE_MODULES.cache.Q=v end return v.c end end
 do
-local function __modImpl()return function(env)local _nvL=env._nvL local
+local function __modImpl()return function(env)local _pupL=env._pupL local
 createInstance=env.createInstance local getRootPart=env.getRootPart local
-runService=env.runService local sf=_G._nvSuperfly or{enabled=false,conn=nil,
+runService=env.runService local sf=_G._pupSuperfly or{enabled=false,conn=nil,
 state='',hum=nil,animator=nil,anims={},tracks={},currentTrack=nil,sF=0,sS=0,sV=0
 ,lastMoveAt=0,pendingState='idle',pendingAt=0,ids={idle=98353973763565,forward=
 123269449592573,backward=101457848070067,left=123269449592573,right=
-123269449592573,up=102256275785620,down=616108001}}_G._nvSuperfly=sf sf.
+123269449592573,up=102256275785620,down=616108001}}_G._pupSuperfly=sf sf.
 stopTracks=function()if sf.conn then sf.conn:Disconnect()sf.conn=nil end for _,
 tr in sf.tracks do pcall(function()tr:Stop(0.15)end)end sf.tracks={}sf.anims={}
 sf.currentTrack=nil sf.hum=nil sf.animator=nil sf.state=''sf.sF,sf.sS,sf.sV=0,0,
@@ -3850,14 +3850,14 @@ state]if isTrack(cached)then return cached end local id=sf.ids[state]or sf.ids.
 idle local tr=id and loadTrackForId(hum,id)or nil if(not tr)and state~='idle'
 then tr=sf.tracks.idle if not isTrack(tr)then tr=sf.ids.idle and loadTrackForId(
 hum,sf.ids.idle)or nil end end if isTrack(tr)then sf.tracks[state]=tr end return
-isTrack(tr)and tr or nil end _G._nvSuperflyStart=function()sf.enabled=true if sf
+isTrack(tr)and tr or nil end _G._pupSuperflyStart=function()sf.enabled=true if sf
 .conn then sf.conn:Disconnect()sf.conn=nil end sf.conn=runService.RenderStepped:
-Connect(function()if not sf.enabled or not _G._nvMove.FLYING then return end
-local char=_nvL.lp.Character local hum=char and char:FindFirstChildOfClass(
+Connect(function()if not sf.enabled or not _G._pupMove.FLYING then return end
+local char=_pupL.lp.Character local hum=char and char:FindFirstChildOfClass(
 'Humanoid')local root=getRootPart(char)if not hum or not root then return end
 local lv=root.CFrame:VectorToObjectSpace(root.AssemblyLinearVelocity)local vx,vy
 ,vz=lv.X,lv.Y,lv.Z local hspd=math.sqrt(vx*vx+vz*vz)local _tspd=math.sqrt(vx*vx+
-vy*vy+vz*vz)local now=os.clock()local flySpeed=(_G._nvMove and _G._nvMove.
+vy*vy+vz*vz)local now=os.clock()local flySpeed=(_G._pupMove and _G._pupMove.
 iyflyspeed)or 1 local moveThresh=math.max(10,flySpeed*50*0.4)local state='idle'
 if math.abs(vy)>moveThresh and math.abs(vy)>=(hspd*0.9)then state=(vy>0)and'up'
 or'down'elseif hspd>moveThresh then state=(vz>0)and'backward'or'forward'end if
@@ -3873,16 +3873,16 @@ end end function __DARKLUA_BUNDLE_MODULES.R():typeof(__modImpl())local v=
 __DARKLUA_BUNDLE_MODULES.cache.R if not v then v={c=__modImpl()}
 __DARKLUA_BUNDLE_MODULES.cache.R=v end return v.c end end
 do local function
-__modImpl()return function(env)local _nvL=env._nvL local createInstance=env.
+__modImpl()return function(env)local _pupL=env._pupL local createInstance=env.
 createInstance local getRootPart=env.getRootPart local runService=env.runService
-local userInputService=env.userInputService local hf=_G._nvHatFly or{active=
+local userInputService=env.userInputService local hf=_G._pupHatFly or{active=
 false,ctrl={F=0,B=0,L=0,R=0,Q=0,E=0},conns={},vel=Vector3.zero,hatPos=nil,
-srcHats={},flyParts={}}_G._nvHatFly=hf local function _disconnectAll()for i=#hf.
+srcHats={},flyParts={}}_G._pupHatFly=hf local function _disconnectAll()for i=#hf.
 conns,1,-1 do local c=hf.conns[i]pcall(function()c:Disconnect()end)hf.conns[i]=
 nil end end local function _hatHandles(char)local out={}if not char then return
 out end for _,v in char:GetChildren()do if v:IsA('Accessory')then local h=v:
 FindFirstChild('Handle')if h and h:IsA('BasePart')then out[#out+1]=h end end end
-return out end _nvL.StopHatFly=function()if not hf.active and not hf.baseplate
+return out end _pupL.StopHatFly=function()if not hf.active and not hf.baseplate
 and not hf.flyHat then return end hf.active=false _disconnectAll()for _,fp in hf
 .flyParts or{}do if fp and fp.part and fp.part.Parent then pcall(function()fp.
 part:Destroy()end)end end if hf.baseplate and hf.baseplate.Parent then pcall(
@@ -3896,8 +3896,8 @@ function()hf.hum.PlatformStand=false end)end pcall(function()local cam=workspace
 end if cam and hf.savedCamSubject then cam.CameraSubject=hf.savedCamSubject end
 end)hf.ctrl={F=0,B=0,L=0,R=0,Q=0,E=0}hf.vel=Vector3.zero hf.hatPos=nil hf.
 srcHats={}hf.flyParts={}hf.root,hf.hum,hf.flyHat,hf.baseplate,hf.savedCF,hf.
-savedCamType,hf.savedCamSubject=nil,nil,nil,nil,nil,nil,nil end _nvL.StartHatFly
-=function()_nvL.StopHatFly()local char=_nvL.lp.Character or _nvL.lp.
+savedCamType,hf.savedCamSubject=nil,nil,nil,nil,nil,nil,nil end _pupL.StartHatFly
+=function()_pupL.StopHatFly()local char=_pupL.lp.Character or _pupL.lp.
 CharacterAdded:Wait()local hum=char and char:FindFirstChildOfClass('Humanoid')
 local root=getRootPart(char)local srcHats=_hatHandles(char)if not hum or not
 root then return false,'Character not ready'end if#srcHats==0 then return false,
@@ -3935,8 +3935,8 @@ userInputService.InputEnded:Connect(function(input)local kc=input.KeyCode if kc
 ==Enum.KeyCode.W then hf.ctrl.F=0 elseif kc==Enum.KeyCode.S then hf.ctrl.B=0
 elseif kc==Enum.KeyCode.A then hf.ctrl.L=0 elseif kc==Enum.KeyCode.D then hf.
 ctrl.R=0 elseif kc==Enum.KeyCode.E then hf.ctrl.Q=0 elseif kc==Enum.KeyCode.Q
-then hf.ctrl.E=0 end end)hf.conns[#hf.conns+1]=_nvL.lp.CharacterAdded:Connect(
-function()_nvL.StopHatFly()end)hf.conns[#hf.conns+1]=runService.Heartbeat:
+then hf.ctrl.E=0 end end)hf.conns[#hf.conns+1]=_pupL.lp.CharacterAdded:Connect(
+function()_pupL.StopHatFly()end)hf.conns[#hf.conns+1]=runService.Heartbeat:
 Connect(function(dt)if not hf.active or not hf.flyHat or not hf.flyHat.Parent
 then return end local cam=workspace.CurrentCamera if cam and cam.CameraSubject~=
 hf.flyHat then pcall(function()cam.CameraType=Enum.CameraType.Custom cam.
@@ -3950,7 +3950,7 @@ look.Z)if lookH.Magnitude>0.001 then lookH=lookH.Unit else lookH=Vector3.new(0,0
 ,-1)end local rightH=Vector3.new(right.X,0,right.Z)if rightH.Magnitude>0.001
 then rightH=rightH.Unit else rightH=Vector3.new(1,0,0)end local desired=(lookH*f
 )+(rightH*s)+Vector3.new(0,v,0)if desired.Magnitude>0 then desired=desired.Unit*
-(math.max(_G._nvMove.iyflyspeed,0.5)*85)else desired=Vector3.zero end if v==0
+(math.max(_G._pupMove.iyflyspeed,0.5)*85)else desired=Vector3.zero end if v==0
 then desired=Vector3.new(desired.X,0,desired.Z)end local alpha=desired.Magnitude
 >0 and 0.26 or 0.08 hf.vel=hf.vel+(desired-hf.vel)*alpha if v==0 then hf.vel=
 Vector3.new(hf.vel.X,0,hf.vel.Z)end hf.hatPos=hf.hatPos+hf.vel*math.max(dt or
@@ -3975,8 +3975,8 @@ return Vector2.new(touchInput.Position.X,touchInput.Position.Y)end return
 userInputService:GetMouseLocation()end local function stopDrag()if not dragging
 then return end dragging=false touchInput=nil if dragConn then dragConn:
 Disconnect()dragConn=nil end if endConn then endConn:Disconnect()endConn=nil end
-if focusConn then focusConn:Disconnect()focusConn=nil end if _cs._nvDragOwner==
-pnl then _cs._nvDragOwner=nil end if onDragEnd then pcall(onDragEnd)end end
+if focusConn then focusConn:Disconnect()focusConn=nil end if _cs._pupDragOwner==
+pnl then _cs._pupDragOwner=nil end if onDragEnd then pcall(onDragEnd)end end
 local function onChrome(pos)local m=pos or userInputService:GetMouseLocation()
 local inset=game:GetService('GuiService'):GetGuiInset()local function covers(gui
 ,x,y)if not(gui and gui.Visible)then return false end local p,s=gui.
@@ -3986,7 +3986,7 @@ FindFirstChild('MinimizeBtn')return covers(closeBtn,m.X,m.Y)or covers(closeBtn,m
 .X-inset.X,m.Y-inset.Y)or covers(closeBtn,m.X+inset.X,m.Y+inset.Y)or covers(
 minBtn,m.X,m.Y)or covers(minBtn,m.X-inset.X,m.Y-inset.Y)or covers(minBtn,m.X+
 inset.X,m.Y+inset.Y)end local function updateDrag()if pnl:GetAttribute(
-'_nvClosing')or pnl:GetAttribute('_nvMinAnim')then stopDrag()return end if not
+'_pupClosing')or pnl:GetAttribute('_pupMinAnim')then stopDrag()return end if not
 dragging or not pnl.Parent then return end local d=pointerPos()-dragStartM local
 vp,ps=dragVp,dragSize local curPxX=dragStartPos.X.Offset+dragStartPos.X.Scale*vp
 .X local curPxY=dragStartPos.Y.Offset+dragStartPos.Y.Scale*vp.Y local anchorOffX
@@ -3995,8 +3995,8 @@ anchorOffX,vp.X-8-ps.X+anchorOffX local minY,maxY=dragTop+anchorOffY,vp.Y-8-ps.Y
 -dragPadBottom+anchorOffY local newX=minX>maxX and minX or math.clamp(curPxX+d.X
 ,minX,maxX)local newY=minY>maxY and minY or math.clamp(curPxY+d.Y,minY,maxY)
 goalPos=Vector2.new(newX,newY)if glideConn then return end glideConn=runService.
-RenderStepped:Connect(function(dt)if pnl:GetAttribute('_nvClosing')or pnl:
-GetAttribute('_nvMinAnim')then glideConn:Disconnect()glideConn=nil stopDrag()
+RenderStepped:Connect(function(dt)if pnl:GetAttribute('_pupClosing')or pnl:
+GetAttribute('_pupMinAnim')then glideConn:Disconnect()glideConn=nil stopDrag()
 return end if not pnl.Parent or not goalPos then glideConn:Disconnect()glideConn
 =nil return end local p,vp=pnl.Position,dragVp local x=p.X.Offset+p.X.Scale*vp.X
 local y=p.Y.Offset+p.Y.Scale*vp.Y local a=1-math.exp(-dt*22)x,y=x+(goalPos.X-x)*
@@ -4006,12 +4006,12 @@ nil end local newPos=UDim2.new(0,x,0,y)pnl.Position=newPos if onMove then
 onMove(newPos)end end)end local function beginDrag(startM,startPos)local cam=
 workspace.CurrentCamera dragVp=cam and cam.ViewportSize or Vector2.new(1280,720)
 dragStartM=startM dragStartPos=startPos dragSize=pnl.AbsoluteSize dragAnchor=pnl
-.AnchorPoint local pad=tonumber(pnl:GetAttribute('_nvDragPadBottom'))or 0 local
+.AnchorPoint local pad=tonumber(pnl:GetAttribute('_pupDragPadBottom'))or 0 local
 us=pnl:FindFirstChildOfClass('UIScale')dragPadBottom=pad*((us and us.Scale)or 1)
 dragTop=8 local host=pnl.Parent if host and host:IsA('ScreenGui')and host.
 IgnoreGuiInset then local ok,inset=pcall(function()return game:GetService(
 'GuiService'):GetGuiInset()end)if ok and typeof(inset)=='Vector2'then dragTop=
-math.max(8,inset.Y)end end dragging=true _cs._nvDragOwner=pnl if onDragStart
+math.max(8,inset.Y)end end dragging=true _cs._pupDragOwner=pnl if onDragStart
 then pcall(onDragStart)end dragConn=userInputService.InputChanged:Connect(
 function(changed)if not dragging then return end if changed.UserInputType==Enum.
 UserInputType.MouseMovement or changed.UserInputType==Enum.UserInputType.Touch
@@ -4019,10 +4019,10 @@ or changed==touchInput then updateDrag()end end)endConn=userInputService.
 InputEnded:Connect(function(ended)if ended==touchInput or ended.UserInputType==
 Enum.UserInputType.MouseButton1 then stopDrag()end end)focusConn=
 userInputService.WindowFocusReleased:Connect(stopDrag)end bar.InputBegan:
-Connect(function(i)if pnl:GetAttribute('_nvClosing')or pnl:GetAttribute(
-'_nvMinAnim')or onChrome(i.UserInputType==Enum.UserInputType.Touch and Vector2.
+Connect(function(i)if pnl:GetAttribute('_pupClosing')or pnl:GetAttribute(
+'_pupMinAnim')or onChrome(i.UserInputType==Enum.UserInputType.Touch and Vector2.
 new(i.Position.X,i.Position.Y)or nil)then return end if dragging or(_cs.
-_nvDragOwner~=nil and _cs._nvDragOwner~=pnl)then return end if i.UserInputType==
+_pupDragOwner~=nil and _cs._pupDragOwner~=pnl)then return end if i.UserInputType==
 Enum.UserInputType.MouseButton1 then touchInput=nil beginDrag(userInputService:
 GetMouseLocation(),pnl.Position)elseif i.UserInputType==Enum.UserInputType.Touch
 then touchInput=i beginDrag(Vector2.new(i.Position.X,i.Position.Y),pnl.Position)
@@ -4064,7 +4064,7 @@ local function isR6(char)return char~=nil and char:FindFirstChild('UpperTorso')
 local g=GROUPS[id]local out={}if not(g and char)then return out end for _,n in
 isR6(char)and g.r6 or g.r15 do local p=char:FindFirstChild(n)if p and p:IsA(
 'BasePart')then out[#out+1]=p end end return out end local function busy(name)
-local f=_G._nv_reanimLiveBusy return type(f)=='function'and f(name)==true end
+local f=_G._pup_reanimLiveBusy return type(f)=='function'and f(name)==true end
 function T.joint(body,name)if T.body~=body then T.body,T.joints,T.acMap=body,{},
 nil end local hit=T.joints[name]if hit==false then return nil end if hit and hit
 .j.Parent then return hit end hit=nil local m=findMotor(body,name)if m and m.
@@ -4741,10 +4741,10 @@ function __DARKLUA_BUNDLE_MODULES.ah():typeof(__modImpl())local v=
 __DARKLUA_BUNDLE_MODULES.cache.ah if not v then v={c=__modImpl()}
 __DARKLUA_BUNDLE_MODULES.cache.ah=v end return v.c end end
 do local function
-__modImpl()return function(env)local _nvAny=env._nvAny local _nvL=env._nvL local
+__modImpl()return function(env)local _pupAny=env._pupAny local _pupL=env._pupL local
 _safeLoadstring=env._safeLoadstring local createInstance=env.createInstance
-local prev=_G._nv_reanimRunning if type(prev)=='table'and type(prev.reanimate)==
-'function'then pcall(prev.reanimate,false)end _G._nv_reanimRunning=nil local
+local prev=_G._pup_reanimRunning if type(prev)=='table'and type(prev.reanimate)==
+'function'then pcall(prev.reanimate,false)end _G._pup_reanimRunning=nil local
 stalkie={services={players=game:GetService('Players'),workspace=game:GetService(
 'Workspace'),replicated=game:GetService('ReplicatedStorage'),run_service=game:
 GetService('RunService'),user_input_service=game:GetService('UserInputService'),
@@ -5001,12 +5001,12 @@ cloned_char:FindFirstChild(p.Name)if p:IsA('BasePart')and clone_part and not
 skip[p]and not reachSkip[p]and not freeSkip[p]then p.CFrame=clone_part.CFrame p.
 Velocity=Vector3.new()end end if stalkie.pairStep then pcall(stalkie.pairStep,
 real_char,cloned_char,function(p)return skip[p]or reachSkip[p]or freeSkip[p]end)
-end local poles=stalkie.pole.list local rroot=_nvAny(poles)and real_hrp and
+end local poles=stalkie.pole.list local rroot=_pupAny(poles)and real_hrp and
 real_hrp.Parent and real_hrp.AssemblyRootPart for _,entry in poles do local base
 =entry.base for _,it in base and entry.items or{}do local part=it.part if part.
 Parent and part.AssemblyRootPart~=rroot then part.CFrame=base*it.offset part.
 AssemblyLinearVelocity=Vector3.zero part.AssemblyAngularVelocity=Vector3.zero
-end end end if _nvAny(stalkie.reach.arms)and stalkie.reach.step then stalkie.
+end end end if _pupAny(stalkie.reach.arms)and stalkie.reach.step then stalkie.
 reach.step(false)end end if real_humanoid and real_humanoid.Parent and
 real_humanoid.Health<real_humanoid.MaxHealth then real_humanoid.Health=
 real_humanoid.MaxHealth end if cloned_humanoid and cloned_humanoid.Parent and
@@ -5028,7 +5028,7 @@ noclip_real=noclipWatch(real_char)stalkie.connections.noclip_clone=noclipWatch(
 cloned_char)stalkie.connections.noclip=stalkie.services.run_service.Stepped:
 Connect(noclipStep)if remote then pcall(fire_remote,remote,is_local_event,
 unpack(args or{}))else attachPuppet(real_char,cloned_char)end stalkie.flags.
-reanimated=true _G._nv_reanimRunning=API else if not stalkie.flags.reanimated
+reanimated=true _G._pup_reanimRunning=API else if not stalkie.flags.reanimated
 then for key,conn in stalkie.connections do if conn and type(conn)=='table'and
 type(conn.Disconnect)=='function'then pcall(conn.Disconnect,conn)stalkie.
 connections[key]=nil end end return end if API.trick_clear then pcall(API.
@@ -5069,8 +5069,8 @@ end end end stalkie.real_chars[player]=nil --[[PuppyAdmin patch: give the real b
 pcall(sethiddenproperty,stalkie.services.workspace,
 'PlayerCharacterDestroyBehavior',stalkie.destroyBehavior)stalkie.destroyBehavior
 =nil end if stalkie.callbacks.on_deactivate then pcall(stalkie.callbacks.
-on_deactivate)end stalkie.flags.reanimated=false if _G._nv_reanimRunning==API
-then _G._nv_reanimRunning=nil end end return end API.play_animation=function(url
+on_deactivate)end stalkie.flags.reanimated=false if _G._pup_reanimRunning==API
+then _G._pup_reanimRunning=nil end end return end API.play_animation=function(url
 ,speed)if not stalkie.flags.reanimated then return
 'Cannot play animation, not reanimated.'end local player=get_local_player()if
 typeof(player)=='string'then return player end local cc=stalkie.animation.body
@@ -5081,7 +5081,7 @@ stop_animation()return end local anim=stalkie.animation anim.load_id=(anim.
 load_id or 0)+1 local loadId=anim.load_id local keyframe_data,resolveErr=
 resolveAnimData(url)if loadId~=anim.load_id then return end if not keyframe_data
 then return resolveErr or'Animation Error: Failed to load.'end local keyframes=
-keyframe_data[_nvAny(keyframe_data)]if not keyframes or#keyframes==0 then return
+keyframe_data[_pupAny(keyframe_data)]if not keyframes or#keyframes==0 then return
 'No keyframes array found for animation URL: '..url end local blendFrom,
 blendCarried,blendSrc if API.blend_capture then blendFrom,blendCarried,blendSrc=
 API.blend_capture()end API.stop_animation(blendFrom~=nil and next(blendFrom)~=
@@ -5093,8 +5093,8 @@ Enabled=false end anim.state.speed=tonumber(speed)or 1 anim.state.dir=anim.state
 .dir or 1 anim.state.keyframes=keyframes anim.state.is_playing=true anim.state.
 current_url=url anim.state.total_duration=keyframes[#keyframes].Time if anim.
 state.total_duration<=0 then API.stop_animation()return end anim.state.
-elapsed_time=0 local hasMotor6D_pa=_nvAny(anim.joints)~=nil if not hasMotor6D_pa
-then anim.ac_joint_map=buildACJointMap(cc)if not(anim.ac_joint_map and _nvAny(
+elapsed_time=0 local hasMotor6D_pa=_pupAny(anim.joints)~=nil if not hasMotor6D_pa
+then anim.ac_joint_map=buildACJointMap(cc)if not(anim.ac_joint_map and _pupAny(
 anim.ac_joint_map))then anim.ac_joint_map=nil end end local blend=API.blend if
 blend then local st=anim.state blend.start(blendFrom,blendCarried,blendSrc)blend
 .source={kfs=keyframes,total=st.total_duration,at=function()return st.
@@ -5184,7 +5184,7 @@ local function poleRelayout(entry,height)local list,h=poleLayout(entry.parts,
 height)local byPart={}for _,it in list do byPart[it.part]=it.offset end for _,it
 in entry.items do if byPart[it.part]then it.offset=byPart[it.part]end end entry.
 height=h end local function poleRelease(limb)local pole=stalkie.pole local entry
-=pole.list[limb]if not entry then return end pole.list[limb]=nil if _nvAny(entry
+=pole.list[limb]if not entry then return end pole.list[limb]=nil if _pupAny(entry
 .collide)then local player=get_local_player()local cc=typeof(player)~='string'
 and stalkie.clones[player]or nil local rcHome=typeof(player)~='string'and
 stalkie.real_chars[player]or nil local anchor=rcHome and rcHome:FindFirstChild(
@@ -5199,7 +5199,7 @@ entry.enabled do if inst.Parent then pcall(function()inst.Enabled=was end)end
 end for part,was in entry.collide do if part.Parent then pcall(function()part.
 CanCollide=was end)end pole.skip[part]=nil end for motor,c0 in entry.c0 do if
 motor.Parent then local rest=stalkie.animation.original_motor_c0s[motor]or c0
-pcall(function()motor.C0=rest end)end end if not _nvAny(pole.list)and pole.
+pcall(function()motor.C0=rest end)end end if not _pupAny(pole.list)and pole.
 render then pcall(function()pole.render:Disconnect()end)pole.render=nil end end
 local function poleReleaseAll()local names={}for limb in stalkie.pole.list do
 names[#names+1]=limb end for _,limb in names do poleRelease(limb)end end
@@ -5258,11 +5258,11 @@ entry.height then poleRelayout(entry,height)end entry.base=cf return true,
 stalkie.puppet.active and'local'or'shared',entry.height end API.pole_clear=
 function(setName)if setName then poleRelease(setName)else poleReleaseAll()end
 end API.pole_active=function(setName)if setName then return stalkie.pole.list[
-setName]~=nil end return _nvAny(stalkie.pole.list)~=nil end API.pole_height=
+setName]~=nil end return _pupAny(stalkie.pole.list)~=nil end API.pole_height=
 function(setName)local entry=setName and stalkie.pole.list[setName]or select(2,
-_nvAny(stalkie.pole.list))return entry and entry.height or nil end API.
+_pupAny(stalkie.pole.list))return entry and entry.height or nil end API.
 pole_stretchable=function(setName)local entry=setName and stalkie.pole.list[
-setName]or select(2,_nvAny(stalkie.pole.list))return entry~=nil and#entry.parts>
+setName]or select(2,_pupAny(stalkie.pole.list))return entry~=nil and#entry.parts>
 1 end API.pole_mode=function()if not stalkie.flags.reanimated then return nil
 end return stalkie.puppet.active and'local'or'shared'end local REACH_PARTS={left
 ={'LeftUpperArm','LeftLowerArm','LeftHand'},right={'RightUpperArm',
@@ -5293,7 +5293,7 @@ reach=stalkie.reach local arm=reach.arms[side]if not arm then return end reach.
 arms[side]=nil for part,was in arm.collide do if part.Parent then pcall(function
 ()part.CanCollide=was end)end reach.skip[part]=nil end for motor,c0 in arm.c0 do
 if motor.Parent then local rest=stalkie.animation.original_motor_c0s[motor]or c0
-pcall(function()motor.C0=rest end)end end if not _nvAny(reach.arms)and reach.
+pcall(function()motor.C0=rest end)end end if not _pupAny(reach.arms)and reach.
 render then pcall(function()reach.render:Disconnect()end)reach.render=nil end
 end stalkie.reach.step=function(puppet)local reach=stalkie.reach local now=os.
 clock()local dt=math.min(now-(reach.last or now),0.1)reach.last=now local player
@@ -5369,20 +5369,20 @@ stalkie=stalkie})__DARKLUA_BUNDLE_MODULES.ag()({API=API})
 __DARKLUA_BUNDLE_MODULES.ah()({API=API,stalkie=stalkie})_G.loadReanimAPI=
 function(cb)if _G._reanimLoaded then if cb then cb()end return end local ok,
 result=pcall(function()return API end)if ok and result and result.reanimate then
-_G._reanimAPI=result _G._reanimLoaded=true if cb then cb()end else _nvL.notify(
+_G._reanimAPI=result _G._reanimLoaded=true if cb then cb()end else _pupL.notify(
 'Reanim','Failed to init integral Reanimation API')end end end end function
 __DARKLUA_BUNDLE_MODULES.ai():typeof(__modImpl())local v=
 __DARKLUA_BUNDLE_MODULES.cache.ai if not v then v={c=__modImpl()}
 __DARKLUA_BUNDLE_MODULES.cache.ai=v end return v.c end end
 do local function
-__modImpl()return function(env)local C=env.C local _cs=env._cs local _nvAny=env.
-_nvAny local _nvL=env._nvL local _nvMakeSliderSwitch=env._nvMakeSliderSwitch
-local _nv_accentColorSequence=env._nv_accentColorSequence local _safeLoadstring=
+__modImpl()return function(env)local C=env.C local _cs=env._cs local _pupAny=env.
+_pupAny local _pupL=env._pupL local _pupMakeSliderSwitch=env._pupMakeSliderSwitch
+local _pup_accentColorSequence=env._pup_accentColorSequence local _safeLoadstring=
 env._safeLoadstring local createInstance=env.createInstance local font=env.font
 local makeFloatingPanel=env.makeFloatingPanel local makePanelTitleBar=env.
 makePanelTitleBar local runService=env.runService local sfx=env.sfx local tween=
 env.tween local tweenService=env.tweenService local userInputService=env.
-userInputService local _RS={}_G._nv_reanimState=_RS local function _setup()_G._reanimPanel=
+userInputService local _RS={}_G._pup_reanimState=_RS local function _setup()_G._reanimPanel=
 makeFloatingPanel(360,460,0.5,0.35)_G._reanimPanel.Name='ReanimPanel'_G.
 _reanimPanel:SetAttribute('UtilityTitleHeight',44)local reanimBar=
 makePanelTitleBar(_G._reanimPanel,'Reanimation',function()_G._reanimPanel.
@@ -5414,18 +5414,18 @@ BackgroundTransparency=0.45})end)_RS.reanimToggleBtn.MouseLeave:Connect(function
 ()tween(_RS.reanimToggleBtn,TweenInfo.new(0.22,Enum.EasingStyle.Quint),{
 BackgroundTransparency=0.6})end)_RS.toggleReanim=function()if not _G._reanimAPI
 then if _G.loadReanimAPI then pcall(_G.loadReanimAPI,nil)end if not _G.
-_reanimAPI then _nvL.notify('Reanim','API not loaded yet')return end end local
+_reanimAPI then _pupL.notify('Reanim','API not loaded yet')return end end local
 now=tick()local remaining=3-(now-(_RS.reanimLastUsed or 0))if remaining>0 then
-_nvL.notify('Reanim',string.format('Wait %.1fs',remaining))return end _RS.
+_pupL.notify('Reanim',string.format('Wait %.1fs',remaining))return end _RS.
 reanimLastUsed=now _RS.reanimActive=not _RS.reanimActive if _RS.reanimActive
-then local char=_nvL.lp and _nvL.lp.Character local hum=char and char:
+then local char=_pupL.lp and _pupL.lp.Character local hum=char and char:
 FindFirstChildOfClass('Humanoid')if hum and hum.RigType==Enum.HumanoidRigType.R6
-then _nvL.notify('Reanim','Switch to R15 for best results')end pcall(function()
+then _pupL.notify('Reanim','Switch to R15 for best results')end pcall(function()
 _G._reanimAPI.reanimate(true)end)if _RS.applyTrickPrefs then _RS.
 applyTrickPrefs()end _RS.reanimToggleBtn.Text='Stop Reanim'_RS.reanimToggleBtn.
 BackgroundColor3=C.CARD _RS.reanimStatusLbl.Text='Status: Active'if _RS.
 reanimStatusDot then tween(_RS.reanimStatusDot,TweenInfo.new(0.2),{
-BackgroundColor3=Color3.fromRGB(80,210,100)})end _nvL.notify('Reanim',
+BackgroundColor3=Color3.fromRGB(80,210,100)})end _pupL.notify('Reanim',
 'Reanimated')_RS.manualOverride=false if _RS.startStateLoop then _RS.
 startStateLoop()end else _RS.syncOn=false _RS.syncPaired,_RS.syncPairLate=false,
 false _RS.reanimGeneration=(_RS.reanimGeneration or 0)+1 pcall(function()if _RS.
@@ -5449,7 +5449,7 @@ toggleRecording()end end)_RS.manualOverride=false if _RS.stopStateLoop then _RS.
 stopStateLoop()end _RS.reanimToggleBtn.Text='Reanimate'_RS.reanimToggleBtn.
 BackgroundColor3=C.CARD _RS.reanimStatusLbl.Text='Status: Idle'_RS.
 reanimCurrentName=nil if _RS.reanimItems then for _,it in _RS.reanimItems do if
-it.nameLbl then it.nameLbl.TextColor3=C.TEXT end end end _nvL.notify('Reanim',
+it.nameLbl then it.nameLbl.TextColor3=C.TEXT end end end _pupL.notify('Reanim',
 'Stopped')end end _RS.reanimToggleBtn.MouseButton1Click:Connect(function()_RS.
 toggleReanim()end)do local hdrDiv=createInstance('Frame',{Parent=_G._reanimPanel
 ,BackgroundColor3=C.DIV,BorderSizePixel=0,Position=UDim2.new(0,16,0,STATUS_Y+32)
@@ -5482,7 +5482,7 @@ FillDirection=Enum.FillDirection.Horizontal,HorizontalAlignment=Enum.
 HorizontalAlignment.Center,VerticalAlignment=Enum.VerticalAlignment.Center,
 Padding=UDim.new(0,4)})local img=createInstance('ImageLabel',{Parent=row,
 BackgroundTransparency=1,Size=UDim2.new(0,0,0,0),Visible=false,ImageColor3=C.DIM
-,ScaleType=Enum.ScaleType.Fit,ZIndex=157})_G._nv_setIcon(img,ICONS_MAP[label]or
+,ScaleType=Enum.ScaleType.Fit,ZIndex=157})_G._pup_setIcon(img,ICONS_MAP[label]or
 '')local lbl=createInstance('TextLabel',{Parent=row,BackgroundTransparency=1,
 Size=UDim2.new(0,LABEL_W[label]or 44,1,0),Text=label,TextColor3=C.TEXT,
 TextTransparency=0,TextSize=12,Font=Enum.Font.GothamBold,TextXAlignment=Enum.
@@ -5496,8 +5496,8 @@ _RS.tabBtns={_RS.tabGlobalBtn,_RS.tabCustomBtn,_RS.tabFavsBtn,_RS.tabStatesBtn,
 _RS.tabPlayBtn,_RS.tabRecordBtn,_RS.tabLiveBtn}local INIT_W=1/7 for i,btn in _RS
 .tabBtns do btn.Position=UDim2.new(INIT_W*(i-1),0,0,0)btn.Size=UDim2.new(INIT_W,
 0,1,0)end end _RS.tabGlobalBtn.MouseButton1Click:Connect(function()_RS.setTab(
-'global')end)_RS.tabCustomBtn.MouseButton1Click:Connect(function()if _nvL.
-reloadCustom then _nvL.reloadCustom()end _RS.setTab('custom')end)_RS.tabFavsBtn.
+'global')end)_RS.tabCustomBtn.MouseButton1Click:Connect(function()if _pupL.
+reloadCustom then _pupL.reloadCustom()end _RS.setTab('custom')end)_RS.tabFavsBtn.
 MouseButton1Click:Connect(function()_RS.setTab('favs')end)_RS.tabStatesBtn.
 MouseButton1Click:Connect(function()_RS.setTab('states')end)_RS.tabPlayBtn.
 MouseButton1Click:Connect(function()_RS.setTab('play')end)_RS.tabRecordBtn.
@@ -5533,7 +5533,7 @@ statesBar=createInstance('Frame',{Parent=_G._reanimPanel,BackgroundColor3=C.CARD
 ,BackgroundTransparency=0.6,BorderSizePixel=0,Position=UDim2.new(0,16,0,STATES_Y
 ),Size=UDim2.new(1,-32,0,TAB_H),ZIndex=152,Visible=false})createInstance(
 'UICorner',{Parent=statesBar,CornerRadius=UDim.new(0,10)})if _G.
-_nv_addBlendedShine then pcall(_G._nv_addBlendedShine,statesBar,10,153)end local
+_pup_addBlendedShine then pcall(_G._pup_addBlendedShine,statesBar,10,153)end local
 statesBarStroke=createInstance('UIStroke',{Parent=statesBar,Color=C.DIV,
 Thickness=1,Transparency=0.55})local statesPill=createInstance('Frame',{Parent=
 statesBar,BackgroundColor3=C.CARD,BackgroundTransparency=0.6,BorderSizePixel=0,
@@ -5551,7 +5551,7 @@ STATES_Y+TAB_H+8 local subStatesBar=createInstance('Frame',{Parent=_G.
 _reanimPanel,BackgroundColor3=C.CARD,BackgroundTransparency=0.6,BorderSizePixel=
 0,Position=UDim2.new(0,16,0,SUBSTATES_Y),Size=UDim2.new(1,-32,0,TAB_H),ZIndex=
 152,Visible=false})createInstance('UICorner',{Parent=subStatesBar,CornerRadius=
-UDim.new(0,10)})if _G._nv_addBlendedShine then pcall(_G._nv_addBlendedShine,
+UDim.new(0,10)})if _G._pup_addBlendedShine then pcall(_G._pup_addBlendedShine,
 subStatesBar,10,153)end local subStatesBarStroke=createInstance('UIStroke',{
 Parent=subStatesBar,Color=C.DIV,Thickness=1,Transparency=0.55})local
 subStatesPill=createInstance('Frame',{Parent=subStatesBar,BackgroundColor3=C.
@@ -5623,7 +5623,7 @@ BackgroundTransparency=0.6,BorderSizePixel=0,Position=UDim2.new(0,16,0,0),Size=
 UDim2.new(1,-32,0,28),ZIndex=152,Visible=false})createInstance('UICorner',{
 Parent=statesSearchCard,CornerRadius=UDim.new(0,10)})local ssStroke=
 createInstance('UIStroke',{Parent=statesSearchCard,Color=C.DIV,Thickness=1,
-Transparency=0.5})if _G._nv_addBlendedShine then pcall(_G._nv_addBlendedShine,
+Transparency=0.5})if _G._pup_addBlendedShine then pcall(_G._pup_addBlendedShine,
 statesSearchCard,10,153)end local statesSearchBox=createInstance('TextBox',{
 Parent=statesSearchCard,BackgroundTransparency=1,Position=UDim2.new(0,10,0,0),
 Size=UDim2.new(1,-10,1,0),Font=Enum.Font.GothamSemibold,TextSize=11,TextColor3=C
@@ -5683,7 +5683,7 @@ animTime()if not pos then return end if lc then lc.set(t)elseif _G._reanimAPI.
 set_animation_time then pcall(_G._reanimAPI.set_animation_time,t)end end _RS.
 animHold=function(on)_RS.reanimHold=on and true or false if _G._reanimAPI and _G
 ._reanimAPI.set_animation_hold then pcall(_G._reanimAPI.set_animation_hold,_RS.
-reanimHold)end end _G._nv_reanimIsland={now=function()local key=_RS.
+reanimHold)end end _G._pup_reanimIsland={now=function()local key=_RS.
 reanimCurrentName if not key or not _RS.manualOverride or _RS.liveActive then
 return nil end local pos,len=_RS.animTime()return key,(_RS.titleOf and _RS.
 titleOf(key))or key,pos,len end,paused=function()return _RS.reanimPaused==true
@@ -5729,16 +5729,16 @@ torsoFree)end _RS.setTorsoStrength=function(k)_RS.torsoStrength=math.clamp(
 tonumber(k)or 1,0.25,2)_RS.trickApi('trick_torso',_RS.torsoOn,_RS.torsoStrength,
 _RS.torsoFree)end _RS.setFly=function(on)if not on then _RS.trickApi('trick_fly'
 ,false)_RS.flyOn=false return true end local ok,err=_RS.trickApi('trick_fly',
-true,_RS.flyParts,_RS.flySpeed)_RS.flyOn=ok==true if not ok then _nvL.notify(
+true,_RS.flyParts,_RS.flySpeed)_RS.flyOn=ok==true if not ok then _pupL.notify(
 'Reanim',tostring(err or'Could not start flying'))end return ok end _RS.
 toggleFlyPart=function(id)local nextParts={}for k,v in _RS.flyParts do nextParts
 [k]=v end nextParts[id]=not nextParts[id]or nil if next(nextParts)==nil then
-_nvL.notify('Reanim','Keep at least one part picked')return end _RS.flyParts=
+_pupL.notify('Reanim','Keep at least one part picked')return end _RS.flyParts=
 nextParts if _RS.flyOn then _RS.trickApi('trick_fly',false)_RS.setFly(true)end
 end _RS.setFlySpeed=function(n)_RS.flySpeed=math.clamp(math.round(tonumber(n)or
 40),10,200)_RS.trickApi('trick_fly_speed',_RS.flySpeed)end _RS.setAttach=
 function(limb,plr)local ok,err=_RS.trickApi('trick_attach',limb,plr)if ok then
-_RS.attach[limb]=plr else _RS.attach[limb]=nil _nvL.notify('Reanim',tostring(err
+_RS.attach[limb]=plr else _RS.attach[limb]=nil _pupL.notify('Reanim',tostring(err
 or'Could not attach'))end return ok end _RS.clearAttach=function()for limb in
 _RS.attach do _RS.trickApi('trick_attach',limb,nil)end _RS.attach={}end _RS.
 syncTricks=function()if _RS.flyOn and _RS.trickApi('trick_flying')~=true then
@@ -5746,17 +5746,17 @@ _RS.flyOn=false end for limb,plr in _RS.attach do if _RS.trickApi(
 'trick_attached',limb)~=plr then _RS.attach[limb]=nil end end end _RS.setNoclip=
 function(on)_RS.noclipOn=on and true or false _RS.trickApi('set_noclip',_RS.
 noclipOn)end _RS.setLegs=function(on)if on and not(_RS.poleReady and _RS.
-poleReady())then _RS.legsOn,_RS.legsWobble=false,false _nvL.notify('Long legs',
+poleReady())then _RS.legsOn,_RS.legsWobble=false,false _pupL.notify('Long legs',
 'Reanimate first')return end _RS.legsOn=on and true or false if not _RS.legsOn
 then _RS.legsWobble=false end if _RS.legsOn then _RS.spiderOn=false end local ok
 ,err=_RS.trickApi('trick_legs',_RS.legsOn,_RS.legsWobble,_RS.legsLength)if _RS.
-legsOn and ok==false then _RS.legsOn,_RS.legsWobble=false,false _nvL.notify(
+legsOn and ok==false then _RS.legsOn,_RS.legsWobble=false,false _pupL.notify(
 'Long legs',tostring(err or'Could not stretch your legs'))end end _RS.setSpider=
 function(on)if on and not(_RS.poleReady and _RS.poleReady())then _RS.spiderOn=
-false _nvL.notify('Spider mode','Reanimate first')return end _RS.spiderOn=on and
+false _pupL.notify('Spider mode','Reanimate first')return end _RS.spiderOn=on and
 true or false if _RS.spiderOn then _RS.legsOn,_RS.legsWobble=false,false end
 local ok,err=_RS.trickApi('trick_spider',_RS.spiderOn,_RS.spiderHeight,_RS.
-spiderSpan)if _RS.spiderOn and ok==false then _RS.spiderOn=false _nvL.notify(
+spiderSpan)if _RS.spiderOn and ok==false then _RS.spiderOn=false _pupL.notify(
 'Spider mode',tostring(err or'Could not bend your limbs'))end end _RS.
 setSpiderHeight=function(value)_RS.spiderHeight=math.clamp(math.floor((tonumber(
 value)or 0.4)*10+0.5)/10,0.2,2)_RS.trickApi('trick_spider',_RS.spiderOn,_RS.
@@ -5766,7 +5766,7 @@ math.clamp(math.floor((tonumber(value)or 1)*2+0.5)/2,1,25)_RS.trickApi(
 setLegsLength=function(value)_RS.legsLength=math.clamp(math.floor((tonumber(
 value)or 2.5)*10+0.5)/10,1.5,6)_RS.trickApi('trick_legs',_RS.legsOn,_RS.
 legsWobble,_RS.legsLength)end _RS.setLegsWobble=function(on)if on and not _RS.
-legsOn then _nvL.notify('Wobbly legs','Turn on Long legs first')return end _RS.
+legsOn then _pupL.notify('Wobbly legs','Turn on Long legs first')return end _RS.
 legsWobble=on and true or false _RS.trickApi('trick_legs',_RS.legsOn,_RS.
 legsWobble,_RS.legsLength)end _RS.applyTrickPrefs=function()_RS.trickApi(
 'set_noclip',_RS.noclipOn)_RS.trickApi('trick_legs',_RS.legsOn,_RS.legsWobble,
@@ -5780,8 +5780,8 @@ createInstance('Frame',{Parent=playPane,Name='PlaybackSurface',BackgroundColor3=
 C.CARD,BackgroundTransparency=0.6,BorderSizePixel=0,Position=UDim2.new(0,0,0,0),
 Size=UDim2.new(1,0,1,0),ZIndex=153})createInstance('UICorner',{Parent=playCard,
 CornerRadius=UDim.new(0,10)})local playStroke=createInstance('UIStroke',{Parent=
-playCard,Color=C.DIV,Thickness=1,Transparency=0.55})_G._nv_addBlueCornerGlow(
-playCard,10,153,215)if _G._nv_addBlendedShine then pcall(_G._nv_addBlendedShine,
+playCard,Color=C.DIV,Thickness=1,Transparency=0.55})_G._pup_addBlueCornerGlow(
+playCard,10,153,215)if _G._pup_addBlendedShine then pcall(_G._pup_addBlendedShine,
 playCard,10,154)end local KEY_SHORT={RightAlt='RAlt',LeftAlt='LAlt',RightControl
 ='RCtrl',LeftControl='LCtrl',RightShift='RShift',LeftShift='LShift',Return=
 'Enter',MouseButton1='LMB',MouseButton2='RMB',MouseButton3='MMB'}local function
@@ -5793,7 +5793,7 @@ BackgroundTransparency=1,Position=UDim2.new(0,0,scaleY,0),Size=UDim2.new(1,0,1/6
 BackgroundTransparency=1,AnchorPoint=Vector2.new(0,0.5),Position=UDim2.new(0,16,
 0.5,0),Size=UDim2.new(0.6,-18,1,0),Font=Enum.Font.GothamSemibold,TextSize=11,
 TextXAlignment=Enum.TextXAlignment.Left,TextColor3=C.TEXT,Text=label,ZIndex=155}
-)local setSwitch=_nvMakeSliderSwitch(row,false,155)local hit=createInstance(
+)local setSwitch=_pupMakeSliderSwitch(row,false,155)local hit=createInstance(
 'TextButton',{Parent=row,Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text=
 '',ZIndex=157,AutoButtonColor=false})_RS[syncName]=function(on)setSwitch(on,true
 )lbl.TextColor3=on and C.ACCENT or C.TEXT end hit.InputBegan:Connect(function(
@@ -5822,20 +5822,20 @@ CornerRadius=UDim.new(0,10)})local badgeStroke=createInstance('UIStroke',{Parent
 Enum.Font.GothamBold,TextSize=10,TextColor3=C.SUB,Text=shortKey(_RS.playBinds[
 bindKey]),ZIndex=156})local btn=createInstance('TextButton',{Parent=row,Size=
 UDim2.new(1,0,1,0),BackgroundTransparency=1,Text='',ZIndex=157,AutoButtonColor=
-false})btn.MouseButton1Click:Connect(function()if _nvL.keybindListening then
-return end _nvL.keybindListening=true badgeLbl.Text='...'badgeLbl.TextColor3=C.
+false})btn.MouseButton1Click:Connect(function()if _pupL.keybindListening then
+return end _pupL.keybindListening=true badgeLbl.Text='...'badgeLbl.TextColor3=C.
 TEXT tween(badgeStroke,TweenInfo.new(0.15),{Color=C.ACCENT,Transparency=0.2})
 local conn conn=userInputService.InputBegan:Connect(function(inp,gp)if gp then
 return end if inp.UserInputType~=Enum.UserInputType.Keyboard then return end
 local kc=inp.KeyCode if kc==Enum.KeyCode.Unknown then return end local kName=kc.
 Name if kName=='None'or kName:sub(1,5)=='Mouse'then return end if kName==
-'Escape'then _nvL.keybindListening=false badgeLbl.Text=shortKey(_RS.playBinds[
+'Escape'then _pupL.keybindListening=false badgeLbl.Text=shortKey(_RS.playBinds[
 bindKey])badgeLbl.TextColor3=C.SUB tween(badgeStroke,TweenInfo.new(0.15),{Color=
 C.DIV,Transparency=0.55})conn:Disconnect()return end if kName=='Backspace'or
-kName=='Delete'then _RS.playBinds[bindKey]='None'_RS.savePlayBinds()_nvL.
+kName=='Delete'then _RS.playBinds[bindKey]='None'_RS.savePlayBinds()_pupL.
 keybindListening=false badgeLbl.Text='None'badgeLbl.TextColor3=C.SUB tween(
 badgeStroke,TweenInfo.new(0.15),{Color=C.DIV,Transparency=0.55})conn:Disconnect(
-)return end _RS.playBinds[bindKey]=kName _RS.savePlayBinds()_nvL.
+)return end _RS.playBinds[bindKey]=kName _RS.savePlayBinds()_pupL.
 keybindListening=false badgeLbl.Text=shortKey(kName)badgeLbl.TextColor3=C.SUB
 tween(badgeStroke,TweenInfo.new(0.15),{Color=C.DIV,Transparency=0.55})conn:
 Disconnect()end)end)if showDiv then local div=createInstance('Frame',{Parent=row
@@ -5856,14 +5856,14 @@ BorderSizePixel=0,Position=UDim2.new(0,0,0,0),Size=UDim2.new(1,0,1,0),ZIndex=153
 ,ClipsDescendants=false})createInstance('UICorner',{Parent=recordCard,
 CornerRadius=UDim.new(0,10)})local recordStroke=createInstance('UIStroke',{
 Parent=recordCard,Color=C.DIV,Thickness=1,Transparency=0.55})if _G.
-_nv_addBlueCornerGlow then _G._nv_addBlueCornerGlow(recordCard,10,153,215)end if
-_G._nv_addBlendedShine then pcall(_G._nv_addBlendedShine,recordCard,10,154)end
+_pup_addBlueCornerGlow then _G._pup_addBlueCornerGlow(recordCard,10,153,215)end if
+_G._pup_addBlendedShine then pcall(_G._pup_addBlendedShine,recordCard,10,154)end
 local recBtn=createInstance('Frame',{Parent=recordCard,Name='RecordAction',
 AnchorPoint=Vector2.new(1,0.5),Position=UDim2.new(1,-68,0,26),Size=UDim2.
 fromOffset(70,28),BackgroundColor3=C.CARD,BackgroundTransparency=0.6,
 BorderSizePixel=0,ClipsDescendants=false,ZIndex=155})createInstance('UICorner',{
-Parent=recBtn,CornerRadius=UDim.new(0,10)})if _G._nv_addBlendedShine then pcall(
-_G._nv_addBlendedShine,recBtn,10,156)end local recHit=createInstance(
+Parent=recBtn,CornerRadius=UDim.new(0,10)})if _G._pup_addBlendedShine then pcall(
+_G._pup_addBlendedShine,recBtn,10,156)end local recHit=createInstance(
 'TextButton',{Parent=recBtn,Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,
 BorderSizePixel=0,Font=Enum.Font.GothamBold,TextSize=12,TextColor3=C.TEXT,Text=
 'Start',AutoButtonColor=false,ZIndex=157})local recBindBadge=createInstance(
@@ -5871,7 +5871,7 @@ BorderSizePixel=0,Font=Enum.Font.GothamBold,TextSize=12,TextColor3=C.TEXT,Text=
 Position=UDim2.new(1,-16,0,26),Size=UDim2.fromOffset(44,28),BackgroundColor3=C.
 CARD,BackgroundTransparency=0.6,BorderSizePixel=0,ZIndex=155})createInstance(
 'UICorner',{Parent=recBindBadge,CornerRadius=UDim.new(0,10)})if _G.
-_nv_addBlendedShine then pcall(_G._nv_addBlendedShine,recBindBadge,10,156)end
+_pup_addBlendedShine then pcall(_G._pup_addBlendedShine,recBindBadge,10,156)end
 local recBindLbl=createInstance('TextLabel',{Parent=recBindBadge,
 BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamBold,
 TextSize=10,TextColor3=C.SUB,ZIndex=157})local recBindBtn=createInstance(
@@ -5881,18 +5881,18 @@ TextSize=10,TextColor3=C.SUB,ZIndex=157})local recBindBtn=createInstance(
 'RShift',LeftShift='LShift',Return='Enter'}local function recShortKey(k)if not k
 or k=='None'then return'None'end return REC_KEY_SHORT[k]or(k:len()<=5 and k or k
 :sub(1,4)..'.')end recBindLbl.Text=recShortKey(_RS.playBinds and _RS.playBinds.
-record)recBindBtn.MouseButton1Click:Connect(function()if _nvL.keybindListening
-then return end _nvL.keybindListening=true recBindLbl.Text='...'recBindLbl.
+record)recBindBtn.MouseButton1Click:Connect(function()if _pupL.keybindListening
+then return end _pupL.keybindListening=true recBindLbl.Text='...'recBindLbl.
 TextColor3=C.TEXT local conn conn=userInputService.InputBegan:Connect(function(
 inp,gp)if gp then return end if inp.UserInputType~=Enum.UserInputType.Keyboard
 then return end local kc=inp.KeyCode if kc==Enum.KeyCode.Unknown then return end
 local kName=kc.Name if kName=='None'or kName:sub(1,5)=='Mouse'then return end if
-kName=='Escape'then _nvL.keybindListening=false recBindLbl.Text=recShortKey(_RS.
+kName=='Escape'then _pupL.keybindListening=false recBindLbl.Text=recShortKey(_RS.
 playBinds.record)recBindLbl.TextColor3=C.SUB conn:Disconnect()return end if
 kName=='Backspace'or kName=='Delete'then _RS.playBinds.record='None'_RS.
-savePlayBinds()_nvL.keybindListening=false recBindLbl.Text='None'recBindLbl.
+savePlayBinds()_pupL.keybindListening=false recBindLbl.Text='None'recBindLbl.
 TextColor3=C.SUB conn:Disconnect()return end _RS.playBinds.record=kName _RS.
-savePlayBinds()_nvL.keybindListening=false recBindLbl.Text=recShortKey(kName)
+savePlayBinds()_pupL.keybindListening=false recBindLbl.Text=recShortKey(kName)
 recBindLbl.TextColor3=C.SUB conn:Disconnect()end)end)local recDiv=
 createInstance('Frame',{Parent=recordCard,BackgroundColor3=C.DIV,
 BackgroundTransparency=0,BorderSizePixel=0,Position=UDim2.new(0,16,0,52),Size=
@@ -5957,10 +5957,10 @@ reanimActive and _G._reanimAPI then local body pcall(function()body=(_G.
 _reanimAPI.get_anim_body and _G._reanimAPI.get_anim_body(player))or(_G.
 _reanimAPI.get_clone and _G._reanimAPI.get_clone(player))end)if body and body.
 Parent then return body end end return player and player.Character end
-local function snapshotOrigC0s(char)if _RS.reanimLocalOrigC0s and _nvAny(_RS.
+local function snapshotOrigC0s(char)if _RS.reanimLocalOrigC0s and _pupAny(_RS.
 reanimLocalOrigC0s)then return _RS.reanimLocalOrigC0s end if _G._reanimAPI and
 _G._reanimAPI.get_original_c0s then local okC,t=pcall(_G._reanimAPI.
-get_original_c0s)if okC and type(t)=='table'and _nvAny(t)then return t end end
+get_original_c0s)if okC and type(t)=='table'and _pupAny(t)then return t end end
 local orig={}if char then pcall(function()for _,d in char:GetDescendants()do if
 d:IsA('Motor6D')then orig[d]=d.C0 end end end)end return orig end local function
 cfNearIdent(cf)if not cf then return true end local rx,ry,rz=cf:ToOrientation()
@@ -6004,9 +6004,9 @@ local function makeIconBtn(fallback,iconAsset,posX)local btn=createInstance(
 'ImageButton',{Parent=row,AnchorPoint=Vector2.new(1,0.5),Position=UDim2.new(1,
 posX,0.5,0),Size=UDim2.new(0,18,0,18),BackgroundTransparency=1,BorderSizePixel=0
 ,AutoButtonColor=false,ImageColor3=C.DIM,ScaleType=Enum.ScaleType.Fit,ZIndex=158
-})_G._nv_setIcon(btn,iconAsset)local fb=createInstance('TextLabel',{Parent=btn,
+})_G._pup_setIcon(btn,iconAsset)local fb=createInstance('TextLabel',{Parent=btn,
 BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamBold,
-TextSize=14,TextColor3=C.DIM,Text=fallback,Visible=_G._nv_fluentIcon(iconAsset)
+TextSize=14,TextColor3=C.DIM,Text=fallback,Visible=_G._pup_fluentIcon(iconAsset)
 =='',ZIndex=159})btn.MouseEnter:Connect(function()local hoverCol=(fallback=='x')
 and C.DANGER or C.ACCENT tween(btn,TweenInfo.new(0.15,Enum.EasingStyle.Quint),{
 ImageColor3=hoverCol})tween(fb,TweenInfo.new(0.15,Enum.EasingStyle.Quint),{
@@ -6030,47 +6030,47 @@ _RS.deleteRecentRecording then _RS.deleteRecentRecording(rec)end end)end end _RS
 recentRecordings do if it==rec or(it.path==rec.path and it.name==rec.name)then
 if type(delfile)=='function'and type(it.path)=='string'then pcall(delfile,it.
 path)end table.remove(_RS.recentRecordings,i)break end end _RS.
-saveRecentRecordings()_RS.refreshRecordedList()_nvL.notify('Reanim','Deleted '..
+saveRecentRecordings()_RS.refreshRecordedList()_pupL.notify('Reanim','Deleted '..
 tostring(rec.name or'recording'):sub(1,24))end _RS.addRecordingToCustom=function
 (rec)if not rec or type(rec.path)~='string'then return end if type(readfile)~=
-'function'or type(writefile)~='function'then _nvL.notify('Reanim',
+'function'or type(writefile)~='function'then _pupL.notify('Reanim',
 'Filesystem not available')return end local ok,src=pcall(readfile,rec.path)if
-not ok or type(src)~='string'or src==''then _nvL.notify('Reanim',
+not ok or type(src)~='string'or src==''then _pupL.notify('Reanim',
 'Could not read recording')return end ensureDir('PuppyAdmin')ensureDir(
 'PuppyAdmin/custom')ensureDir(_RS.REANIM_RECORDED_CUSTOM_DIR)local nm=
 sanitizeName(rec.name)local dest=_RS.REANIM_RECORDED_CUSTOM_DIR..'/'..nm..(rec.
 path:match('%.%w+$')or'.json')local wok=pcall(writefile,dest,src)if not wok then
-_nvL.notify('Reanim','Failed to add to Custom')return end if _RS.localAnimCache
-then _RS.localAnimCache[dest]=nil end if _nvL.reloadCustom then pcall(_nvL.
-reloadCustom)end _RS.refreshRecordedList()_nvL.notify('Reanim','Added to Custom'
+_pupL.notify('Reanim','Failed to add to Custom')return end if _RS.localAnimCache
+then _RS.localAnimCache[dest]=nil end if _pupL.reloadCustom then pcall(_pupL.
+reloadCustom)end _RS.refreshRecordedList()_pupL.notify('Reanim','Added to Custom'
 )end local function finishRecording()if _RS.recordConn then pcall(function()_RS.
 recordConn:Disconnect()end)_RS.recordConn=nil end _RS.recordActive=false _RS.
 recordLastStop=tick()setRecVisual(false)local frames=_RS.recordFrames _RS.
 recordFrames=nil _RS.recordOrigC0s=nil if type(frames)~='table'or#frames<2 then
-_nvL.notify('Reanim','Recording too short')return end local dur=frames[#frames].
+_pupL.notify('Reanim','Recording too short')return end local dur=frames[#frames].
 Time or 0 local defaultName='Rec '..os.date('%H-%M-%S')local encoded pcall(
 function()encoded=game:GetService('HttpService'):JSONEncode(frames)end)if type(
-encoded)~='string'or encoded==''then _nvL.notify('Reanim',
+encoded)~='string'or encoded==''then _pupL.notify('Reanim',
 'Failed to encode recording')return end local function persistRecording(nm)nm=
 sanitizeName(nm)ensureDir('PuppyAdmin')ensureDir(_RS.REANIM_RECORD_DIR)local base=
 nm local path=_RS.REANIM_RECORD_DIR..'/'..base..'.json'if type(isfile)==
 'function'then local n=2 while n<=20 do local ok,exists=pcall(isfile,path)if not
 ok or not exists then break end nm=base..' '..n path=_RS.REANIM_RECORD_DIR..'/'
 ..nm..'.json'n=n+1 end end if type(writefile)=='function'then local wok=pcall(
-writefile,path,encoded)if not wok then _nvL.notify('Reanim',
+writefile,path,encoded)if not wok then _pupL.notify('Reanim',
 'Failed to save recording')return end end local rec={name=nm,path=path,duration=
 dur,created=os.time()}table.insert(_RS.recentRecordings,1,rec)while#_RS.
 recentRecordings>3 do local old=table.remove(_RS.recentRecordings)if old and old
 .path and type(delfile)=='function'then pcall(delfile,old.path)end end _RS.
-saveRecentRecordings()_RS.refreshRecordedList()_nvL.notify('Reanim','Saved '..nm
+saveRecentRecordings()_RS.refreshRecordedList()_pupL.notify('Reanim','Saved '..nm
 )end persistRecording(defaultName)end local function startRecording()if not _RS.
-reanimActive then _nvL.notify('Reanim','Reanim not active')return end local char
-=getRecordTarget()if not char or not char.Parent then _nvL.notify('Reanim',
+reanimActive then _pupL.notify('Reanim','Reanim not active')return end local char
+=getRecordTarget()if not char or not char.Parent then _pupL.notify('Reanim',
 'No character to record')return end _RS.recordOrigC0s=snapshotOrigC0s(char)local
 recACs,recMotors=cacheRecordJoints(char,_RS.recordOrigC0s)local recChar=char
 local firstPoses=capturePoses(recACs,recMotors)_RS.recordFrames={{Time=0,Poses=
 firstPoses}}_RS.recordActive=true local elapsed=0 local acc=0 local SAMPLE=1/30
-setRecVisual(true)pcall(_nvL.notify,'Reanim','Recording started')_RS.recordConn=
+setRecVisual(true)pcall(_pupL.notify,'Reanim','Recording started')_RS.recordConn=
 runService.Heartbeat:Connect(function(dt)if not _RS.recordActive then return end
 if not _RS.reanimActive then pcall(finishRecording)return end local target=
 getRecordTarget()if not target or not target.Parent then pcall(finishRecording)
@@ -6087,9 +6087,9 @@ EasingStyle.Quint),{BackgroundTransparency=0.6})end)_RS.toggleRecording=function
 ()if _RS.recordActive then finishRecording()return end local live=_RS.
 reanimActive if live and _G._reanimAPI and _G._reanimAPI.is_reanimated then
 local okR,v=pcall(_G._reanimAPI.is_reanimated)live=okR and v and true or false
-end if not live then _nvL.notify('Reanim','Reanim not active')return end local
+end if not live then _pupL.notify('Reanim','Reanim not active')return end local
 last=_RS.recordLastStop or 0 if last>0 then local remaining=5-(tick()-last)if
-remaining>0 then _nvL.notify('Reanim',string.format('Wait %.1fs',remaining))
+remaining>0 then _pupL.notify('Reanim',string.format('Wait %.1fs',remaining))
 return end end startRecording()end recHit.MouseButton1Click:Connect(function()
 pcall(_RS.toggleRecording)end)pcall(_RS.loadRecentRecordings)pcall(_RS.
 refreshRecordedList)end do local livePane=createInstance('Frame',{Parent=_G.
@@ -6100,15 +6100,15 @@ ClipsDescendants=false})_RS.livePane=livePane local liveCard=createInstance(
 BorderSizePixel=0,Position=UDim2.new(0,0,0,0),Size=UDim2.new(1,0,1,0),ZIndex=153
 ,ClipsDescendants=false})createInstance('UICorner',{Parent=liveCard,CornerRadius
 =UDim.new(0,10)})local liveStroke=createInstance('UIStroke',{Parent=liveCard,
-Color=C.DIV,Thickness=1,Transparency=0.55})if _G._nv_addBlueCornerGlow then _G.
-_nv_addBlueCornerGlow(liveCard,10,153,215)end local lvFxSeq=NumberSequence.new({
+Color=C.DIV,Thickness=1,Transparency=0.55})if _G._pup_addBlueCornerGlow then _G.
+_pup_addBlueCornerGlow(liveCard,10,153,215)end local lvFxSeq=NumberSequence.new({
 NumberSequenceKeypoint.new(0,0.5),NumberSequenceKeypoint.new(0.34,0.82),
 NumberSequenceKeypoint.new(0.7,0.96),NumberSequenceKeypoint.new(1,1)})
 local function lvQuiet(inst)if not inst then return end pcall(function()local s=
 inst:FindFirstChild('SurfaceShine')if not s then return end s.BackgroundColor3=
 Color3.fromRGB(152,152,160)s.BackgroundTransparency=0.91 local g=s:
 FindFirstChildOfClass('UIGradient')if g then g.Transparency=lvFxSeq end end)end
-if _G._nv_addBlendedShine then pcall(_G._nv_addBlendedShine,liveCard,10,154)
+if _G._pup_addBlendedShine then pcall(_G._pup_addBlendedShine,liveCard,10,154)
 lvQuiet(liveCard)end local lvKeys={RightAlt='RAlt',LeftAlt='LAlt',RightControl=
 'RCtrl',LeftControl='LCtrl',RightShift='RShift',LeftShift='LShift',Return=
 'Enter'}local function lvKey(k)if not k or k=='None'then return'None'end return
@@ -6132,19 +6132,19 @@ new(0,0.96),NumberSequenceKeypoint.new(0.18,0.72),NumberSequenceKeypoint.new(
 makeBadge(pos,anchor,size,z,parent)local badge=createInstance('Frame',{Parent=
 parent or liveCard,AnchorPoint=anchor,Position=pos,Size=size,BackgroundColor3=C.
 CARD,BackgroundTransparency=0.6,BorderSizePixel=0,ZIndex=z})createInstance(
-'UICorner',{Parent=badge,CornerRadius=UDim.new(0,6)})if _G._nv_addBlendedShine
-then pcall(_G._nv_addBlendedShine,badge,6,z+1)lvQuiet(badge)end local lvFx=nil
-if _G._nv_addColorGradient then lvFx=_G._nv_addColorGradient(badge,6,z+1)end
+'UICorner',{Parent=badge,CornerRadius=UDim.new(0,6)})if _G._pup_addBlendedShine
+then pcall(_G._pup_addBlendedShine,badge,6,z+1)lvQuiet(badge)end local lvFx=nil
+if _G._pup_addColorGradient then lvFx=_G._pup_addColorGradient(badge,6,z+1)end
 local s=createInstance('UIStroke',{Parent=badge,Color=C.DIV,Thickness=1,
 Transparency=0.55})local lbl=makeText(badge,'',10,C.SUB,Enum.TextXAlignment.
 Center,z+2,Enum.Font.GothamBold)lbl.Size=UDim2.new(1,0,1,0)local btn=makeHit(
 badge,'',10,z+3)btn.MouseEnter:Connect(function()tween(badge,TI_UI,{
 BackgroundTransparency=0.45})end)btn.MouseLeave:Connect(function()tween(badge,
 TI_UI,{BackgroundTransparency=0.6})end)return badge,lbl,btn,s,lvFx end
-local function listenBind(lbl,bStroke,bindKey,allowNone,onSet)if _nvL.
-keybindListening then return end _nvL.keybindListening=true lbl.Text='...'lbl.
+local function listenBind(lbl,bStroke,bindKey,allowNone,onSet)if _pupL.
+keybindListening then return end _pupL.keybindListening=true lbl.Text='...'lbl.
 TextColor3=C.TEXT tween(bStroke,TweenInfo.new(0.15),{Color=C.ACCENT,Transparency
-=0.2})local function done()_nvL.keybindListening=false lbl.Text=lvKey(_RS.
+=0.2})local function done()_pupL.keybindListening=false lbl.Text=lvKey(_RS.
 playBinds[bindKey])lbl.TextColor3=C.SUB tween(bStroke,TweenInfo.new(0.15),{Color
 =C.DIV,Transparency=0.55})if onSet then pcall(onSet)end end local conn conn=
 userInputService.InputBegan:Connect(function(inp,gp)if gp then return end if inp
@@ -6160,8 +6160,8 @@ BackgroundTransparency=1,BorderSizePixel=0,Position=pos,Size=size,ZIndex=z})
 local pill=createInstance('Frame',{Parent=bar,BackgroundColor3=C.DIV,
 BackgroundTransparency=0.4,BorderSizePixel=0,Position=UDim2.new(0,0,0,0),Size=
 UDim2.new(1/#items,0,1,0),ZIndex=z+1})createInstance('UICorner',{Parent=pill,
-CornerRadius=UDim.new(0,8)})if _G._nv_addBlendedShine then pcall(_G.
-_nv_addBlendedShine,pill,8,z+2)lvQuiet(pill)end local btns={}for i,it in items
+CornerRadius=UDim.new(0,8)})if _G._pup_addBlendedShine then pcall(_G.
+_pup_addBlendedShine,pill,8,z+2)lvQuiet(pill)end local btns={}for i,it in items
 do local b=makeHit(bar,it.label,11,z+2)b.Position=UDim2.new((i-1)/#items,0,0,0)b
 .Size=UDim2.new(1/#items,0,1,0)b.MouseButton1Click:Connect(function()onPick(it.
 id,i)end)btns[i]=b end local api={bar=bar,pill=pill,btns=btns,count=#items}api.
@@ -6183,7 +6183,7 @@ Enum.VerticalAlignment.Center,Padding=UDim.new(0,8),SortOrder=Enum.SortOrder.
 LayoutOrder})local lbl=makeText(inner,label,10,C.SUB,Enum.TextXAlignment.Left,z+
 1)lbl.LayoutOrder=1 lbl.AutomaticSize=Enum.AutomaticSize.X lbl.Size=UDim2.new(0,
 0,0,18)lbl.TextYAlignment=Enum.TextYAlignment.Center local setSwitch=
-_nvMakeSliderSwitch(inner,false,z+1,{anchor=Vector2.new(0,0.5),position=UDim2.
+_pupMakeSliderSwitch(inner,false,z+1,{anchor=Vector2.new(0,0.5),position=UDim2.
 new(0,0,0.5,0)})local tr=inner:FindFirstChild('SwitchTrack')if tr then tr.
 LayoutOrder=2 end local hit=makeHit(row,'',10,z+4)hit.InputBegan:Connect(
 function(input)if input.UserInputType~=Enum.UserInputType.MouseButton1 then
@@ -6194,15 +6194,15 @@ PAD,0,RAIL_Y),Size=UDim2.new(1,-PAD*2,0,RAIL_H),BackgroundColor3=C.CARD,
 BackgroundTransparency=0.55,BorderSizePixel=0,ZIndex=155})createInstance(
 'UICorner',{Parent=liveBtn,CornerRadius=UDim.new(0,10)})local liveStroke=
 createInstance('UIStroke',{Parent=liveBtn,Color=C.DIV,Thickness=1,Transparency=
-0.45})if _G._nv_addBlendedShine then pcall(_G._nv_addBlendedShine,liveBtn,10,156
-)lvQuiet(liveBtn)end local lvWash=nil if _G._nv_addColorGradient then lvWash=_G.
-_nv_addColorGradient(liveBtn,10,156)end local lvOnT,lvHovT=0.9,0.96 local
+0.45})if _G._pup_addBlendedShine then pcall(_G._pup_addBlendedShine,liveBtn,10,156
+)lvQuiet(liveBtn)end local lvWash=nil if _G._pup_addColorGradient then lvWash=_G.
+_pup_addColorGradient(liveBtn,10,156)end local lvOnT,lvHovT=0.9,0.96 local
 lvBtnOnT,lvBtnHovT=0.42,0.78 local function lvFitFx(fx)if not fx then return end
 pcall(function()fx.BackgroundColor3=Color3.fromRGB(168,168,176)local g=fx:
 FindFirstChildOfClass('UIGradient')if g then g.Transparency=lvFxSeq end end)end
 local function lvPutFx(fx,on,instant,hover)if not fx then return end pcall(
 function()local g=fx:FindFirstChildOfClass('UIGradient')if g then g.Color=
-_nv_accentColorSequence()end end)local isBtn=fx==lvWash local goal=1 if on then
+_pup_accentColorSequence()end end)local isBtn=fx==lvWash local goal=1 if on then
 goal=isBtn and lvBtnOnT or lvOnT elseif hover then goal=isBtn and lvBtnHovT or
 lvHovT end pcall(function()for _,tw in tweenService:GetPlayingTweens()do if tw.
 Instance==fx then tw:Cancel()end end end)if instant then fx.
@@ -6362,9 +6362,9 @@ setLiveSeg=function(i)local segs=lvSegs()if not segs[i]then return end _RS.
 liveSeg=i refreshSegments()refreshHint()end _RS.setLiveMode=function()_RS.
 liveMode='reach'refreshModeUI()refreshHint()end _RS.setLiveFull=function(on)_RS.
 liveFull=on and true or false refreshModeUI()end _RS.setLiveKeepAnim=function(on
-)_RS.liveKeepAnim=on and true or false if _RS.liveActive then _nvL.notify(
+)_RS.liveKeepAnim=on and true or false if _RS.liveActive then _pupL.notify(
 'Reanim','Turn live mode off and on to apply')end refreshModeUI()end _G.
-_nv_reanimLiveBusy=function(name)return _RS.liveActive==true and _RS.
+_pup_reanimLiveBusy=function(name)return _RS.liveActive==true and _RS.
 liveKeepAnim==true and type(_RS.livePose)=='table'and _RS.livePose[name]~=nil
 end local function lvWrap(a)return((a+180)%360)-180 end local function toCF(v)if
 typeof(v)=='CFrame'then return v end return CFrame.fromOrientation(math.rad(v.X)
@@ -6390,7 +6390,7 @@ then return m.Part0.CFrame*o,rig.lvRest[part]or CFrame.identity end return nil
 end local function lvHit()local rig=_RS.liveRig local cam=workspace.
 CurrentCamera if not cam then return nil end local mp=userInputService:
 GetMouseLocation()local ray=cam:ViewportPointToRay(mp.X,mp.Y)local params=rig
-and rig.rayParams if params then local realChar=_nvL.lp and _nvL.lp.Character if
+and rig.rayParams if params then local realChar=_pupL.lp and _pupL.lp.Character if
 realChar~=rig.realChar then rig.realChar=realChar params.
 FilterDescendantsInstances=realChar and{rig.clone,realChar}or{rig.clone}end
 local hit=workspace:Raycast(ray.Origin,ray.Direction*400,params)if hit then
@@ -6423,14 +6423,14 @@ function()lvAnc:Disconnect()end)lvAnc=nil end _RS.setLiveDriving(false)if _G.
 _reanimAPI and _G._reanimAPI.blend_hold then pcall(_G._reanimAPI.blend_hold)end
 lvUndo(_RS.liveRig)_RS.liveRig=nil end local function startLive()if _RS.
 liveActive then return end if not _G._reanimAPI then if _G.loadReanimAPI then
-pcall(_G.loadReanimAPI,nil)end if not _G._reanimAPI then _nvL.notify('Reanim',
+pcall(_G.loadReanimAPI,nil)end if not _G._reanimAPI then _pupL.notify('Reanim',
 'API not loaded yet')return end end local reOn=_RS.reanimActive if reOn and _G.
 _reanimAPI.is_reanimated then local okRe,reV=pcall(_G._reanimAPI.is_reanimated)
-reOn=okRe and reV and true or false end if not reOn then _nvL.notify('Reanim',
+reOn=okRe and reV and true or false end if not reOn then _pupL.notify('Reanim',
 'Reanim not active')return end local clone pcall(function()clone=(_G._reanimAPI.
-get_anim_body and _G._reanimAPI.get_anim_body(_nvL.lp))or(_G._reanimAPI.
-get_clone and _G._reanimAPI.get_clone(_nvL.lp))end)if not clone or not clone.
-Parent then _nvL.notify('Reanim','Reanimated body not found')return end local
+get_anim_body and _G._reanimAPI.get_anim_body(_pupL.lp))or(_G._reanimAPI.
+get_clone and _G._reanimAPI.get_clone(_pupL.lp))end)if not clone or not clone.
+Parent then _pupL.notify('Reanim','Reanimated body not found')return end local
 keep=_RS.liveKeepAnim==true _RS.liveKept=keep if not keep then _RS.
 reanimGeneration=(_RS.reanimGeneration or 0)+1 end local myGen=_RS.
 reanimGeneration if not keep then if _RS.reanimLocalConn then pcall(function()
@@ -6455,7 +6455,7 @@ Part1.Name]=d.C1.Rotation:Inverse()end end if not keep then _RS.
 reanimLocalJoints=joints _RS.reanimLocalOrigC0s=origC0s _RS.reanimLocalIsMotor6D
 =hasMotor end local acMap=nil if not hasMotor and _G._reanimAPI._buildACJointMap
 then local okM,m=pcall(_G._reanimAPI._buildACJointMap,clone)if okM and type(m)==
-'table'and _nvAny(m)then acMap=m for partName,jd in acMap do lvRest[partName]=(
+'table'and _pupAny(m)then acMap=m for partName,jd in acMap do lvRest[partName]=(
 jd.att1CF and jd.att1CF.Rotation:Inverse())or CFrame.identity end end end if not
 keep then _RS.reanimLocalACMap=acMap end _RS.liveIsR6=joints['Left Arm']~=nil or
 joints['Torso']~=nil if _RS.liveIsR6 then local hum=clone:FindFirstChildOfClass(
@@ -6465,7 +6465,7 @@ rayParams.FilterType=Enum.RaycastFilterType.Exclude rayParams.
 FilterDescendantsInstances={clone}rayParams.IgnoreWater=true end)_RS.liveRig={
 clone=clone,joints=joints,origC0s=origC0s,acMap=acMap,lvRest=lvRest,rayParams=
 rayParams,realChar=nil,lvSign={}}_RS.livePose={}_RS.liveCur={}_RS.liveActive=
-true _RS.refreshLiveUI()_nvL.notify('Reanim','Live control on')local lvAnim=nil
+true _RS.refreshLiveUI()_pupL.notify('Reanim','Live control on')local lvAnim=nil
 if acMap then local h=clone:FindFirstChildOfClass('Humanoid')or clone:
 FindFirstChildOfClass('AnimationController')lvAnim=h and h:
 FindFirstChildOfClass('Animator')or nil end local lvLast={}local lvCf={}local ev
@@ -6494,7 +6494,7 @@ end _RS.liveActive=false _RS.liveCur={}lvEnd()lvVis(false)if not silent then if
 _RS.stopCurrent and not _RS.liveKept then pcall(_RS.stopCurrent)end if _RS.
 reanimActive then if _RS.reanimStatusLbl then _RS.reanimStatusLbl.Text=
 'Status: Active'end if _RS.reanimStatusDot then tween(_RS.reanimStatusDot,
-TweenInfo.new(0.2),{BackgroundColor3=Color3.fromRGB(80,210,100)})end end _nvL.
+TweenInfo.new(0.2),{BackgroundColor3=Color3.fromRGB(80,210,100)})end end _pupL.
 notify('Reanim','Live control off')end refreshHint()end _RS.toggleLive=function(
 )if _RS.liveActive then _RS.stopLive(false)else startLive()end end local
 lvHoldTw=nil local function lvHoldOff()_RS.lvHoldAt=nil if lvHoldTw then pcall(
@@ -6505,7 +6505,7 @@ end local t0=tick()_RS.lvHoldAt=t0 resetLine.Size=UDim2.new(0,0,0,1)lvHoldTw=
 tweenService:Create(resetLine,TweenInfo.new(0.6,Enum.EasingStyle.Linear),{Size=
 UDim2.new(1,-4,0,1)})lvHoldTw:Play()tween(resetHit,TI_UI,{TextColor3=C.DANGER})
 task.delay(0.6,function()if _RS.lvHoldAt==t0 and _RS.liveActive then lvHoldOff()
-lvZeroAll()_nvL.notify('Reanim','All limbs reset')end end)end)resetHit.
+lvZeroAll()_pupL.notify('Reanim','All limbs reset')end end)end)resetHit.
 MouseButton1Up:Connect(function()if _RS.lvHoldAt then lvHoldOff()if _RS.
 liveActive then lvZero((lvPart()))end end end)resetHit.MouseLeave:Connect(
 function()if _RS.lvHoldAt then lvHoldOff()end end)liveHit.MouseButton1Click:
@@ -6569,12 +6569,12 @@ if q==''or item.name:lower():find(q,1,true)~=nil then table.insert(
 currentFiltered,item)end end end _RS.currentFilteredReanim=currentFiltered _RS.
 updateReanimVirtualList()end _RS.currentlyVisibleReanim={}local function
 _reanimClearRowFade(item)if not item then return end local lbl=item.nameLbl if
-lbl then local tracked=_G._nv_propertyTweens and _G._nv_propertyTweens[lbl]if
+lbl then local tracked=_G._pup_propertyTweens and _G._pup_propertyTweens[lbl]if
 tracked and tracked.TextTransparency then pcall(function()tracked.
 TextTransparency:Cancel()end)tracked.TextTransparency=nil end lbl.
 TextTransparency=0 end local row=item.row if row then for _,d in row:
 GetDescendants()do if d:IsA('TextLabel')or d:IsA('TextButton')or d:IsA('TextBox'
-)then local tracked=_G._nv_propertyTweens and _G._nv_propertyTweens[d]if tracked
+)then local tracked=_G._pup_propertyTweens and _G._pup_propertyTweens[d]if tracked
 and tracked.TextTransparency then pcall(function()tracked.TextTransparency:
 Cancel()end)tracked.TextTransparency=nil end if d.TextTransparency~=0 then d.
 TextTransparency=0 end end end end end _RS.updateReanimVirtualList=function()if
@@ -6647,29 +6647,29 @@ BackgroundTransparency=1,AnchorPoint=Vector2.new(0,1),Position=UDim2.fromScale(0
 ,1),Size=UDim2.new(1,0,0,60),ZIndex=160})local rule=createInstance('Frame',{
 Parent=speedPanel,Name='Divider',Position=UDim2.fromOffset(16,0),Size=UDim2.new(
 1,-32,0,1),BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=0.93,
-BorderSizePixel=0,ZIndex=160})_RS.speedSlider=_G._nv_utilitySlider(speedPanel,
+BorderSizePixel=0,ZIndex=160})_RS.speedSlider=_G._pup_utilitySlider(speedPanel,
 'Speed',10,1,30,function(v)_RS.reanimSpeed=v*0.1 if _G._reanimAPI then pcall(
 function()_G._reanimAPI.set_animation_speed(_RS.reanimSpeed)end)end end,function
 (v)return string.format('%.1fx',v*0.1)end)_G._reanimSpeedPanel=speedPanel end
 local _dragLodParked={}local _dragLodStroke=nil local _reanimDragBar=_RS.
 reanimBar if _reanimDragBar and _cs and _cs.makePanelDraggable then _cs.
-makePanelDraggable(_G._reanimPanel,_reanimDragBar)end _G._nv_reanimationLayout(
+makePanelDraggable(_G._reanimPanel,_reanimDragBar)end _G._pup_reanimationLayout(
 _RS,_G._reanimPanel)end local function _logic()_RS.reanimSpeed=_RS.reanimSpeed
 or 1 _RS.BLEND_STYLES={{'smooth','Smooth','Both moves crossfade','transition'},{
 'snappy','Snappy','Quick catch into the next','flash'},{'floaty','Floaty',
 'Limbs drift into place','leaf'}}local function blendStyleOk(v)for _,s in _RS.
 BLEND_STYLES do if s[1]==v then return true end end return false end do local
-cfg=_G._nv_cfg local on=cfg and cfg.read and cfg.read('ReanimPanel/Blend',false)
+cfg=_G._pup_cfg local on=cfg and cfg.read and cfg.read('ReanimPanel/Blend',false)
 local style=cfg and cfg.read and cfg.read('ReanimPanel/BlendStyle','smooth')_RS.
 blendOn=on==true _RS.blendStyle=blendStyleOk(style)and style or'smooth'end _RS.
 applyBlend=function()local api=_G._reanimAPI if api and api.set_blend then
 pcall(api.set_blend,_RS.blendOn and _RS.blendStyle or nil)end end _RS.setBlend=
 function(on,style)if on~=nil then _RS.blendOn=on==true end if blendStyleOk(style
-)then _RS.blendStyle=style end local cfg=_G._nv_cfg if cfg and cfg.write then
+)then _RS.blendStyle=style end local cfg=_G._pup_cfg if cfg and cfg.write then
 pcall(cfg.write,'ReanimPanel/Blend',_RS.blendOn)pcall(cfg.write,
-'ReanimPanel/BlendStyle',_RS.blendStyle)end _RS.applyBlend()end if _G._nv_cfg
-and _G._nv_cfg.bind then _G._nv_cfg.bind('ReanimPanel/Blend',function(v)_RS.
-blendOn=v==true _RS.applyBlend()end)_G._nv_cfg.bind('ReanimPanel/BlendStyle',
+'ReanimPanel/BlendStyle',_RS.blendStyle)end _RS.applyBlend()end if _G._pup_cfg
+and _G._pup_cfg.bind then _G._pup_cfg.bind('ReanimPanel/Blend',function(v)_RS.
+blendOn=v==true _RS.applyBlend()end)_G._pup_cfg.bind('ReanimPanel/BlendStyle',
 function(v)if blendStyleOk(v)then _RS.blendStyle=v end _RS.applyBlend()end)end
 _RS.applyBlend()local function _parseJsonAnim(src,dispName)local ok,arr=pcall(
 function()return game:GetService('HttpService'):JSONDecode(src)end)if not ok or
@@ -6712,7 +6712,7 @@ expectedGeneration then return false,'cancelled'end local myGen=
 expectedGeneration if _RS.reanimLocalConn then _RS.reanimLocalConn:Disconnect()
 _RS.reanimLocalConn=nil end local blend=_G._reanimAPI.blend local blendFrom,
 blendCarried,blendSrc if _G._reanimAPI.blend_capture then blendFrom,blendCarried
-,blendSrc=_G._reanimAPI.blend_capture()end local keyframes=animData[_nvAny(
+,blendSrc=_G._reanimAPI.blend_capture()end local keyframes=animData[_pupAny(
 animData)]local player=game:GetService('Players').LocalPlayer local clone=(_G.
 _reanimAPI.get_anim_body and _G._reanimAPI.get_anim_body(player))or _G.
 _reanimAPI.get_clone(player)local keep=blendFrom~=nil and next(blendFrom)~=nil
@@ -6782,7 +6782,7 @@ _RS.reanimLocalACMap do if jd.constraint and jd.constraint.Parent then jd.
 constraint.Transform=CFrame.identity end end end end)end end)return true,
 localConn end local function noticeOnce(text)if _RS.lastNotice==text and tick()-
 (_RS.lastNoticeAt or 0)<4 then return end _RS.lastNotice,_RS.lastNoticeAt=text,
-tick()_nvL.notify('Reanim',text)end local function _rawPlay(n,url,silent)if not
+tick()_pupL.notify('Reanim',text)end local function _rawPlay(n,url,silent)if not
 _G._reanimAPI then return end if _RS.liveActive and _RS.stopLive then pcall(_RS.
 stopLive,true)end _RS.reanimGeneration=_RS.reanimGeneration+1 if _G._reanimAPI
 and _G._reanimAPI.cancel_pending then _G._reanimAPI.cancel_pending()end local
@@ -6803,7 +6803,7 @@ end)if not silent then local function refreshColors(list)for _,it in list do it.
 nameLbl.TextColor3=(it.name==n)and C.ACCENT or C.TEXT end end refreshColors(_RS.
 globalItems)refreshColors(_RS.customItems)refreshColors(_RS.favsItems)_RS.
 reanimStatusLbl.Text='Playing: '..n:sub(1,22)end end local function
-reanimPlayByName(n,url)if not _G._reanimAPI then _nvL.notify('Reanim',
+reanimPlayByName(n,url)if not _G._reanimAPI then _pupL.notify('Reanim',
 'API not loaded yet')return false end if not _G._reanimAPI.is_reanimated()then
 noticeOnce('Reanimate first')return false end _RS.manualOverride=true _rawPlay(n
 ,url)return true end local function reanimStopCurrent()if _RS.liveActive and _RS
@@ -6902,7 +6902,7 @@ MouseButton1Click:Connect(function()if bindActive then return end bindActive=
 true kbBtn.Text='...'kbBtn.TextColor3=C.TEXT bindConn=userInputService.
 InputBegan:Connect(function(inp,gp)if gp then return end local kc=inp.KeyCode if
 kc==Enum.KeyCode.Backspace or kc==Enum.KeyCode.Delete then local slot=favSlotOf(
-name)if slot then _RS.favKeybinds[slot]=nil _nvL.notify('Favs',name:sub(1,18)..
+name)if slot then _RS.favKeybinds[slot]=nil _pupL.notify('Favs',name:sub(1,18)..
 ' unbound')end _RS.saveReanimKeybinds()bindActive=false bindConn:Disconnect()
 bindConn=nil refreshKbLbl()return end if kc==Enum.KeyCode.Escape then bindActive
 =false bindConn:Disconnect()bindConn=nil refreshKbLbl()return end if kc==Enum.
@@ -6910,7 +6910,7 @@ KeyCode.Unknown then return end local kcName=kc.Name if _RS.favKeybinds[kcName]
 then refreshAllKb(_RS.favKeybinds[kcName].name)end local prev=favSlotOf(name)if
 prev then _RS.favKeybinds[prev]=nil end _RS.favKeybinds[kcName]={name=name,url=
 animUrl}_RS.saveReanimKeybinds()bindActive=false bindConn:Disconnect()bindConn=
-nil refreshAllKb(name)_nvL.notify('Favs',name:sub(1,18)..' - '..kcName)end)end)
+nil refreshAllKb(name)_pupL.notify('Favs',name:sub(1,18)..' - '..kcName)end)end)
 row.Destroying:Connect(function()if _RS.kbRefreshers[name]then _RS.kbRefreshers[
 name][myRefIdx]=nil end if bindConn then bindConn:Disconnect()bindConn=nil end
 end)local starBtn=createInstance('ImageButton',{Parent=row,Size=UDim2.new(0,18,0
@@ -6921,7 +6921,7 @@ starBtn.MouseButton1Click:Connect(function()for i,it in _RS.favsItems do if it.
 name==name then local slot=favSlotOf(name)if slot then _RS.favKeybinds[slot]=nil
 end _RS.saveReanimKeybinds()if bindConn then bindConn:Disconnect()bindConn=nil
 end it.row:Destroy()table.remove(_RS.favsItems,i)_RS.saveFavsItems()
-refreshAllKb(name)_nvL.notify('Favs','Removed: '..name:sub(1,24))if _RS.
+refreshAllKb(name)_pupL.notify('Favs','Removed: '..name:sub(1,24))if _RS.
 activeTab=='favs'then _RS.reanimRefreshSearch()end return end end end)else
 local function refreshStar()local inFavs=false for _,it in _RS.favsItems do if
 it.name==name then inFavs=true break end end starBtn.ImageColor3=inFavs and
@@ -6929,10 +6929,10 @@ Color3.fromRGB(255,200,40)or C.DIM starBtn.ImageTransparency=inFavs and 0 or 0.3
 end refreshStar()starBtn.MouseButton1Click:Connect(function()for i,it in _RS.
 favsItems do if it.name==name then local slot=favSlotOf(name)if slot then _RS.
 favKeybinds[slot]=nil end _RS.saveReanimKeybinds()it.row:Destroy()table.remove(
-_RS.favsItems,i)_RS.saveFavsItems()refreshStar()refreshAllKb(name)_nvL.notify(
+_RS.favsItems,i)_RS.saveFavsItems()refreshStar()refreshAllKb(name)_pupL.notify(
 'Favs','Removed: '..name:sub(1,24))return end end reanimAddItem(name,animUrl,_RS
 .favsItems)_RS.saveFavsItems()refreshStar()if _RS.activeTab=='favs'then _RS.
-reanimRefreshSearch()end _nvL.notify('Favs','Added: '..name:sub(1,24))end)end
+reanimRefreshSearch()end _pupL.notify('Favs','Added: '..name:sub(1,24))end)end
 local div=createInstance('Frame',{Parent=row,BackgroundColor3=C.DIV,
 BorderSizePixel=0,AnchorPoint=Vector2.new(0,1),Position=UDim2.new(0,0,1,2),Size=
 UDim2.new(1,0,0,1),Visible=false,BackgroundTransparency=0,ZIndex=154})local
@@ -6944,14 +6944,14 @@ tween(row,TweenInfo.new(0.2),{BackgroundTransparency=1})end)local isCustomTab=(
 itemList==_RS.customItems)local rowDeleted=false hitbox.MouseButton1Click:
 Connect(function()if rowDeleted then return end if _RS.activeTab=='states'then
 local slot=_RS.activeState or'idle'local prev=_RS.stateAnims[slot]if prev and
-prev.name==name then _RS.stateAnims[slot]=nil _nvL.notify('States',slot:sub(1,1)
+prev.name==name then _RS.stateAnims[slot]=nil _pupL.notify('States',slot:sub(1,1)
 :upper()..slot:sub(2)..' cleared')else _RS.stateAnims[slot]={name=name,url=
-animUrl}_nvL.notify('States',slot:sub(1,1):upper()..slot:sub(2)..': '..name:sub(
+animUrl}_pupL.notify('States',slot:sub(1,1):upper()..slot:sub(2)..': '..name:sub(
 1,22))end if _RS.saveStateAnims then _RS.saveStateAnims()end if _RS.
 refreshStateHighlights then _RS.refreshStateHighlights()end _RS.manualOverride=
 false if _RS.startStateLoop then _RS.startStateLoop()end if not _RS.stateConn
 and _RS.reanimCurrentName then reanimStopCurrent()end return end if not _G.
-_reanimAPI then _nvL.notify('Reanim','API not loaded yet')return end if _RS.
+_reanimAPI then _pupL.notify('Reanim','API not loaded yet')return end if _RS.
 reanimCurrentName==name then reanimStopCurrent()else reanimPlayByName(name,
 animUrl)end end)if isCustomTab then local holdToken local function cancelHold()
 if holdToken then holdToken=nil tween(row,TweenInfo.new(0.15),{BackgroundColor3=
@@ -6965,7 +6965,7 @@ name)if slot then _RS.favKeybinds[slot]=nil _RS.saveReanimKeybinds()end if
 delfile and type(animUrl)=='string'then pcall(delfile,animUrl)end for i,it in
 _RS.customItems do if it.row==row then table.remove(_RS.customItems,i)break end
 end row:Destroy()if _RS.activeTab=='custom'then _RS.reanimRefreshSearch()end
-_nvL.notify('Reanim','Deleted: '..name:sub(1,24))end)end)hitbox.MouseButton1Up:
+_pupL.notify('Reanim','Deleted: '..name:sub(1,24))end)end)hitbox.MouseButton1Up:
 Connect(cancelHold)hitbox.MouseLeave:Connect(cancelHold)end itemList[#itemList+1
 ]={name=name,url=animUrl,row=row,nameLbl=nameLbl,category=category}end _RS.
 reanimAddItem=reanimAddItem local globalLoadLbl=createInstance('TextLabel',{
@@ -6987,7 +6987,7 @@ globalLoadLbl.Visible=false for _,n in names do local dispName=n:gsub(
 '^[Ss][Hh][Aa][Rr][Pp]%s*/%s*','')dispName=dispName:gsub(
 '^[Pp][Oo][Oo][Dd][Ll][Ee]%s*/%s*','')reanimAddItem(dispName,animTable[n],_RS.
 globalItems)end if _RS.activeTab=='global'then _RS.reanimRefreshSearch()end if
-_RS.savedStatesData and _nvAny(_RS.savedStatesData)then for slot,entry in _RS.
+_RS.savedStatesData and _pupAny(_RS.savedStatesData)then for slot,entry in _RS.
 savedStatesData do if(slot=='idle'or slot=='walk'or slot=='jump')and type(entry)
 =='table'and type(entry.name)=='string'and entry.name~=''then local url=entry.
 url if(not url or url=='')and animTable then for n,u in animTable do local disp=
@@ -7065,7 +7065,7 @@ files do if _RS.customLoadGen~=gen then return end local fileName=path:match(
 '[/\\]([^/\\]+)$')or path local dispName=fileName:gsub('%.[^%.]+$','')
 reanimAddItem(dispName,path,_RS.customItems)if i%25==0 then task.wait()end end
 if _RS.activeTab=='custom'then _RS.reanimRefreshSearch()end if _RS.
-refreshRecordedList then _RS.refreshRecordedList()end end _nvL.reloadCustom=
+refreshRecordedList then _RS.refreshRecordedList()end end _pupL.reloadCustom=
 _reloadCustom task.spawn(_reloadCustom)do local PASTE_DOCK_H=40 _RS.pasteDock=
 createInstance('Frame',{Parent=_RS.reanimScrollBox,AnchorPoint=Vector2.new(0.5,1
 ),Position=UDim2.new(0.5,0,1,0),Size=UDim2.new(1,0,0,PASTE_DOCK_H),
@@ -7140,19 +7140,19 @@ pasteOverlay.Visible=true tween(_RS.pasteOverlay,openTi,{Size=UDim2.new(1,0,1,0)
 .MouseButton1Click:Connect(function()local nm=tostring(nameBox.Text or''):gsub(
 '[^%w %-_]',''):gsub('^%s+',''):gsub('%s+$','')if nm==''then nm='pasted'end
 local data=tostring(dataBox.Text or''):gsub('^%s+',''):gsub('%s+$','')if data==
-''then _nvL.notify('Reanim','Paste keyframe data first')return end if not
-writefile then _nvL.notify('Reanim','writefile not available')return end local
+''then _pupL.notify('Reanim','Paste keyframe data first')return end if not
+writefile then _pupL.notify('Reanim','writefile not available')return end local
 ext='lua'local okJson,decoded=pcall(function()return game:GetService(
 'HttpService'):JSONDecode(data)end)if okJson and type(decoded)=='table'then ext=
 'json'end if isfolder and makefolder then if not isfolder('PuppyAdmin')then
 makefolder('PuppyAdmin')end if not isfolder('PuppyAdmin/custom')then makefolder(
 'PuppyAdmin/custom')end end local path='PuppyAdmin/custom/'..nm..'.'..ext local wok,
-werr=pcall(writefile,path,data)if not wok then _nvL.notify('Reanim',
+werr=pcall(writefile,path,data)if not wok then _pupL.notify('Reanim',
 'Save failed: '..tostring(werr))return end nameBox.Text=''dataBox.Text=''
-closePaste()if _nvL.reloadCustom then _nvL.reloadCustom()end _RS.setTab('custom'
-)_nvL.notify('Reanim','Saved: '..nm:sub(1,24))end)end _RS.setTab('global')_G.
+closePaste()if _pupL.reloadCustom then _pupL.reloadCustom()end _RS.setTab('custom'
+)_pupL.notify('Reanim','Saved: '..nm:sub(1,24))end)end _RS.setTab('global')_G.
 _reanimPanel:GetPropertyChangedSignal('Visible'):Connect(function()if not _G.
-_reanimPanel.Visible then return end if _nvL.xnotify then _nvL.xnotify('Reanim',
+_reanimPanel.Visible then return end if _pupL.xnotify then _pupL.xnotify('Reanim',
 [[To delete custom animations, hold down on selected item for deletion.]],{
 persistKey='reanim_hold_delete'})end local function resetList(list)if not list
 then return end for _,it in list do if it.nameLbl then it.nameLbl.
@@ -7163,9 +7163,9 @@ GetPropertyChangedSignal('Text'):Connect(_RS.reanimRefreshSearch)
 userInputService.InputBegan:Connect(function(inp,gp)if gp then return end if inp
 .UserInputType~=Enum.UserInputType.Keyboard then return end local kcName=inp.
 KeyCode.Name if kcName=='Unknown'or kcName=='None'or kcName:sub(1,5)=='Mouse'
-then return end if _nvL.keybindListening then return end local pb=_RS.playBinds
+then return end if _pupL.keybindListening then return end local pb=_RS.playBinds
 local chord local function scan(v)if not chord and type(v)=='string'and v:find(
-'+',1,true)and _nvL.chordMatches(v,kcName)then chord=v end end for _,v in pb do
+'+',1,true)and _pupL.chordMatches(v,kcName)then chord=v end end for _,v in pb do
 scan(v)end for _,sb in _RS.speedBinds do scan(sb.key)end for k in _RS.
 favKeybinds do scan(k)end local function hit(slot)local v=pb[slot]if chord then
 return v==chord end return type(v)=='string'and v~=''and v~='None'and v~=
@@ -7177,18 +7177,18 @@ if hit('speedUp')then _RS.startSpeedHold(1)return end if hit('speedDown')then
 _RS.startSpeedHold(-1)return end if hit('record')then if _RS.toggleRecording
 then pcall(_RS.toggleRecording)end return end if hit('live')then if _RS.
 toggleLive then pcall(_RS.toggleLive)end return end if hit('headTrack')then _RS.
-setHeadTrack(not _RS.headTrack)_nvL.notify('Reanim',_RS.headTrack and
+setHeadTrack(not _RS.headTrack)_pupL.notify('Reanim',_RS.headTrack and
 'Head tracking on'or'Head tracking off')return end if hit('legs')then _RS.
-setLegs(not _RS.legsOn)_nvL.notify('Reanim',_RS.legsOn and'Long legs on'or
+setLegs(not _RS.legsOn)_pupL.notify('Reanim',_RS.legsOn and'Long legs on'or
 'Long legs off')return end if hit('wobble')then if not _RS.legsOn then _RS.
-setLegsWobble(true)return end _RS.setLegsWobble(not _RS.legsWobble)_nvL.notify(
+setLegsWobble(true)return end _RS.setLegsWobble(not _RS.legsWobble)_pupL.notify(
 'Reanim',_RS.legsWobble and'Wobbly legs on'or'Wobbly legs off')return end if
-hit('spider')then _RS.setSpider(not _RS.spiderOn)if _RS.spiderOn then _nvL.
+hit('spider')then _RS.setSpider(not _RS.spiderOn)if _RS.spiderOn then _pupL.
 notify('Reanim','Spider mode on')elseif _RS.poleReady and _RS.poleReady()then
-_nvL.notify('Reanim','Spider mode off')end return end if hit('torso')then _RS.
-setTorso(not _RS.torsoOn)_nvL.notify('Reanim',_RS.torsoOn and'Torso control on'
+_pupL.notify('Reanim','Spider mode off')end return end if hit('torso')then _RS.
+setTorso(not _RS.torsoOn)_pupL.notify('Reanim',_RS.torsoOn and'Torso control on'
 or'Torso control off')return end if hit('fly')then if _RS.flyOn then _RS.setFly(
-false)_nvL.notify('Reanim','Stopped flying')elseif _RS.setFly(true)then _nvL.
+false)_pupL.notify('Reanim','Stopped flying')elseif _RS.setFly(true)then _pupL.
 notify('Reanim','Flying')end return end if hit('pole')then if _RS.togglePole
 then pcall(_RS.togglePole)end return end if hit('poleHere')then if _RS.poleHere
 then pcall(_RS.poleHere)end return end if hit('stretch')then if _RS.
@@ -7196,19 +7196,19 @@ toggleStretch then pcall(_RS.toggleStretch)end return end if hit('point')then if
 _RS.togglePoint then pcall(_RS.togglePoint)end return end if hit('mimic')then if
 _RS.toggleMimic then pcall(_RS.toggleMimic)end return end if hit('sync')then if
 _RS.toggleSync then local api=_G._reanimAPI if not _RS.isSyncing()and api and
-api.mimic_active and api.mimic_active()then _nvL.notify('Reanim',
+api.mimic_active and api.mimic_active()then _pupL.notify('Reanim',
 'Turn off Mimic first')else pcall(_RS.toggleSync)end end return end if hit(
 'drive')then if _RS.liveActive and _RS.setLiveDriving then _RS.setLiveDriving(
 true)return end end for _,sb in _RS.speedBinds do if sb.key==(chord or kcName)
 then _RS.useSpeedBind(sb)return end end local b=_RS.favKeybinds[chord or kcName]
-if not b then return end if not _G._reanimAPI then _nvL.notify('Reanim',
+if not b then return end if not _G._reanimAPI then _pupL.notify('Reanim',
 'API not loaded yet')return end if _RS.reanimCurrentName==b.name then
 reanimStopCurrent()else reanimPlayByName(b.name,b.url)end end)userInputService.
 InputEnded:Connect(function(inp)if inp.UserInputType~=Enum.UserInputType.
 Keyboard then return end local kcName=inp.KeyCode.Name if kcName=='Unknown'or
 kcName=='None'then return end local pb=_RS.playBinds local function hit(slot)
 local v=pb[slot]return type(v)=='string'and v~=''and v~='None'and v~='Unknown'
-and(kcName==v or _nvL.keyInChord(v,kcName))end if hit('pause')then local held=
+and(kcName==v or _pupL.keyInChord(v,kcName))end if hit('pause')then local held=
 tick()-(_RS._pauseHoldAt or tick())if held>=0.8 then _RS.setPause(false)elseif
 _RS._pauseWasOn then _RS.setPause(false)end _RS._pauseHoldAt=nil return end if
 hit('rewind')then local held=tick()-(_RS._rewindHoldAt or tick())if held>=0.25
@@ -7227,26 +7227,26 @@ syncTarget,_RS.syncGen=false,nil,-1 _RS.SYNC_DELAY_MAX=5 _RS.syncDelay=_RS.
 syncDelay or 0 _RS.setSyncDelay=function(sec)_RS.syncDelay=math.clamp(tonumber(
 sec)or 0,0,_RS.SYNC_DELAY_MAX)end _RS.PAIR_LEAD=0.35 _RS.pairHost=false _RS.
 setPairHost=function(on)local api=_G._reanimAPI if on then if not(api and api.
-is_reanimated and api.is_reanimated())then _nvL.notify('Pair','Reanimate first')
-return false end if api.pole_mode and api.pole_mode()=='local'then _nvL.notify(
+is_reanimated and api.is_reanimated())then _pupL.notify('Pair','Reanimate first')
+return false end if api.pole_mode and api.pole_mode()=='local'then _pupL.notify(
 'Pair','Nobody else can see your reanim in this game')return false end end local
-ok,err=_RS.trickApi('pair_host',on,_RS.PAIR_LEAD)if not ok then _nvL.notify(
+ok,err=_RS.trickApi('pair_host',on,_RS.PAIR_LEAD)if not ok then _pupL.notify(
 'Pair',tostring(err or'Could not start pair mode'))end _RS.pairHost=on and ok==
 true or false return ok end _RS.isSyncing=function()return _RS.syncOn==true and
 _RS.syncGen==_RS.reanimGeneration end _RS.stopSync=function(reason)if not _RS.
 syncOn then return end _RS.syncOn=false _RS.syncPaired,_RS.syncPairLate=false,
 false if _RS.syncConn then pcall(function()_RS.syncConn:Disconnect()end)_RS.
 syncConn=nil end if _RS.syncGen==_RS.reanimGeneration then pcall(
-reanimStopCurrent)end if reason then _nvL.notify('Sync',reason)end end
+reanimStopCurrent)end if reason then _pupL.notify('Sync',reason)end end
 local function syncFloor(from,skip)local params=RaycastParams.new()params.
 FilterType=Enum.RaycastFilterType.Exclude params.RespectCanCollide=true params.
 FilterDescendantsInstances=skip local hit=workspace:Raycast(from,Vector3.new(0,-
 200,0),params)return hit and hit.Position.Y end _RS.startSync=function()local
 api=_G._reanimAPI local plr=_RS.syncTarget if not(api and api.is_reanimated and
-api.is_reanimated())then _nvL.notify('Sync','Reanimate first')return false end
-if not(plr and plr.Parent)then _nvL.notify('Sync','Pick a player first')return
+api.is_reanimated())then _pupL.notify('Sync','Reanimate first')return false end
+if not(plr and plr.Parent)then _pupL.notify('Sync','Pick a player first')return
 false end local char=plr.Character local okR,rig=pcall(SyncK.rig,char)if not(
-char and okR and rig and#rig.joints>0)then _nvL.notify('Sync',plr.DisplayName..
+char and okR and rig and#rig.joints>0)then _pupL.notify('Sync',plr.DisplayName..
 ' has no body to copy right now')return false end if _RS.liveActive and _RS.
 stopLive then pcall(_RS.stopLive,true)end if _RS.syncConn then pcall(function()
 _RS.syncConn:Disconnect()end)_RS.syncConn=nil end _RS.reanimGeneration=_RS.
@@ -7254,7 +7254,7 @@ reanimGeneration+1 if _G._reanimAPI and _G._reanimAPI.cancel_pending then _G.
 _reanimAPI.cancel_pending()end local myGen=_RS.reanimGeneration if _RS.
 reanimLocalConn then _RS.reanimLocalConn:Disconnect()_RS.reanimLocalConn=nil end
 pcall(api.stop_animation)local body=(api.get_anim_body and api.get_anim_body(
-_nvL.lp))or api.get_clone(_nvL.lp)if not body then _nvL.notify('Sync',
+_pupL.lp))or api.get_clone(_pupL.lp)if not body then _pupL.notify('Sync',
 'Reanimate first')return false end pcall(function()local ctrl=body:
 FindFirstChildOfClass('Humanoid')or body:FindFirstChildOfClass(
 'AnimationController')for _,t in ctrl:GetPlayingAnimationTracks()do t:Stop()end
@@ -7266,7 +7266,7 @@ reanimLocalOrigC0s,_RS.reanimLocalIsMotor6D=joints,origC0s,hasMotor _RS.
 reanimLocalACMap=nil if not hasMotor and api._buildACJointMap then local okM,m=
 pcall(api._buildACJointMap,body)if okM then _RS.reanimLocalACMap=m end end local
 acMap=_RS.reanimLocalACMap local mine=body:FindFirstChild('UpperTorso')and'R15'
-or'R6'if rig.rig~=mine then _nvL.notify('Sync',plr.DisplayName..' uses '..rig.
+or'R6'if rig.rig~=mine then _pupL.notify('Sync',plr.DisplayName..' uses '..rig.
 rig..', only some parts will follow')end local root,rigJoints,stand=rig.root,rig
 .joints,rig.stand local rest=(root.c1*root.c0:Inverse()).Rotation local last,yaw
 ,floorY,floorAt={},nil,nil,0 local hist,clock={},0 local feed,feedAt,feedRun,
@@ -7320,13 +7320,13 @@ conn=(acMap and runService.PreSimulation or runService.Heartbeat):Connect(
 function(dt)if myGen~=_RS.reanimGeneration then conn:Disconnect()if _RS.syncConn
 ==conn then _RS.syncConn=nil end if _RS.syncGen==myGen then _RS.syncPaired,_RS.
 syncPairLate=false,false end if _RS.syncOn and _RS.syncGen==myGen then _RS.
-syncOn=false _nvL.notify('Sync','Sync off')end return end local ok,why=pcall(
+syncOn=false _pupL.notify('Sync','Sync off')end return end local ok,why=pcall(
 step,dt)if not ok then if not _RS.syncWarned then _RS.syncWarned=true warn(
 'Puppy Admin sync: '..tostring(why))end _RS.stopSync('Sync stopped: '..(tostring(
 why):gsub('^.-:%d+: ','')):sub(1,80))elseif why then _RS.stopSync(why)end end)
 _RS.syncConn=conn _RS.syncOn,_RS.syncGen=true,myGen _RS.manualOverride=true _RS.
 reanimCurrentName='@'..plr.Name if _RS.reanimStatusLbl then _RS.reanimStatusLbl.
-Text='Syncing: '..plr.DisplayName:sub(1,20)end _nvL.notify('Sync','Syncing to '
+Text='Syncing: '..plr.DisplayName:sub(1,20)end _pupL.notify('Sync','Syncing to '
 ..plr.DisplayName)return true end _RS.toggleSync=function()if _RS.isSyncing()
 then _RS.stopSync('Sync off')else _RS.startSync()end end _RS.setSyncTarget=
 function(plr)_RS.syncTarget=plr if not _RS.isSyncing()then return end if plr
@@ -7360,7 +7360,7 @@ host and host.Enabled then local point=host.IgnoreGuiInset and pos or(pos-inset)
 for _,obj in host:GetDescendants()do if obj:IsA('GuiObject')and obj.Visible and
 blocks(obj)then local at,size=obj.AbsolutePosition,obj.AbsoluteSize if point.X>=
 at.X and point.Y>=at.Y and point.X<=at.X+size.X and point.Y<=at.Y+size.Y and
-shown(obj)then return true end end end end local playerGui=_nvL.lp:
+shown(obj)then return true end end end end local playerGui=_pupL.lp:
 FindFirstChildOfClass('PlayerGui')if playerGui then local ok,objs=pcall(function
 ()return playerGui:GetGuiObjectsAtPosition(pos.X-inset.X,pos.Y-inset.Y)end)if ok
 and type(objs)=='table'then for _,obj in objs do if blocks(obj)and shown(obj)
@@ -7370,8 +7370,8 @@ liveCur)then return end for part,ccf in _RS.liveCur do local m=rig.joints[part]
 local o=m and rig.origC0s[m]if o and m.Parent then pcall(function()m.C0=o*ccf
 end)end end end _RS.placePoleAt=function(pos)local api=_G._reanimAPI local cam=
 workspace.CurrentCamera if not(api and api.pole_place and cam)then return end if
-not _RS.poleReady()then _RS.clearPole()_nvL.notify('Pole','Reanimate first')
-return end local hit=_RS.worldHit(pos,_RS.trickRange(600))if not hit then _nvL.
+not _RS.poleReady()then _RS.clearPole()_pupL.notify('Pole','Reanimate first')
+return end local hit=_RS.worldHit(pos,_RS.trickRange(600))if not hit then _pupL.
 notify('Pole','Click on the ground or a surface')return end local look=cam.
 CFrame.LookVector local flat=Vector3.new(look.X,0,look.Z)local cf=flat.Magnitude
 >0.01 and CFrame.lookAt(hit.Position,hit.Position+flat)or CFrame.new(hit.
@@ -7382,11 +7382,11 @@ end local placed,mode,lastErr,tallest=0,nil,nil,0 for i,limb in chosen do local
 spot=cf*CFrame.new((i-(#chosen+1)/2)*3,0,0)local ok,m,height=api.pole_place(spot
 ,limb,_RS.poleEffHeight())if ok then placed=placed+1 mode=m _RS.poleBases[limb]=
 spot tallest=math.max(tallest,tonumber(height)or 0)else lastErr=m end end if
-placed==0 then _nvL.notify('Pole',tostring(lastErr or'Could not place the pole')
+placed==0 then _pupL.notify('Pole',tostring(lastErr or'Could not place the pole')
 )return end _RS.poleRealHeight=tallest _RS.poleActive=true _RS.setPolePicking(
 false)local what=placed==1 and'Pole placed'or(placed..' poles placed')if mode==
-'local'then _nvL.notify('Pole',what..'. Only you can see it in this game')else
-_nvL.notify('Pole',string.format('%s, %.1f studs tall',what,tallest))end end _RS
+'local'then _pupL.notify('Pole',what..'. Only you can see it in this game')else
+_pupL.notify('Pole',string.format('%s, %.1f studs tall',what,tallest))end end _RS
 .setPolePicking=function(on)_RS.polePicking=on and true or false if _RS.
 polePickConn then _RS.polePickConn:Disconnect()_RS.polePickConn=nil end if _RS.
 polePickEnd then _RS.polePickEnd:Disconnect()_RS.polePickEnd=nil end if not on
@@ -7405,11 +7405,11 @@ clearPole=function()_RS.setPolePicking(false)local had=_RS.poleActive _RS.
 poleActive=false _RS.poleBases={}_RS.poleRealHeight=nil if _G._reanimAPI and _G.
 _reanimAPI.pole_clear then pcall(_G._reanimAPI.pole_clear)end pcall(_RS.
 poleLiveResync)return had end _RS.poleHere=function()local api=_G._reanimAPI if
-not(api and _RS.poleReady())then _nvL.notify('Pole','Reanimate first')return end
-local body=api.get_clone and api.get_clone(_nvL.lp)local root=body and body:
+not(api and _RS.poleReady())then _pupL.notify('Pole','Reanimate first')return end
+local body=api.get_clone and api.get_clone(_pupL.lp)local root=body and body:
 FindFirstChild('HumanoidRootPart')if not root then return end local params=
 RaycastParams.new()params.FilterType=Enum.RaycastFilterType.Exclude local skip={
-body}local real=api.get_real_character and api.get_real_character(_nvL.lp)if
+body}local real=api.get_real_character and api.get_real_character(_pupL.lp)if
 real then skip[#skip+1]=real end params.FilterDescendantsInstances=skip local
 down=workspace:Raycast(root.Position,Vector3.new(0,-80,0),params)local ground=
 down and down.Position or(root.Position-Vector3.new(0,3,0))local look=root.
@@ -7417,12 +7417,12 @@ CFrame.LookVector local flat=Vector3.new(look.X,0,look.Z)local spot=ground+(flat
 .Magnitude>0.01 and flat.Unit*3 or Vector3.zero)local cf=flat.Magnitude>0.01 and
 CFrame.lookAt(spot,spot+flat)or CFrame.new(spot)_RS.placePoles(cf)end _RS.
 togglePole=function()if _RS.poleActive or _RS.polePicking then if _RS.clearPole(
-)then _nvL.notify('Pole','Your limbs are back')end return end if not _RS.
-poleReady()then _nvL.notify('Pole','Reanimate first')return end _RS.
-setPolePicking(true)_nvL.notify('Pole','Click where the pole should stand')end
+)then _pupL.notify('Pole','Your limbs are back')end return end if not _RS.
+poleReady()then _pupL.notify('Pole','Reanimate first')return end _RS.
+setPolePicking(true)_pupL.notify('Pole','Click where the pole should stand')end
 _RS.movePole=function()if _RS.polePicking then _RS.setPolePicking(false)return
-end if not _RS.poleReady()then _RS.clearPole()_nvL.notify('Pole',
-'Reanimate first')return end _RS.setPolePicking(true)_nvL.notify('Pole',
+end if not _RS.poleReady()then _RS.clearPole()_pupL.notify('Pole',
+'Reanimate first')return end _RS.setPolePicking(true)_pupL.notify('Pole',
 'Click where the selected limbs should go')end _RS.setPoleLimbs=function(name)
 local count=0 for _,on in _RS.poleLimbs do if on then count=count+1 end end if
 _RS.poleLimbs[name]and count<=1 then return end _RS.poleLimbs[name]=not _RS.
@@ -7433,24 +7433,24 @@ pcall(_RS.resizePoles)end _RS.stretchOn=false _RS.stretchReach=60 _RS.worldHit=
 function(pos,range)local api=_G._reanimAPI local cam=workspace.CurrentCamera if
 not(api and cam)then return nil end local ray=cam:ViewportPointToRay(pos.X,pos.Y
 )local params=RaycastParams.new()params.FilterType=Enum.RaycastFilterType.
-Exclude local skip={}local clone=api.get_clone and api.get_clone(_nvL.lp)local
-real=api.get_real_character and api.get_real_character(_nvL.lp)if clone then
-skip[#skip+1]=clone end if real then skip[#skip+1]=real end if _nvL.lp.Character
-and _nvL.lp.Character~=clone and _nvL.lp.Character~=real then skip[#skip+1]=_nvL
+Exclude local skip={}local clone=api.get_clone and api.get_clone(_pupL.lp)local
+real=api.get_real_character and api.get_real_character(_pupL.lp)if clone then
+skip[#skip+1]=clone end if real then skip[#skip+1]=real end if _pupL.lp.Character
+and _pupL.lp.Character~=clone and _pupL.lp.Character~=real then skip[#skip+1]=_pupL
 .lp.Character end params.FilterDescendantsInstances=skip return workspace:
 Raycast(ray.Origin,ray.Direction*(range or 600),params)end _RS.stretchSide=
 function(input)if input.UserInputType==Enum.UserInputType.MouseButton1 then
 return'left'end if input.UserInputType==Enum.UserInputType.MouseButton2 then
 return'right'end return nil end _RS.stretchGrab=function(side)local api=_G.
 _reanimAPI if not(api and api.reach_set)then return end if not _RS.poleReady()
-then _RS.setStretch(false)_nvL.notify('Stretch','Reanimate first')return end
+then _RS.setStretch(false)_pupL.notify('Stretch','Reanimate first')return end
 local pos=userInputService:GetMouseLocation()if _RS.poleOverUi(pos)then return
 end local hit=_RS.worldHit(pos,_RS.trickRange(1000))if not hit then return end
-local body=api.get_clone and api.get_clone(_nvL.lp)local root=body and body:
+local body=api.get_clone and api.get_clone(_pupL.lp)local root=body and body:
 FindFirstChild('HumanoidRootPart')if not _RS.trickUnlimited and root and(hit.
-Position-root.Position).Magnitude>_RS.stretchReach then _nvL.notify('Stretch',
+Position-root.Position).Magnitude>_RS.stretchReach then _pupL.notify('Stretch',
 'Too far to reach')return end local ok,err=api.reach_set(side,hit.Position,hit.
-Instance)if not ok then _nvL.notify('Stretch',tostring(err or'Could not stretch'
+Instance)if not ok then _pupL.notify('Stretch',tostring(err or'Could not stretch'
 ))if err=='Your arms are one piece, so they cannot stretch'or err==
 'This game keeps your arms attached'then _RS.setStretch(false)end end end _RS.
 setStretch=function(on)on=on and true or false _RS.stretchOn=on if on and _RS.
@@ -7466,16 +7466,16 @@ freeGrab(side)else _RS.stretchGrab(side)end end)_RS.stretchEnd=userInputService.
 InputEnded:Connect(function(input)local side=_RS.stretchSide(input)if not side
 then return end _RS.freeRelease(side)if _G._reanimAPI and _G._reanimAPI.
 reach_set then pcall(_G._reanimAPI.reach_set,side,nil)end end)end _RS.
-toggleStretch=function()if not _RS.stretchOn and not _RS.poleReady()then _nvL.
+toggleStretch=function()if not _RS.stretchOn and not _RS.poleReady()then _pupL.
 notify('Stretch','Reanimate first')return end _RS.setStretch(not _RS.stretchOn)
-_nvL.notify('Stretch',_RS.stretchOn and'Hold left or right click on a surface'or
+_pupL.notify('Stretch',_RS.stretchOn and'Hold left or right click on a surface'or
 'Stretchy arms off')end _RS.setStretchReach=function(value)_RS.stretchReach=math
 .clamp(math.floor((tonumber(value)or 60)+0.5),20,150)end _RS.stretchFree=false
 _RS.FREE_START,_RS.FREE_MIN,_RS.FREE_MAX=6,2,2000 _RS.freeHeld={}_RS.freeGap={}
 _RS.setStretchFree=function(on)_RS.stretchFree=on and true or false if not _RS.
 stretchFree then _RS.freeRelease('left')_RS.freeRelease('right')end end _RS.
 freeShoulder=function(side)local api=_G._reanimAPI local body=api and api.
-get_clone and api.get_clone(_nvL.lp)if not body then return nil end local part=
+get_clone and api.get_clone(_pupL.lp)if not body then return nil end local part=
 body:FindFirstChild(side=='left'and'LeftUpperArm'or'RightUpperArm')or body:
 FindFirstChild(side=='left'and'Left Arm'or'Right Arm')if not part then return
 nil end local prefix=side=='left'and'Left'or'Right'local att=part:
@@ -7489,23 +7489,23 @@ Origin-from local near=math.max(-rel:Dot(dir),0)local gap=(rel+dir*near).
 Magnitude local t=near if len>gap then t=near+math.sqrt(len*len-gap*gap)end
 return ray.Origin+dir*t,gap end _RS.freeZoom=function(lock)if lock then if _RS.
 freeZoomWas then return end local cam=workspace.CurrentCamera local dist=cam and
-(cam.CFrame.Position-cam.Focus.Position).Magnitude or 12 _RS.freeZoomWas={_nvL.
-lp.CameraMinZoomDistance,_nvL.lp.CameraMaxZoomDistance}dist=math.clamp(dist,_RS.
-freeZoomWas[1],_RS.freeZoomWas[2])pcall(function()_nvL.lp.CameraMaxZoomDistance=
-dist _nvL.lp.CameraMinZoomDistance=dist end)elseif _RS.freeZoomWas then local
-was=_RS.freeZoomWas _RS.freeZoomWas=nil pcall(function()_nvL.lp.
-CameraMinZoomDistance=was[1]_nvL.lp.CameraMaxZoomDistance=was[2]end)end end _RS.
+(cam.CFrame.Position-cam.Focus.Position).Magnitude or 12 _RS.freeZoomWas={_pupL.
+lp.CameraMinZoomDistance,_pupL.lp.CameraMaxZoomDistance}dist=math.clamp(dist,_RS.
+freeZoomWas[1],_RS.freeZoomWas[2])pcall(function()_pupL.lp.CameraMaxZoomDistance=
+dist _pupL.lp.CameraMinZoomDistance=dist end)elseif _RS.freeZoomWas then local
+was=_RS.freeZoomWas _RS.freeZoomWas=nil pcall(function()_pupL.lp.
+CameraMinZoomDistance=was[1]_pupL.lp.CameraMaxZoomDistance=was[2]end)end end _RS.
 freeRelease=function(side)if not _RS.freeHeld[side]then return end _RS.freeHeld[
-side]=nil _RS.freeGap[side]=nil if _nvAny(_RS.freeHeld)then return end if _RS.
+side]=nil _RS.freeGap[side]=nil if _pupAny(_RS.freeHeld)then return end if _RS.
 freeStep then _RS.freeStep:Disconnect()_RS.freeStep=nil end if _RS.freeWheel
 then _RS.freeWheel:Disconnect()_RS.freeWheel=nil end _RS.freeZoom(false)end _RS.
 freeGrab=function(side)local api=_G._reanimAPI if not(api and api.reach_set)then
-return end if not _RS.poleReady()then _RS.setStretch(false)_nvL.notify('Stretch'
+return end if not _RS.poleReady()then _RS.setStretch(false)_pupL.notify('Stretch'
 ,'Reanimate first')return end if _RS.poleOverUi(userInputService:
 GetMouseLocation())then return end local okT,target,gap=pcall(_RS.freeTarget,
 side,_RS.FREE_START)if not okT or not target then return end local len=math.max(
 _RS.FREE_START,gap)local ok,err=api.reach_set(side,target,nil)if not ok then
-_nvL.notify('Stretch',tostring(err or'Could not stretch'))if err==
+_pupL.notify('Stretch',tostring(err or'Could not stretch'))if err==
 'Your arms are one piece, so they cannot stretch'or err==
 'This game keeps your arms attached'then _RS.setStretch(false)end return end _RS
 .freeHeld[side]=len _RS.freeGap[side]=gap _RS.freeZoom(true)if not _RS.freeWheel
@@ -7527,13 +7527,13 @@ CurrentCamera if not cam then return nil end local ray=cam:ViewportPointToRay(
 pos.X,pos.Y)return ray.Origin+ray.Direction*500,nil end _RS.pointRelease=
 function(side)_RS.pointHeld[side]=nil local api=_G._reanimAPI if api and api.
 trick_point then pcall(api.trick_point,side,nil)end if _RS.pointDrag and not
-_nvAny(_RS.pointHeld)then _RS.pointDrag:Disconnect()_RS.pointDrag=nil end end
+_pupAny(_RS.pointHeld)then _RS.pointDrag:Disconnect()_RS.pointDrag=nil end end
 _RS.pointAt=function(side)local api=_G._reanimAPI if not(api and api.trick_point
-)then return end if not _RS.poleReady()then _RS.setPoint(false)_nvL.notify(
+)then return end if not _RS.poleReady()then _RS.setPoint(false)_pupL.notify(
 'Point','Reanimate first')return end local pos=userInputService:
 GetMouseLocation()if _RS.poleOverUi(pos)then return end local okT,target,part=
 pcall(_RS.pointTarget,pos)if not okT or not target then return end local called,
-ok,err=pcall(api.trick_point,side,target,part)if not called or not ok then _nvL.
+ok,err=pcall(api.trick_point,side,target,part)if not called or not ok then _pupL.
 notify('Point',called and tostring(err or'Could not point')or'Could not point')
 return end _RS.pointHeld[side]=true if _RS.pointDrag then return end _RS.
 pointDrag=runService.RenderStepped:Connect(function()local a=_G._reanimAPI if
@@ -7556,11 +7556,11 @@ return end local side=_RS.pointSide(input)if not side then return end if side==
 'left'and _RS.polePicking then return end _RS.pointAt(side)end)_RS.pointEnd=
 userInputService.InputEnded:Connect(function(input)local side=_RS.pointSide(
 input)if not side then return end _RS.pointRelease(side)end)end _RS.togglePoint=
-function()if not _RS.pointOn and not _RS.poleReady()then _nvL.notify('Point',
-'Reanimate first')return end _RS.setPoint(not _RS.pointOn)_nvL.notify('Point',
+function()if not _RS.pointOn and not _RS.poleReady()then _pupL.notify('Point',
+'Reanimate first')return end _RS.setPoint(not _RS.pointOn)_pupL.notify('Point',
 _RS.pointOn and'Hold left or right click to point'or'Pointing off')end _RS.
 blockClicks=false _RS.CLICK_MENUS={'click_the_player'}_RS.clickBlockApply=
-function()local want=_RS.blockClicks and _RS.poleReady()local playerGui=_nvL.lp:
+function()local want=_RS.blockClicks and _RS.poleReady()local playerGui=_pupL.lp:
 FindFirstChildOfClass('PlayerGui')if not playerGui then return end _RS.clickHeld
 =_RS.clickHeld or{}if want then for _,name in _RS.CLICK_MENUS do local holder=
 playerGui:FindFirstChild(name)if holder then for _,d in holder:GetDescendants()
@@ -7580,7 +7580,7 @@ setPoint then pcall(_RS.setPoint,false)end _RS.legsOn,_RS.legsWobble=false,false
 _RS.spiderOn=false if _RS.clickBlockApply then task.defer(function()pcall(_RS.
 clickBlockApply)end)end if not _RS.reanimActive then return end _RS.reanimActive
 =false _RS.syncPaired,_RS.syncPairLate=false,false if _RS.syncOn then _RS.syncOn
-=false _nvL.notify('Sync','Sync stopped, reanim turned off')end pcall(function()
+=false _pupL.notify('Sync','Sync stopped, reanim turned off')end pcall(function()
 if _RS.recordActive and _RS.toggleRecording then _RS.toggleRecording()end end)
 pcall(function()if _RS.liveActive and _RS.stopLive then _RS.stopLive(true)end
 end)_RS.reanimGeneration=(_RS.reanimGeneration or 0)+1 if _RS.reanimLocalConn
@@ -7604,34 +7604,34 @@ okSetup,errSetup=pcall(_setup)if not okSetup then warn(
 function()_G._reanimPanel:Destroy()end)end _G._reanimPanel=nil _G.
 _reanimSpeedPanel=nil return end local okLogic,errLogic=pcall(_logic)if not
 okLogic then warn('Puppy Admin: reanim _logic failed:',errLogic)end pcall(function(
-)_nvL.applyThemeTo(_G._reanimPanel)end)pcall(function()if _G._reanimSpeedPanel
-then _nvL.applyThemeTo(_G._reanimSpeedPanel)end end)end end function
+)_pupL.applyThemeTo(_G._reanimPanel)end)pcall(function()if _G._reanimSpeedPanel
+then _pupL.applyThemeTo(_G._reanimSpeedPanel)end end)end end function
 __DARKLUA_BUNDLE_MODULES.aj():typeof(__modImpl())local v=
 __DARKLUA_BUNDLE_MODULES.cache.aj if not v then v={c=__modImpl()}
 __DARKLUA_BUNDLE_MODULES.cache.aj=v end return v.c end end
 do local function
 __modImpl()return function(env)local _cs=env._cs local _isMobile=env._isMobile
-local _mv=env._mv local _nvL=env._nvL local makeFloatingPanel=env.
+local _mv=env._mv local _pupL=env._pupL local makeFloatingPanel=env.
 makeFloatingPanel local makePanelTitleBar=env.makePanelTitleBar local function
 _setup()_G._flyPanel=makeFloatingPanel(260,206,0.5,0.45)_G._flyPanel.Name=
 'SuperflyPanel'_G._flyPanel.BackgroundTransparency=0 local fpBar=
 makePanelTitleBar(_G._flyPanel,'Superfly',function()_G._flyPanel.Visible=false
-end)_cs.makePanelDraggable(_G._flyPanel,fpBar)local K=_G._nv_popKit local fpBody
+end)_cs.makePanelDraggable(_G._flyPanel,fpBar)local K=_G._pup_popKit local fpBody
 =K.body(_G._flyPanel)local setFlyToggle setFlyToggle=K.featureTile(fpBody,18,8,
 224,84,{tint='blue',icon='flash',label='Superfly',note=_isMobile and
 'Hold the screen to fly'or'Hold the mouse to fly',callback=function(v)if v then
-_nvL.NOFLY()task.wait()_nvL.sFLY()if _G._nvSuperflyStart then _G.
-_nvSuperflyStart()end _nvL.notify('Superfly','Enabled')else _nvL.NOFLY()_nvL.
-notify('Superfly','Disabled')end if _G._nvMarkCmdToggle then _G.
-_nvMarkCmdToggle('superfly',v)end end})_G._flyToggleSet=function(on,fire)
+_pupL.NOFLY()task.wait()_pupL.sFLY()if _G._pupSuperflyStart then _G.
+_pupSuperflyStart()end _pupL.notify('Superfly','Enabled')else _pupL.NOFLY()_pupL.
+notify('Superfly','Disabled')end if _G._pupMarkCmdToggle then _G.
+_pupMarkCmdToggle('superfly',v)end end})_G._flyToggleSet=function(on,fire)
 setFlyToggle(on,fire~=false)end local fpGroup=K.group(fpBody,18,102,224,52)_G.
 _flySlider=K.slider(fpGroup,0,0,224,'Speed',1,20,math.clamp(math.round(_mv.
 iyflyspeed),1,20),function(v)_mv.iyflyspeed=v local c=_mv._flyControl if c then
 if c.F~=0 then c.F=v end if c.B~=0 then c.B=-v end if c.L~=0 then c.L=-v end if
 c.R~=0 then c.R=v end if c.Q~=0 then c.Q=v*2 end if c.E~=0 then c.E=-v*2 end end
-end)end _setup()pcall(function()_nvL.applyThemeTo(_G._flyPanel)end)_G.
-_nvPanelEnable=_G._nvPanelEnable or{}_G._nvPanelEnable.superfly={ensure=function
-()_G._nvEnsurePanel('_flyPanel',_G._initFlyPanel or _initFlyPanel)if _G.
+end)end _setup()pcall(function()_pupL.applyThemeTo(_G._flyPanel)end)_G.
+_pupPanelEnable=_G._pupPanelEnable or{}_G._pupPanelEnable.superfly={ensure=function
+()_G._pupEnsurePanel('_flyPanel',_G._initFlyPanel or _initFlyPanel)if _G.
 _flyPanel then _G._flyPanel.Visible=true end end,setOn=function(on,fire)if _G.
 _flyToggleSet then _G._flyToggleSet(on,fire~=false)end end}end end function
 __DARKLUA_BUNDLE_MODULES.ar():typeof(__modImpl())local v=
@@ -7654,7 +7654,7 @@ props or{}do f[k]=v end return f end local function corner(parent,r)
 createInstance('UICorner',{Parent=parent,CornerRadius=r and UDim.new(0,r)or UDim
 .new(1,0)})end local function lift(obj,z)if obj:IsA('GuiObject')then obj.ZIndex=
 z end for _,d in obj:GetDescendants()do if d:IsA('GuiObject')then d.ZIndex=z+1
-end end end local function button(parent,order,b,small)local kit=_G._nv_kit
+end end end local function button(parent,order,b,small)local kit=_G._pup_kit
 local size=small and 30 or 32 local width=small and size or math.ceil(
 textService:GetTextSize(b.label,12,BOLD,Vector2.new(400,40)).X)+(b.icon and 46
 or 28)local btn if kit and kit.softButton then btn=kit.softButton(parent,0,0,
@@ -7778,7 +7778,7 @@ __modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.aV if not v then v={c=
 __modImpl()}__DARKLUA_BUNDLE_MODULES.cache.aV=v end return v.c end end
 do local function
 __modImpl()return function(env)
-local _nvL=env._nvL 
+local _pupL=env._pupL 
 local _request=env._request 
 local players=env.players 
 local reg=env.
@@ -7787,9 +7787,9 @@ local
 teleportService=env.teleportService 
 do
 reg('rejoin','Rejoin this server','',{'rj'},function()pcall(function()
-if#players:GetPlayers()<=1 then _nvL.lp:Kick('\nRejoining...')task.wait()
-teleportService:Teleport(game.PlaceId,_nvL.lp)else teleportService:
-TeleportToPlaceInstance(game.PlaceId,game.JobId,_nvL.lp)end end)end)
+if#players:GetPlayers()<=1 then _pupL.lp:Kick('\nRejoining...')task.wait()
+teleportService:Teleport(game.PlaceId,_pupL.lp)else teleportService:
+TeleportToPlaceInstance(game.PlaceId,game.JobId,_pupL.lp)end end)end)
 reg(
 'serverhop','Hop to a random server','',{'shop','sh'},function()if type(_G.
 _shHop)=='function'then _G._shHop('random')return end task.spawn(function()
@@ -7802,15 +7802,15 @@ Body end else resp=game:HttpGet(url)end local body=game:GetService('HttpService'
 data do if type(v)=='table'and tonumber(v.playing)and tonumber(v.maxPlayers)and
 v.playing<v.maxPlayers and v.id~=game.JobId then servers[#servers+1]=v.id end
 end end if#servers>0 then teleportService:TeleportToPlaceInstance(game.PlaceId,
-servers[math.random(#servers)],_nvL.lp)end end)end)end)
+servers[math.random(#servers)],_pupL.lp)end end)end)end)
 reg('clip','Disable noclip','',function()
-_G._nvMove.setNoclip('user',false)local prof=_G._nv_profileRuntime if prof and
+_G._pupMove.setNoclip('user',false)local prof=_G._pup_profileRuntime if prof and
 prof.drop then prof:drop('noclip')end end)
 reg('unfollow','Stop following player'
-,'',function()_nvL.walktoActive=false end)
+,'',function()_pupL.walktoActive=false end)
 reg('join','Join server by Job ID',
 '<s>',function(a)local jobId=a[2]if not jobId or#jobId<8 then return end pcall(
-function()teleportService:TeleportToPlaceInstance(game.PlaceId,jobId,_nvL.lp)end
+function()teleportService:TeleportToPlaceInstance(game.PlaceId,jobId,_pupL.lp)end
 )end)
 end
 end end function __DARKLUA_BUNDLE_MODULES.aL():typeof(__modImpl())local v=
@@ -7820,8 +7820,8 @@ do local function
 __modImpl()return function(env)
 local C=env.C 
 local _cs=env._cs 
-local _nvL=env.
-_nvL 
+local _pupL=env.
+_pupL 
 local _orbs=env._orbs 
 local createInstance=env.createInstance 
 local
@@ -7839,7 +7839,7 @@ reg(
 'ftp','Teleport to mouse (F key)','',{'mousetp'},function()_cs.ftpOn=true if _cs
 .ftpConn then _cs.ftpConn:Disconnect()end _cs.ftpConn=userInputService.
 InputBegan:Connect(function(i,gp)if gp then return end if i.KeyCode==Enum.
-KeyCode.F then pcall(function()local hrp=_nvL.lp.Character and getRootPart(_nvL.
+KeyCode.F then pcall(function()local hrp=_pupL.lp.Character and getRootPart(_pupL.
 lp.Character)if hrp then hrp.CFrame=CFrame.new(mouse.Hit.Position+Vector3.new(0,
 3,0))end end)end end)end)
 reg('unftp','Disable FTP','',function()_cs.ftpOn=false
@@ -7848,41 +7848,41 @@ do local
 tpToolInstance=nil local tpToolConn=nil reg('tptool',
 'Equip click-to-teleport tool','',{'tpt'},function()if tpToolInstance and
 tpToolInstance.Parent then tpToolInstance:Destroy()end if tpToolConn then
-tpToolConn:Disconnect()tpToolConn=nil end local backpack=_nvL.lp:
-FindFirstChildWhichIsA('Backpack')local _char=_nvL.lp.Character if not backpack
+tpToolConn:Disconnect()tpToolConn=nil end local backpack=_pupL.lp:
+FindFirstChildWhichIsA('Backpack')local _char=_pupL.lp.Character if not backpack
 then return end local tool=createInstance('Tool',{Name='TP Tool',RequiresHandle=
 false,ToolTip='Click anywhere to teleport there',Parent=backpack})tpToolInstance
-=tool tpToolConn=tool.Activated:Connect(function()pcall(function()local hrp=_nvL
-.lp.Character and getRootPart(_nvL.lp.Character)if not hrp then return end local
+=tool tpToolConn=tool.Activated:Connect(function()pcall(function()local hrp=_pupL
+.lp.Character and getRootPart(_pupL.lp.Character)if not hrp then return end local
 target=mouse.Hit.Position+Vector3.new(0,3,0)hrp.CFrame=CFrame.new(target)end)end
 )tool.AncestryChanged:Connect(function()if not tool.Parent then if tpToolConn
 then tpToolConn:Disconnect()tpToolConn=nil end if tpToolInstance==tool then
-tpToolInstance=nil end end end)_nvL.notify('TP Tool',
+tpToolInstance=nil end end end)_pupL.notify('TP Tool',
 'Equipped ,  click anywhere to teleport')end)reg('untptool',
 'Remove the teleport tool','',{'utpt'},function()if tpToolInstance and
 tpToolInstance.Parent then tpToolInstance:Destroy()end if tpToolConn then
-tpToolConn:Disconnect()tpToolConn=nil end tpToolInstance=nil _nvL.notify(
+tpToolConn:Disconnect()tpToolConn=nil end tpToolInstance=nil _pupL.notify(
 'TP Tool','Removed')end)end 
 do
 local WP_FILE='PuppyAdmin/waypoints.json'
 local
-_nv_wps={}
-local _nv_wpVis={}
-local _nv_wpTool=nil 
-local _nv_wpToolConn=nil 
+_pup_wps={}
+local _pup_wpVis={}
+local _pup_wpTool=nil 
+local _pup_wpToolConn=nil 
 local
 hs_wp=game:GetService('HttpService')
 local function wpSave()pcall(function()if
 not isfolder('PuppyAdmin')then makefolder('PuppyAdmin')end writefile(WP_FILE,hs_wp:
-JSONEncode(_nv_wps))end)end 
-local function wpDistStr(pos)local hrp=_nvL.lp.Character and getRootPart(_nvL.lp
+JSONEncode(_pup_wps))end)end 
+local function wpDistStr(pos)local hrp=_pupL.lp.Character and getRootPart(_pupL.lp
 .Character)if not hrp then return'?m'end return tostring(math.round((hrp.
 Position-pos).Magnitude))..'m'end 
 local function wpDestroyVis(name)local vis=
-_nv_wpVis[name]if not vis then return end if vis.conn then vis.conn:Disconnect()
+_pup_wpVis[name]if not vis then return end if vis.conn then vis.conn:Disconnect()
 end pcall(function()if vis.part and vis.part.Parent then vis.part:Destroy()end
 end)pcall(function()if vis.bb and vis.bb.Parent then vis.bb:Destroy()end end)
-_nv_wpVis[name]=nil end 
+_pup_wpVis[name]=nil end 
 local function wpMakeVis(name,pos)wpDestroyVis(name)
 local part=createInstance('Part',{Name='NV_WP_'..name,Anchored=true,CanCollide=
 false,CanTouch=false,Size=Vector3.new(1.2,1.2,1.2),CFrame=CFrame.new(pos),
@@ -7891,7 +7891,7 @@ Parent=workspace})local hl=createInstance('SelectionBox',{Parent=part,Adornee=
 part,Color3=C.ACCENT,LineThickness=0.04,SurfaceTransparency=0.85})local bb=
 createInstance('BillboardGui',{Name='NV_WP_BB_'..name,AlwaysOnTop=true,
 LightInfluence=0,Size=UDim2.new(0,160,0,52),StudsOffsetWorldSpace=Vector3.new(0,
-2.2,0),Adornee=part,Parent=_nvL.coreGui})local frame=createInstance('Frame',{
+2.2,0),Adornee=part,Parent=_pupL.coreGui})local frame=createInstance('Frame',{
 Parent=bb,AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0.5,0,0.5,0),Size=
 UDim2.new(1,0,1,0),BackgroundColor3=C.PANEL,BackgroundTransparency=0.18,
 BorderSizePixel=0})createInstance('UICorner',{Parent=frame,CornerRadius=UDim.
@@ -7902,131 +7902,131 @@ Parent=frame,Name='WPName',BackgroundTransparency=1,Position=UDim2.new(0,26,0,4)
 Color3.fromRGB(255,255,255),TextXAlignment=Enum.TextXAlignment.Left,Text=name})
 local pinIcon=createInstance('ImageLabel',{Parent=frame,Name='WPIcon',
 BackgroundTransparency=1,Position=UDim2.new(0,8,0,6),Size=UDim2.fromOffset(14,14
-),ImageColor3=C.ACCENT,ScaleType=Enum.ScaleType.Fit})_G._nv_lazyFluent(pinIcon,
+),ImageColor3=C.ACCENT,ScaleType=Enum.ScaleType.Fit})_G._pup_lazyFluent(pinIcon,
 'location')local lblDist=createInstance('TextLabel',{Parent=frame,Name='WPDist',
 BackgroundTransparency=1,Position=UDim2.new(0,8,0,25),Size=UDim2.new(1,-16,0,16)
 ,Font=Enum.Font.Gotham,TextSize=12,TextColor3=C.ACCENT,TextXAlignment=Enum.
 TextXAlignment.Left,Text=wpDistStr(pos)})local conn=runService.Heartbeat:
 Connect(function()if not(part and part.Parent)then return end lblDist.Text=
-wpDistStr(pos)end)_nv_wpVis[name]={part=part,bb=bb,conn=conn}end 
+wpDistStr(pos)end)_pup_wpVis[name]={part=part,bb=bb,conn=conn}end 
 reg('setwaypoint','Save current position as a named waypoint','<n>',{'swp',
-'savepos'},function(a)local name=a[2]if not name or name==''then _nvL.notify(
-'Waypoint','Usage: setwaypoint <name>')return end local hrp=_nvL.lp.Character
-and getRootPart(_nvL.lp.Character)if not hrp then _nvL.notify('Waypoint',
-'No character found')return end local pos=hrp.Position _nv_wps[name]={pos.X,pos.
-Y,pos.Z}wpSave()wpMakeVis(name,pos)_nvL.notify('Waypoint','Saved "'..name..
+'savepos'},function(a)local name=a[2]if not name or name==''then _pupL.notify(
+'Waypoint','Usage: setwaypoint <name>')return end local hrp=_pupL.lp.Character
+and getRootPart(_pupL.lp.Character)if not hrp then _pupL.notify('Waypoint',
+'No character found')return end local pos=hrp.Position _pup_wps[name]={pos.X,pos.
+Y,pos.Z}wpSave()wpMakeVis(name,pos)_pupL.notify('Waypoint','Saved "'..name..
 '" ,  '..math.round(pos.X)..', '..math.round(pos.Y)..', '..math.round(pos.Z))end
 )
 reg('gotowaypoint','Teleport to a saved waypoint','<n>',{'gwp','wp'},function(a
-)local name=a[2]if not name then _nvL.notify('Waypoint',
-'Usage: gotowaypoint <name>')return end local coord=_nv_wps[name]if not coord
-then _nvL.notify('Waypoint','No waypoint named "'..name..'"')return end local
-hrp=_nvL.lp.Character and getRootPart(_nvL.lp.Character)if not hrp then return
+)local name=a[2]if not name then _pupL.notify('Waypoint',
+'Usage: gotowaypoint <name>')return end local coord=_pup_wps[name]if not coord
+then _pupL.notify('Waypoint','No waypoint named "'..name..'"')return end local
+hrp=_pupL.lp.Character and getRootPart(_pupL.lp.Character)if not hrp then return
 end local pos=Vector3.new(coord[1]or coord.x or 0,coord[2]or coord.y or 0,coord[
-3]or coord.z or 0)pcall(function()local h=_nvL.lp.Character:
+3]or coord.z or 0)pcall(function()local h=_pupL.lp.Character:
 FindFirstChildOfClass('Humanoid')if h and h.SeatPart then h.Sit=false task.wait(
-0.1)end end)hrp.CFrame=CFrame.new(pos+Vector3.new(0,3,0))_nvL.notify('Waypoint',
+0.1)end end)hrp.CFrame=CFrame.new(pos+Vector3.new(0,3,0))_pupL.notify('Waypoint',
 'Teleported to "'..name..'"')end)
 reg('deletewaypoint','Delete a named waypoint',
-'<n>',{'dwp'},function(a)local name=a[2]if not name then _nvL.notify('Waypoint',
-'Usage: deletewaypoint <name>')return end if not _nv_wps[name]then _nvL.notify(
-'Waypoint','No waypoint named "'..name..'"')return end _nv_wps[name]=nil
-wpDestroyVis(name)wpSave()_nvL.notify('Waypoint','Deleted "'..name..'"')end)
+'<n>',{'dwp'},function(a)local name=a[2]if not name then _pupL.notify('Waypoint',
+'Usage: deletewaypoint <name>')return end if not _pup_wps[name]then _pupL.notify(
+'Waypoint','No waypoint named "'..name..'"')return end _pup_wps[name]=nil
+wpDestroyVis(name)wpSave()_pupL.notify('Waypoint','Deleted "'..name..'"')end)
 reg(
 'clearwaypoints','Delete all saved waypoints','',{'cwp'},function()local count=0
-for name in _nv_wps do wpDestroyVis(name)_nv_wps[name]=nil count=count+1 end
-wpSave()_nvL.notify('Waypoint','Cleared '..count..' waypoint'..(count==1 and''or
+for name in _pup_wps do wpDestroyVis(name)_pup_wps[name]=nil count=count+1 end
+wpSave()_pupL.notify('Waypoint','Cleared '..count..' waypoint'..(count==1 and''or
 's'))end)
 reg('waypoints','List all saved waypoints','',function()local names={}
-for name in _nv_wps do names[#names+1]=name end if#names==0 then _nvL.notify(
-'Waypoint','No waypoints saved')else table.sort(names)_nvL.notify('Waypoints ('
+for name in _pup_wps do names[#names+1]=name end if#names==0 then _pupL.notify(
+'Waypoint','No waypoints saved')else table.sort(names)_pupL.notify('Waypoints ('
 ..#names..')',table.concat(names,', '))end end)
 reg('waypointtool',
 'Equip a tool ,  click anywhere to place a waypoint there','',function()if
-_nv_wpTool and _nv_wpTool.Parent then _nv_wpTool:Destroy()end if _nv_wpToolConn
-then _nv_wpToolConn:Disconnect()_nv_wpToolConn=nil end local backpack=_nvL.lp:
+_pup_wpTool and _pup_wpTool.Parent then _pup_wpTool:Destroy()end if _pup_wpToolConn
+then _pup_wpToolConn:Disconnect()_pup_wpToolConn=nil end local backpack=_pupL.lp:
 FindFirstChildWhichIsA('Backpack')if not backpack then return end local tool=
 createInstance('Tool',{Name='WP Tool',RequiresHandle=false,ToolTip=
-'Click anywhere to place a waypoint',Parent=backpack})_nv_wpTool=tool
-_nv_wpToolConn=tool.Activated:Connect(function()pcall(function()local pos=mouse.
-Hit.Position+Vector3.new(0,0.6,0)local idx=1 while _nv_wps['wp'..idx]do idx=idx+
-1 end local name='wp'..idx _nv_wps[name]={pos.X,pos.Y,pos.Z}wpSave()wpMakeVis(
-name,pos)_nvL.notify('Waypoint','Placed "'..name..
+'Click anywhere to place a waypoint',Parent=backpack})_pup_wpTool=tool
+_pup_wpToolConn=tool.Activated:Connect(function()pcall(function()local pos=mouse.
+Hit.Position+Vector3.new(0,0.6,0)local idx=1 while _pup_wps['wp'..idx]do idx=idx+
+1 end local name='wp'..idx _pup_wps[name]={pos.X,pos.Y,pos.Z}wpSave()wpMakeVis(
+name,pos)_pupL.notify('Waypoint','Placed "'..name..
 '" ,  click to place another, use gotowaypoint to teleport')end)end)tool.
-AncestryChanged:Connect(function()if not tool.Parent then if _nv_wpToolConn then
-_nv_wpToolConn:Disconnect()_nv_wpToolConn=nil end if _nv_wpTool==tool then
-_nv_wpTool=nil end end end)_nvL.notify('WP Tool',
+AncestryChanged:Connect(function()if not tool.Parent then if _pup_wpToolConn then
+_pup_wpToolConn:Disconnect()_pup_wpToolConn=nil end if _pup_wpTool==tool then
+_pup_wpTool=nil end end end)_pupL.notify('WP Tool',
 'Equipped ,  click anywhere to drop a waypoint')end)
 end
 reg('orbit',
 'Orbit around player','<p>',{'orb'},function(a)local targets=findPlayers(a[2])if
 #targets==0 then return end local p=targets[1]stopOrbit()local root=getRootPart(
-_nvL.lp.Character)local hum2=_nvL.lp.Character and _nvL.lp.Character:
+_pupL.lp.Character)local hum2=_pupL.lp.Character and _pupL.lp.Character:
 FindFirstChildOfClass('Humanoid')if not(p.Character and getRootPart(p.Character)
-and root and hum2)then return end _nvL.orbitTarget=p local rot=0 local spd=
+and root and hum2)then return end _pupL.orbitTarget=p local rot=0 local spd=
 tonumber(a[3])or 0.2 local dist=tonumber(a[4])or 6 _orbs[1]=runService.Heartbeat
 :Connect(function()pcall(function()rot=rot+spd root.CFrame=CFrame.new(
 getRootPart(p.Character).Position)*CFrame.Angles(0,math.rad(rot),0)*CFrame.new(
 dist,0,0)end)end)_orbs[2]=runService.RenderStepped:Connect(function()pcall(
 function()root.CFrame=CFrame.new(root.Position,getRootPart(p.Character).Position
-)end)end)local function orbitEnded()stopOrbit()local prof=_G._nv_profileRuntime
+)end)end)local function orbitEnded()stopOrbit()local prof=_G._pup_profileRuntime
 if prof and prof.drop then prof:drop('orbit')end end _orbs[3]=hum2.Died:Connect(
 orbitEnded)_orbs[4]=hum2.Seated:Connect(function(v)if v then orbitEnded()end end
 )end)
 reg('unorbit','Stop orbiting','',{'uorb'},function()stopOrbit()end)
 reg(
 'walkto','Walk toward player','<p>',{'wt'},function(a)local targets=findPlayers(
-a[2])if#targets==0 then return end local p=targets[1]_nvL.walktoActive=true task
-.spawn(function()local char=_nvL.lp.Character local hum2=char and char:
+a[2])if#targets==0 then return end local p=targets[1]_pupL.walktoActive=true task
+.spawn(function()local char=_pupL.lp.Character local hum2=char and char:
 FindFirstChildOfClass('Humanoid')if hum2 and hum2.SeatPart then hum2.Sit=false
-task.wait(0.1)end repeat task.wait()char=_nvL.lp.Character hum2=char and char:
+task.wait(0.1)end repeat task.wait()char=_pupL.lp.Character hum2=char and char:
 FindFirstChildOfClass('Humanoid')if p.Character and getRootPart(p.Character)and
-hum2 then hum2:MoveTo(getRootPart(p.Character).Position)end until not _nvL.
-walktoActive or not p.Character _nvL.walktoActive=false end)end)
+hum2 then hum2:MoveTo(getRootPart(p.Character).Position)end until not _pupL.
+walktoActive or not p.Character _pupL.walktoActive=false end)end)
 reg('unwalkto',
-'Stop walking to player','',{'uwt'},function()_nvL.walktoActive=false end)
+'Stop walking to player','',{'uwt'},function()_pupL.walktoActive=false end)
 reg(
 'pathfind','Pathfind to xyz or CFrame','<x,y,z | CFrame.new(...)>',{'pf',
-'pathto'},function(a)local rawArg=table.concat(a,' ',2)if rawArg==''then _nvL.
+'pathto'},function(a)local rawArg=table.concat(a,' ',2)if rawArg==''then _pupL.
 notify('Pathfind','Usage: pathfind <x,y,z> or pathfind CFrame.new(...)')return
 end local nums={}for n in rawArg:gmatch('[-+]?%d*%.?%d+[eE]?[-+]?%d*')do nums[#
-nums+1]=tonumber(n)if#nums>=3 then break end end if#nums<3 then _nvL.notify(
-'Pathfind','Could not parse coordinates')return end local char=_nvL.lp.Character
+nums+1]=tonumber(n)if#nums>=3 then break end end if#nums<3 then _pupL.notify(
+'Pathfind','Could not parse coordinates')return end local char=_pupL.lp.Character
 local hum=char and char:FindFirstChildOfClass('Humanoid')local root=getRootPart(
-char)if not hum or not root then _nvL.notify('Pathfind','No character found')
-return end local st=_G._nvPathState or{token=0,active=false}_G._nvPathState=st
+char)if not hum or not root then _pupL.notify('Pathfind','No character found')
+return end local st=_G._pupPathState or{token=0,active=false}_G._pupPathState=st
 st.token=(st.token or 0)+1 st.active=true local myToken=st.token local dest=
 Vector3.new(nums[1],nums[2],nums[3])pcall(function()if hum.SeatPart then hum.Sit
-=false task.wait(0.1)end end)_nvL.notify('Pathfind',(
+=false task.wait(0.1)end end)_pupL.notify('Pathfind',(
 'Routing to %.1f, %.1f, %.1f'):format(dest.X,dest.Y,dest.Z))task.spawn(function(
 )local pfs=game:GetService('PathfindingService')local path=pfs:CreatePath({
 AgentRadius=2,AgentHeight=5,AgentCanJump=true,AgentCanClimb=true})local
 okCompute=pcall(function()path:ComputeAsync(root.Position,dest)end)if myToken~=
 st.token then return end if not okCompute or path.Status~=Enum.PathStatus.
 Success then hum:MoveTo(dest)hum.MoveToFinished:Wait(6)if myToken==st.token then
-st.active=false _nvL.notify('Pathfind','Path unavailable, moved directly')end
+st.active=false _pupL.notify('Pathfind','Path unavailable, moved directly')end
 return end local waypoints=path:GetWaypoints()for _,wp in waypoints do if
 myToken~=st.token then return end if wp.Action==Enum.PathWaypointAction.Jump
 then hum.Jump=true end hum:MoveTo(wp.Position)local reached=hum.MoveToFinished:
 Wait(5)if not reached then hum:MoveTo(dest)hum.MoveToFinished:Wait(3)break end
-end if myToken==st.token then st.active=false _nvL.notify('Pathfind','Arrived')
+end if myToken==st.token then st.active=false _pupL.notify('Pathfind','Arrived')
 end end)end)
 reg('unpathfind','Stop current pathfinding route','',{'upf','stoppf'
-},function()local st=_G._nvPathState if st then st.token=(st.token or 0)+1 st.
-active=false end local hum=_nvL.lp.Character and _nvL.lp.Character:
-FindFirstChildOfClass('Humanoid')local root=getRootPart(_nvL.lp.Character)if hum
-and root then hum:MoveTo(root.Position)end _nvL.notify('Pathfind','Stopped')end)
+},function()local st=_G._pupPathState if st then st.token=(st.token or 0)+1 st.
+active=false end local hum=_pupL.lp.Character and _pupL.lp.Character:
+FindFirstChildOfClass('Humanoid')local root=getRootPart(_pupL.lp.Character)if hum
+and root then hum:MoveTo(root.Position)end _pupL.notify('Pathfind','Stopped')end)
 
 reg('spectate','Spectate player camera','<p>',{'spec','view'},function(a)if not
-a[2]then _nvL.notify('Spectate','Usage: '.._nvL.commandPrefix..
-'spectate <player>')return end local t=findPlayers(a[2])if#t==0 or t[1]==_nvL.lp
-then _nvL.notify('Spectate','Player not found')return end local p=t[1]spec.stop(
+a[2]then _pupL.notify('Spectate','Usage: '.._pupL.commandPrefix..
+'spectate <player>')return end local t=findPlayers(a[2])if#t==0 or t[1]==_pupL.lp
+then _pupL.notify('Spectate','Player not found')return end local p=t[1]spec.stop(
 )spec.target=p spec.lock()spec.charConn=p.CharacterAdded:Connect(function()task.
 wait()spec.lock()end)spec.camConn=workspace.CurrentCamera:
 GetPropertyChangedSignal('CameraSubject'):Connect(function()if spec.target then
-spec.lock()end end)_nvL.notify('Spectate','Spectating '..p.DisplayName)end)
+spec.lock()end end)_pupL.notify('Spectate','Spectating '..p.DisplayName)end)
 reg(
-'unspectate','Stop spectating','',{'uspec','unview'},function()spec.stop()_nvL.
+'unspectate','Stop spectating','',{'uspec','unview'},function()spec.stop()_pupL.
 notify('Spectate','Stopped spectating')end)
 do
 local Floating=false 
@@ -8036,14 +8036,14 @@ local FloatingFunc,
 floatDied,qUp,eUp,qDown,eDown 
 reg('float',
 'Spawn a platform beneath you (Q=down, E=up)','',{'plat','platform'},function()
-Floating=true local pchar=_nvL.lp.Character if pchar and not pchar:
+Floating=true local pchar=_pupL.lp.Character if pchar and not pchar:
 FindFirstChild(floatName)then task.spawn(function()local Float=createInstance(
 'Part',{Name=floatName,Parent=pchar,Transparency=1,Size=Vector3.new(2,0.2,1.5),
 Anchored=true,CanCollide=true,CanQuery=false})local hum=pchar:
 FindFirstChildOfClass('Humanoid')local hipOff=3.1 if hum and hum.RigType==Enum.
 HumanoidRigType.R15 then hipOff=(tonumber(hum.HipHeight)or 2)+1.15 end local
 root=getRootPart(pchar)local padY=root.Position.Y-hipOff local qHeld,eHeld=false
-,false Float.CFrame=CFrame.new(root.Position.X,padY,root.Position.Z)_nvL.notify(
+,false Float.CFrame=CFrame.new(root.Position.X,padY,root.Position.Z)_pupL.notify(
 'Float','Float Enabled (Q = down & E = up)')qUp=userInputService.InputEnded:
 Connect(function(input,processed)if input.KeyCode==Enum.KeyCode.Q then qHeld=
 false end end)eUp=userInputService.InputEnded:Connect(function(input,processed)
@@ -8056,17 +8056,17 @@ KeyCode==Enum.KeyCode.E then eHeld=true end end)floatDied=pchar:
 FindFirstChildOfClass('Humanoid').Died:Connect(function()FloatingFunc:
 Disconnect()Float:Destroy()qUp:Disconnect()eUp:Disconnect()qDown:Disconnect()
 eDown:Disconnect()floatDied:Disconnect()Floating=false local prof=_G.
-_nv_profileRuntime if prof and prof.drop then prof:drop('float')end end)local r=
+_pup_profileRuntime if prof and prof.drop then prof:drop('float')end end)local r=
 root FloatingFunc=runService.Heartbeat:Connect(function(dt)if not(r and r.Parent
 )then r=getRootPart(pchar)end if Float.Parent and r then if not userInputService
 :GetFocusedTextBox()then if eHeld then padY=padY+24*(dt or 0.016)end if qHeld
 then padY=padY-8*(dt or 0.016)end end Float.CFrame=CFrame.new(r.Position.X,padY,
 r.Position.Z)else FloatingFunc:Disconnect()Float:Destroy()qUp:Disconnect()eUp:
 Disconnect()qDown:Disconnect()eDown:Disconnect()floatDied:Disconnect()Floating=
-false local prof=_G._nv_profileRuntime if prof and prof.drop then prof:drop(
+false local prof=_G._pup_profileRuntime if prof and prof.drop then prof:drop(
 'float')end end end)end)end end)
 reg('unfloat','Remove the float platform','',{
-'uplat','nofloat'},function()Floating=false local pchar=_nvL.lp.Character _nvL.
+'uplat','nofloat'},function()Floating=false local pchar=_pupL.lp.Character _pupL.
 notify('Float','Float Disabled')if pchar and pchar:FindFirstChild(floatName)then
 pchar:FindFirstChild(floatName):Destroy()end if floatDied then pcall(function()
 FloatingFunc:Disconnect()end)pcall(function()qUp:Disconnect()end)pcall(function(
@@ -8076,15 +8076,15 @@ end
 local _njcConn=nil 
 reg(
 'nojumpcooldown','Remove jump cooldown in games','',{'njc'},function()if
-_njcConn then _nvL.notify('NoJumpCD','Already active')return end local hum=_nvL.
-lp.Character and _nvL.lp.Character:FindFirstChildOfClass('Humanoid')if not hum
-then _nvL.notify('NoJumpCD','No humanoid')return end _njcConn=hum:
+_njcConn then _pupL.notify('NoJumpCD','Already active')return end local hum=_pupL.
+lp.Character and _pupL.lp.Character:FindFirstChildOfClass('Humanoid')if not hum
+then _pupL.notify('NoJumpCD','No humanoid')return end _njcConn=hum:
 GetPropertyChangedSignal('FloorMaterial'):Connect(function()if hum.FloorMaterial
 ==Enum.Material.Air then return end task.wait()if hum then hum.Jump=false end
-end)_nvL.notify('NoJumpCD','Enabled')end)
+end)_pupL.notify('NoJumpCD','Enabled')end)
 reg('unnojumpcooldown',
 'Disable nojumpcooldown','',function()if _njcConn then _njcConn:Disconnect()
-_njcConn=nil end _nvL.notify('NoJumpCD','Disabled')end)
+_njcConn=nil end _pupL.notify('NoJumpCD','Disabled')end)
 do
 local _airwalkConn=nil
 
@@ -8099,7 +8099,7 @@ if _airwalkConn then _airwalkConn:Disconnect()_airwalkConn=nil end if
 _airwalkCharConn then _airwalkCharConn:Disconnect()_airwalkCharConn=nil end if
 _airwalkJumpConn then _airwalkJumpConn:Disconnect()_airwalkJumpConn=nil end
 _airwalkHoldUp=false _airwalkFloorY=nil if _airwalkPart then pcall(function()
-_airwalkPart:Destroy()end)_airwalkPart=nil end local char=_nvL.lp.Character if
+_airwalkPart:Destroy()end)_airwalkPart=nil end local char=_pupL.lp.Character if
 not char then return end local hum=char:FindFirstChildOfClass('Humanoid')local
 root=char:FindFirstChild('HumanoidRootPart')or char:FindFirstChild('Torso')if
 hum then pcall(function()hum:SetStateEnabled(Enum.HumanoidStateType.Freefall,
@@ -8113,15 +8113,15 @@ end)return hip+(rootH*0.5)+(partH*0.5)end
 local function ensureAirwalkPart()if
 _airwalkPart and _airwalkPart.Parent then return _airwalkPart end if
 _airwalkPart then pcall(function()_airwalkPart:Destroy()end)_airwalkPart=nil end
-local p=createInstance('Part',{Name='_nvAirwalk',Size=Vector3.new(12,1,12),
+local p=createInstance('Part',{Name='_pupAirwalk',Size=Vector3.new(12,1,12),
 Transparency=1,Anchored=true,CanCollide=true,CanQuery=false,CanTouch=false,
 CastShadow=false,Massless=true,Parent=workspace})_airwalkPart=p return p end
 
 reg('airwalk','Walk on air (Space to go up)','',{'aw'},function()if _airwalkConn
-then _nvL.notify('Airwalk','Already active')return end local uis=game:
+then _pupL.notify('Airwalk','Already active')return end local uis=game:
 GetService('UserInputService')_airwalkHoldUp=false _airwalkJumpConn=uis.
 JumpRequest:Connect(function()_airwalkHoldUp=true end)_airwalkConn=runService.
-Heartbeat:Connect(function(dt)local char=_nvL.lp.Character local hum=char and
+Heartbeat:Connect(function(dt)local char=_pupL.lp.Character local hum=char and
 char:FindFirstChildOfClass('Humanoid')local root=char and(char:FindFirstChild(
 'HumanoidRootPart')or char:FindFirstChild('Torso'))if not root then return end
 local part=ensureAirwalkPart()local off=airwalkFootOffset(hum,root,part)local
@@ -8131,10 +8131,10 @@ off _airwalkFloorY=floorY end local goingUp=_airwalkHoldUp _airwalkHoldUp=false
 pcall(function()if not uis:GetFocusedTextBox()and uis:IsKeyDown(Enum.KeyCode.
 Space)then goingUp=true end end)if goingUp then local step=24*(tonumber(dt)or 0)
 floorY=floorY+step _airwalkFloorY=floorY end part.CFrame=CFrame.new(pos.X,floorY
-,pos.Z)end)_airwalkCharConn=_nvL.lp.CharacterAdded:Connect(function()
-_airwalkFloorY=nil end)_nvL.notify('Airwalk','Enabled ,  Space to go up')end)
+,pos.Z)end)_airwalkCharConn=_pupL.lp.CharacterAdded:Connect(function()
+_airwalkFloorY=nil end)_pupL.notify('Airwalk','Enabled ,  Space to go up')end)
 
-reg('unairwalk','Disable airwalk','',{'uaw'},function()stopAirwalk()_nvL.notify(
+reg('unairwalk','Disable airwalk','',{'uaw'},function()stopAirwalk()_pupL.notify(
 'Airwalk','Disabled')end)
 end
 end end function __DARKLUA_BUNDLE_MODULES.aM():
@@ -8145,7 +8145,7 @@ local function __modImpl()return function(env)
 local _cs=env._cs 
 local _isMobile=
 env._isMobile 
-local _nvL=env._nvL 
+local _pupL=env._pupL 
 local
 getRootPart=env.getRootPart 
 local reg=env.
@@ -8155,61 +8155,61 @@ local userInputService=env.userInputService
 
 local function watchFlyDeath()if _cs.
 flyDiedConn then _cs.flyDiedConn:Disconnect()_cs.flyDiedConn=nil end if
-_isMobile or not _G._nvMove.FLYING then return end local hum=_nvL.lp.Character
-and _nvL.lp.Character:FindFirstChildOfClass('Humanoid')if not hum then return
+_isMobile or not _G._pupMove.FLYING then return end local hum=_pupL.lp.Character
+and _pupL.lp.Character:FindFirstChildOfClass('Humanoid')if not hum then return
 end _cs.flyDiedConn=hum.Died:Connect(function()if _cs.flyDiedConn then _cs.
-flyDiedConn:Disconnect()_cs.flyDiedConn=nil end if _G._nvMove.FLYING then pcall(
-_nvL.NOFLY)end local prof=_G._nv_profileRuntime if prof and prof.drop then prof:
+flyDiedConn:Disconnect()_cs.flyDiedConn=nil end if _G._pupMove.FLYING then pcall(
+_pupL.NOFLY)end local prof=_G._pup_profileRuntime if prof and prof.drop then prof:
 drop('fly')end end)end 
 reg('fly','Start flying; optional speed','<s>',{'f'},
-function(a)local v=tonumber(a[2])if v and _G._nvMove.FLYING then _nvL.
-setFlySpeed(v)_nvL.notify('Fly','Speed '..v,3)return end _nvL.NOFLY()task.wait()
-_nvL.sFLY()watchFlyDeath()if v then _nvL.setFlySpeed(v)end end)
+function(a)local v=tonumber(a[2])if v and _G._pupMove.FLYING then _pupL.
+setFlySpeed(v)_pupL.notify('Fly','Speed '..v,3)return end _pupL.NOFLY()task.wait()
+_pupL.sFLY()watchFlyDeath()if v then _pupL.setFlySpeed(v)end end)
 reg('unfly','Stop flying','',{'uf','nofly'},function(
-)_nvL.NOFLY()end)
+)_pupL.NOFLY()end)
 reg('superfly','Open Superfly panel (mouse/touch flight)','<s>'
-,{'sfly','sflymode'},function(a)if a[2]and tonumber(a[2])then _nvL.setFlySpeed(
-tonumber(a[2]))end _G._nvEnsurePanel('_flyPanel',_G._initFlyPanel or
+,{'sfly','sflymode'},function(a)if a[2]and tonumber(a[2])then _pupL.setFlySpeed(
+tonumber(a[2]))end _G._pupEnsurePanel('_flyPanel',_G._initFlyPanel or
 _initFlyPanel)if _G._flyPanel then _G._flyPanel.Visible=not _G._flyPanel.Visible
 end end)
 reg('unsuperfly','Disable superfly mode','',{'usfly','nosuperfly'},
-function()if _G._nvSuperfly then _G._nvSuperfly.enabled=false if _G._nvSuperfly.
-conn then _G._nvSuperfly.conn:Disconnect()_G._nvSuperfly.conn=nil end if _G.
-_nvSuperfly.stopTracks then pcall(_G._nvSuperfly.stopTracks)end end _nvL.NOFLY()
-if _G._flyToggleSet then pcall(_G._flyToggleSet,false,false)end _nvL.notify(
+function()if _G._pupSuperfly then _G._pupSuperfly.enabled=false if _G._pupSuperfly.
+conn then _G._pupSuperfly.conn:Disconnect()_G._pupSuperfly.conn=nil end if _G.
+_pupSuperfly.stopTracks then pcall(_G._pupSuperfly.stopTracks)end end _pupL.NOFLY()
+if _G._flyToggleSet then pcall(_G._flyToggleSet,false,false)end _pupL.notify(
 'Superfly','Disabled')end)
 reg('hatfly',
 'Fly your hat while body is parked under map','',{'hf'},function()local ok,msg=
-_nvL.StartHatFly()if not ok then _nvL.notify('HatFly',msg or'Failed to start')
-return end _nvL.notify('HatFly','Enabled')end)
+_pupL.StartHatFly()if not ok then _pupL.notify('HatFly',msg or'Failed to start')
+return end _pupL.notify('HatFly','Enabled')end)
 reg('unhatfly',
-'Stop hatfly and restore your character','',{'uhf','nohatfly'},function()_nvL.
-StopHatFly()_nvL.notify('HatFly','Disabled')end)
+'Stop hatfly and restore your character','',{'uhf','nohatfly'},function()_pupL.
+StopHatFly()_pupL.notify('HatFly','Disabled')end)
 reg('togglefly',
-'Toggle fly on/off','',{'tf'},function()if _G._nvMove.FLYING then _nvL.NOFLY()
-else _nvL.NOFLY()task.wait()_nvL.sFLY()end watchFlyDeath()local prof=_G.
-_nv_profileRuntime if prof and prof.drop then if _G._nvMove.FLYING then prof:
+'Toggle fly on/off','',{'tf'},function()if _G._pupMove.FLYING then _pupL.NOFLY()
+else _pupL.NOFLY()task.wait()_pupL.sFLY()end watchFlyDeath()local prof=_G.
+_pup_profileRuntime if prof and prof.drop then if _G._pupMove.FLYING then prof:
 set('fly',prof.activeArgs.fly or'')else prof:drop('fly')end end end)
 reg('noclip'
-,'Walk through walls','',{'nc'},function()_G._nvMove.setNoclip('user',true)end)
+,'Walk through walls','',{'nc'},function()_G._pupMove.setNoclip('user',true)end)
 
-reg('unnoclip','Restore collision','',{'unc','clip'},function()_G._nvMove.
+reg('unnoclip','Restore collision','',{'unc','clip'},function()_G._pupMove.
 setNoclip('user',false)end)
 reg('swim',
-'Float in zero-gravity swim','',{'sw'},function()if _nvL.swimming then return
-end local h=_nvL.lp.Character and _nvL.lp.Character:FindFirstChildOfClass(
-'Humanoid')if not h then return end _nvL.swimGrav=workspace.Gravity workspace.
+'Float in zero-gravity swim','',{'sw'},function()if _pupL.swimming then return
+end local h=_pupL.lp.Character and _pupL.lp.Character:FindFirstChildOfClass(
+'Humanoid')if not h then return end _pupL.swimGrav=workspace.Gravity workspace.
 Gravity=0 local enums=Enum.HumanoidStateType:GetEnumItems()table.remove(enums,
 table.find(enums,Enum.HumanoidStateType.None))for _,v in enums do h:
-SetStateEnabled(v,false)end h:ChangeState(Enum.HumanoidStateType.Swimming)_nvL.
+SetStateEnabled(v,false)end h:ChangeState(Enum.HumanoidStateType.Swimming)_pupL.
 swimConn=runService.Heartbeat:Connect(function()pcall(function()local root=
-getRootPart(_nvL.lp.Character)if root then root.Velocity=(h.MoveDirection~=
+getRootPart(_pupL.lp.Character)if root then root.Velocity=(h.MoveDirection~=
 Vector3.new()or userInputService:IsKeyDown(Enum.KeyCode.Space))and root.Velocity
-or Vector3.zero end end)end)_nvL.swimming=true end)
+or Vector3.zero end end)end)_pupL.swimming=true end)
 reg('unswim','Stop swimming',
-'',{'usw','noswim'},function()if not _nvL.swimming then return end workspace.
-Gravity=_nvL.swimGrav or 196.2 _nvL.swimming=false if _nvL.swimConn then _nvL.
-swimConn:Disconnect()_nvL.swimConn=nil end local h=_nvL.lp.Character and _nvL.lp
+'',{'usw','noswim'},function()if not _pupL.swimming then return end workspace.
+Gravity=_pupL.swimGrav or 196.2 _pupL.swimming=false if _pupL.swimConn then _pupL.
+swimConn:Disconnect()_pupL.swimConn=nil end local h=_pupL.lp.Character and _pupL.lp
 .Character:FindFirstChildOfClass('Humanoid')if h then local enums=Enum.
 HumanoidStateType:GetEnumItems()table.remove(enums,table.find(enums,Enum.
 HumanoidStateType.None))for _,v in enums do h:SetStateEnabled(v,true)end end end
@@ -8219,8 +8219,8 @@ local v=__DARKLUA_BUNDLE_MODULES.cache.aN if not v then v={c=__modImpl()}
 __DARKLUA_BUNDLE_MODULES.cache.aN=v end return v.c end end
 do local function
 __modImpl()return function(env)
-local _nvL=env.
-_nvL 
+local _pupL=env.
+_pupL 
 local createInstance=env.createInstance 
 local getRootPart=env.getRootPart 
 local reg=env.reg 
@@ -8235,12 +8235,12 @@ pcall(function()heliDiedConn:Disconnect()end)heliDiedConn=nil end if heliTrack
 then pcall(function()heliTrack:Stop(0)end)heliTrack=nil end if heliAnim then
 pcall(function()heliAnim:Destroy()end)heliAnim=nil end if heliSound then pcall(
 function()heliSound:Stop()end)pcall(function()heliSound:Destroy()end)heliSound=
-nil end if not keepFly then _nvL.NOFLY()end end 
+nil end if not keepFly then _pupL.NOFLY()end end 
 reg('helicopter',
-'Fly while spinning like a helicopter','',{'heli'},function()local char=_nvL.lp.
+'Fly while spinning like a helicopter','',{'heli'},function()local char=_pupL.lp.
 Character local hum=char and char:FindFirstChildOfClass('Humanoid')local root=
-char and getRootPart(char)if not hum or not root then _nvL.notify('Helicopter',
-'No character')return end stopHelicopter(true)_nvL.NOFLY()task.wait()_nvL.sFLY()
+char and getRootPart(char)if not hum or not root then _pupL.notify('Helicopter',
+'No character')return end stopHelicopter(true)_pupL.NOFLY()task.wait()_pupL.sFLY()
 local animator=hum:FindFirstChildOfClass('Animator')if not animator then
 animator=createInstance('Animator',{Parent=hum})end local anim=nil local okObjs,
 objs=pcall(function()return game:GetObjects('rbxassetid://'..HELI_ANIM)end)if
@@ -8254,19 +8254,19 @@ heliTrack:Play(0.1,1,1)end)end heliSound=createInstance('Sound',{Name=
 'PuppyAdminHelicopter',SoundId='rbxassetid://'..HELI_SOUND,Volume=0.35,Looped=true
 ,RollOffMode=Enum.RollOffMode.InverseTapered,Parent=root})pcall(function()
 heliSound:Play()end)heliDiedConn=hum.Died:Connect(function()stopHelicopter(false
-)local prof=_G._nv_profileRuntime if prof and prof.drop then prof:drop(
-'helicopter')end end)_nvL.notify('Helicopter','Enabled ,  ;unhelicopter to stop'
+)local prof=_G._pup_profileRuntime if prof and prof.drop then prof:drop(
+'helicopter')end end)_pupL.notify('Helicopter','Enabled ,  ;unhelicopter to stop'
 )end)
 reg('unhelicopter','Stop helicopter fly + anim','',{'unheli','noheli'},
-function()stopHelicopter(false)_nvL.notify('Helicopter','Disabled')end)
+function()stopHelicopter(false)_pupL.notify('Helicopter','Disabled')end)
 end
 end end function __DARKLUA_BUNDLE_MODULES.aO():typeof(
 __modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.aO if not v then v={c=
 __modImpl()}__DARKLUA_BUNDLE_MODULES.cache.aO=v end return v.c end end
 do local function
 __modImpl()return function(env)
-local _nvL=env.
-_nvL 
+local _pupL=env.
+_pupL 
 local findPlayers=env.findPlayers 
 local
 getRootPart=env.getRootPart 
@@ -8277,34 +8277,34 @@ local tweenService=env.
 tweenService 
 reg(
 'flyspeed','Set fly speed (default 1)','<s>',{'fs','flysp'},function(a)local v=
-tonumber(a[2])if v then _nvL.setFlySpeed(v)_nvL.notify('FlySpeed','Set to '..v)
+tonumber(a[2])if v then _pupL.setFlySpeed(v)_pupL.notify('FlySpeed','Set to '..v)
 end end)
 reg('togglenoclip',
-'Toggle noclip on/off','',{'tnc'},function()local prof=_G._nv_profileRuntime if
-_G._nvMove.noclipHold.user then _G._nvMove.setNoclip('user',false)if prof and
-prof.drop then prof:drop('noclip')end _nvL.notify('Noclip','Noclip OFF')else _G.
-_nvMove.setNoclip('user',true)if prof and prof.drop then prof:set('noclip',prof.
-activeArgs.noclip or'')end _nvL.notify('Noclip','Noclip ON')end end)
+'Toggle noclip on/off','',{'tnc'},function()local prof=_G._pup_profileRuntime if
+_G._pupMove.noclipHold.user then _G._pupMove.setNoclip('user',false)if prof and
+prof.drop then prof:drop('noclip')end _pupL.notify('Noclip','Noclip OFF')else _G.
+_pupMove.setNoclip('user',true)if prof and prof.drop then prof:set('noclip',prof.
+activeArgs.noclip or'')end _pupL.notify('Noclip','Noclip ON')end end)
 reg('goto',
 'Teleport to player','<p>',{'tp','to'},function(a)local targets=findPlayers(a[2]
-)if#targets==0 then return end local p=targets[1]local myRoot=getRootPart(_nvL.
+)if#targets==0 then return end local p=targets[1]local myRoot=getRootPart(_pupL.
 lp.Character)local tRoot=getRootPart(p.Character)if myRoot and tRoot then pcall(
-function()local h=_nvL.lp.Character:FindFirstChildOfClass('Humanoid')if h and h.
+function()local h=_pupL.lp.Character:FindFirstChildOfClass('Humanoid')if h and h.
 SeatPart then h.Sit=false task.wait(0.1)end end)myRoot.CFrame=tRoot.CFrame+
 Vector3.new(3,1,0)end end)
 reg('fps',
 'Show current framerate','',function()local fps=math.round(1/runService.
-RenderStepped:Wait())_nvL.notify('FPS',tostring(fps)..' fps')end)
+RenderStepped:Wait())_pupL.notify('FPS',tostring(fps)..' fps')end)
 local _plasticSaved={}
 reg('plastic',
 'Set all parts to Plastic (FPS boost)','',{'plas'},function()_plasticSaved={}
 local count=0 for _,v in workspace:GetDescendants()do if v:IsA('Part')and v.
 Material~=Enum.Material.Plastic then _plasticSaved[v]=v.Material v.Material=Enum
-.Material.Plastic count=count+1 end end _nvL.notify('Plastic',count..
+.Material.Plastic count=count+1 end end _pupL.notify('Plastic',count..
 ' parts changed')end)
 reg('unplastic','Restore original materials','',{'uplas'},
 function()local count=0 for part,mat in _plasticSaved do pcall(function()part.
-Material=mat end)count=count+1 end _plasticSaved={}_nvL.notify('Plastic',
+Material=mat end)count=count+1 end _plasticSaved={}_pupL.notify('Plastic',
 'Restored '..count..' parts')end)
 local _untexSaved={}
 reg('untexturebp',
@@ -8316,34 +8316,34 @@ removed+1 elseif v:IsA('BasePart')and v.TextureID~=nil and v.TextureID~=''then
 _untexSaved[#_untexSaved+1]={inst=v,prop='TextureID',val=v.TextureID}pcall(
 function()v.TextureID=''end)removed=removed+1 elseif v:IsA('SpecialMesh')and v.
 TextureId~=''then _untexSaved[#_untexSaved+1]={inst=v,prop='TextureId',val=v.
-TextureId}pcall(function()v.TextureId=''end)removed=removed+1 end end _nvL.
+TextureId}pcall(function()v.TextureId=''end)removed=removed+1 end end _pupL.
 notify('UntextureBP',removed..' textures removed')end)
 reg('texturebp',
 'Restore textures removed by untexturebp','',function()local restored=0 for _,s
 in _untexSaved do pcall(function()if s.parent then s.inst.Parent=s.parent elseif
 s.prop then s.inst[s.prop]=s.val end restored=restored+1 end)end _untexSaved={}
-_nvL.notify('UntextureBP','Restored '..restored..' textures')end)
+_pupL.notify('UntextureBP','Restored '..restored..' textures')end)
 local _fbSaved=
 {}
 reg('fullbright','Maximize all light ranges','',function()_fbSaved={}local
 lighting=game:GetService('Lighting')lighting.GlobalShadows=false for _,v in game
 :GetDescendants()do if v:IsA('PointLight')or v:IsA('SurfaceLight')or v:IsA(
 'SpotLight')then _fbSaved[v]={range=v.Range,enabled=v.Enabled}v.Enabled=true v.
-Range=999 end end _nvL.notify('Fullbright','On')end)
+Range=999 end end _pupL.notify('Fullbright','On')end)
 reg('nofullbright',
 'Restore original lighting','',function()game:GetService('Lighting').
 GlobalShadows=true for light,data in _fbSaved do pcall(function()light.Range=
-data.range light.Enabled=data.enabled end)end _fbSaved={}_nvL.notify(
+data.range light.Enabled=data.enabled end)end _fbSaved={}_pupL.notify(
 'Fullbright','Off')end)
 local _nlParents={}
 reg('nolights',
 'Remove all in-world lights','',function()_nlParents={}for _,v in game:
 GetDescendants()do if v:IsA('PointLight')or v:IsA('SurfaceLight')or v:IsA(
-'SpotLight')then _nlParents[v]=v.Parent v.Parent=nil end end _nvL.notify(
+'SpotLight')then _nlParents[v]=v.Parent v.Parent=nil end end _pupL.notify(
 'Lights','All lights removed')end)
 reg('lights','Restore removed lights','',
 function()for light,parent in _nlParents do pcall(function()light.Parent=parent
-end)end _nlParents={}_nvL.notify('Lights','Restored')end)
+end)end _nlParents={}_pupL.notify('Lights','Restored')end)
 do local _noeffectSaved={}reg('noeffect',
 'Disable all post-processing effects','',{'nfx'},function()local lighting=game:
 GetService('Lighting')for _,v in lighting:GetDescendants()do if v:IsA(
@@ -8351,81 +8351,81 @@ GetService('Lighting')for _,v in lighting:GetDescendants()do if v:IsA(
 'Atmosphere')then _noeffectSaved[v]={v.Density,v.Haze,v.Glare}v.Density=0 v.Haze
 =0 v.Glare=0 end end local cam=workspace.CurrentCamera if cam then for _,v in
 cam:GetDescendants()do if v:IsA('PostEffect')then _noeffectSaved[v]=v.Enabled v.
-Enabled=false end end end _nvL.notify('NoEffect','Effects disabled')end)local
+Enabled=false end end end _pupL.notify('NoEffect','Effects disabled')end)local
 _loopNoEffectConn=nil reg('loopnoeffect','Keep post-processing effects disabled'
-,'',function()if _loopNoEffectConn then _nvL.notify('LoopNoEffect',
+,'',function()if _loopNoEffectConn then _pupL.notify('LoopNoEffect',
 'Already active')return end _loopNoEffectConn=runService.RenderStepped:Connect(
 function()local lighting=game:GetService('Lighting')for _,v in lighting:
 GetDescendants()do if v:IsA('PostEffect')and v.Enabled then v.Enabled=false end
-if v:IsA('Atmosphere')then v.Density=0 v.Haze=0 v.Glare=0 end end end)_nvL.
+if v:IsA('Atmosphere')then v.Density=0 v.Haze=0 v.Glare=0 end end end)_pupL.
 notify('LoopNoEffect','Enabled')end)reg('unloopnoeffect',
 'Stop loop disabling effects','',function()if _loopNoEffectConn then
 _loopNoEffectConn:Disconnect()_loopNoEffectConn=nil end for inst,saved in
 _noeffectSaved do pcall(function()if type(saved)=='table'then inst.Density=saved
 [1]inst.Haze=saved[2]inst.Glare=saved[3]else inst.Enabled=saved end end)end
-_noeffectSaved={}_nvL.notify('LoopNoEffect','Disabled')end)end 
+_noeffectSaved={}_pupL.notify('LoopNoEffect','Disabled')end)end 
 do local
 _fogSaved={}reg('nofog','Remove all fog from the game','',{'nf'},function()local
 lighting=game:GetService('Lighting')_fogSaved={FogEnd=lighting.FogEnd,FogStart=
-lighting.FogStart}lighting.FogEnd=786543 lighting.FogStart=0 _nvL.notify('NoFog'
+lighting.FogStart}lighting.FogEnd=786543 lighting.FogStart=0 _pupL.notify('NoFog'
 ,'Fog removed')end)local _loopNofogConn=nil reg('loopnofog','Keep fog removed',
-'',function()if _loopNofogConn then _nvL.notify('LoopNoFog','Already active')
+'',function()if _loopNofogConn then _pupL.notify('LoopNoFog','Already active')
 return end local lighting=game:GetService('Lighting')_loopNofogConn=runService.
 RenderStepped:Connect(function()if lighting.FogEnd~=786543 then lighting.FogEnd=
-786543 end if lighting.FogStart~=0 then lighting.FogStart=0 end end)_nvL.notify(
+786543 end if lighting.FogStart~=0 then lighting.FogStart=0 end end)_pupL.notify(
 'LoopNoFog','Enabled')end)reg('unloopnofog','Restore fog','',function()if
 _loopNofogConn then _loopNofogConn:Disconnect()_loopNofogConn=nil end local
 lighting=game:GetService('Lighting')if _fogSaved.FogEnd then lighting.FogEnd=
 _fogSaved.FogEnd end if _fogSaved.FogStart then lighting.FogStart=_fogSaved.
-FogStart end _fogSaved={}_nvL.notify('LoopNoFog','Disabled')end)end 
+FogStart end _fogSaved={}_pupL.notify('LoopNoFog','Disabled')end)end 
 reg('globalshadows',
 'Enable global shadows','',{'gs'},function()game:GetService('Lighting').
-GlobalShadows=true _nvL.notify('Shadows','Enabled')end)
+GlobalShadows=true _pupL.notify('Shadows','Enabled')end)
 reg('unglobalshadows',
 'Disable global shadows','',{'ugs'},function()game:GetService('Lighting').
-GlobalShadows=false _nvL.notify('Shadows','Disabled')end)
+GlobalShadows=false _pupL.notify('Shadows','Disabled')end)
 local extra={speed=60,guis={},boxes=
 setmetatable({},{__mode='k'})}
-local function body()local char=_nvL.lp.Character
+local function body()local char=_pupL.lp.Character
 return char and char:FindFirstChild('HumanoidRootPart'),char and char:
 FindFirstChildOfClass('Humanoid')end 
 reg(
 'tweengoto','Glide to a player','<p>',{'tweento','tgoto'},function(a)local
 target=findPlayers(a[2]or'')[1]local goal=target and target.Character and target
 .Character:FindFirstChild('HumanoidRootPart')local root=body()if not(goal and
-root)then _nvL.notify('TweenGoto','Player not found')return end if extra.glide
+root)then _pupL.notify('TweenGoto','Player not found')return end if extra.glide
 then extra.glide:Cancel()end local seconds=math.max((goal.Position-root.Position
 ).Magnitude/extra.speed,0.1)extra.glide=tweenService:Create(root,TweenInfo.new(
-seconds,Enum.EasingStyle.Linear),{CFrame=goal.CFrame})extra.glide:Play()_nvL.
+seconds,Enum.EasingStyle.Linear),{CFrame=goal.CFrame})extra.glide:Play()_pupL.
 notify('TweenGoto','Gliding to '..target.DisplayName)end)
 reg('tweenspeed',
 'Set tweengoto speed in studs per second','<n>',function(a)extra.speed=math.
-clamp(tonumber(a[2])or 60,5,500)_nvL.notify('TweenGoto','Speed '..extra.speed)
+clamp(tonumber(a[2])or 60,5,500)_pupL.notify('TweenGoto','Speed '..extra.speed)
 end)
 reg('norender',
 'Turn 3D rendering off to save FPS','',function()runService:
-Set3dRenderingEnabled(false)_nvL.notify('Render','3D rendering off')end)
+Set3dRenderingEnabled(false)_pupL.notify('Render','3D rendering off')end)
 reg(
 'render','Turn 3D rendering back on','',function()runService:
-Set3dRenderingEnabled(true)_nvL.notify('Render','3D rendering on')end)
+Set3dRenderingEnabled(true)_pupL.notify('Render','3D rendering on')end)
 reg('clicktp',
 'Click anywhere to teleport there','',{'ctp','clickteleport'},function()if
-extra.jump then _nvL.notify('ClickTP','Already on')return end local mouse=_nvL.
+extra.jump then _pupL.notify('ClickTP','Already on')return end local mouse=_pupL.
 lp:GetMouse()local input=game:GetService('UserInputService')extra.jump=input.
 InputBegan:Connect(function(press,handled)local root=body()if handled or press.
 UserInputType~=Enum.UserInputType.MouseButton1 or not root then return end if mouse.Target then --[[PuppyAdmin patch: no Ctrl needed]]
  root.CFrame=
 CFrame.new(mouse.Hit.Position+Vector3.new(0,3,0))*root.CFrame.Rotation end end)
-_nvL.notify('ClickTP','Click to teleport')end)
+_pupL.notify('ClickTP','Click to teleport')end)
 reg('unclicktp',
 'Stop click teleport','',{'unctp'},function()if extra.jump then extra.jump:
-Disconnect()extra.jump=nil end _nvL.notify('ClickTP','Off')end)
+Disconnect()extra.jump=nil end _pupL.notify('ClickTP','Off')end)
 end end function __DARKLUA_BUNDLE_MODULES.aQ(
 ):typeof(__modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.aQ if not v then v={
 c=__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.aQ=v end return v.c end end
 do
 local function __modImpl()return function(env)
-local _nvL=env._nvL 
+local _pupL=env._pupL 
 local reg=env.
 reg 
 local lighting=game:GetService('Lighting')
@@ -8463,17 +8463,17 @@ prop]=value end)end end if os.clock()-begin>BUDGET then runService.Heartbeat:
 Wait()begin=os.clock()end end end)end 
 reg('antilag',
 'Lower graphics for more FPS, undo with unantilag','',{'boostfps','lowgraphics'}
-,function()start()_nvL.notify('Low Graphics','On')end)
+,function()start()_pupL.notify('Low Graphics','On')end)
 reg('unantilag',
-'Restore graphics after antilag','',{'uantilag'},function()stop()_nvL.notify(
+'Restore graphics after antilag','',{'uantilag'},function()stop()_pupL.notify(
 'Low Graphics','Off')end)
 end end function __DARKLUA_BUNDLE_MODULES.aR():typeof(
 __modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.aR if not v then v={c=
 __modImpl()}__DARKLUA_BUNDLE_MODULES.cache.aR=v end return v.c end end
 do
 local function __modImpl()return function(env)
-local _nvL=env.
-_nvL 
+local _pupL=env.
+_pupL 
 local cmdReg=env.cmdReg 
 local findPlayers=env.findPlayers 
 local getRootPart
@@ -8490,11 +8490,11 @@ cmdReg[#cmdReg].cat=cat cmdReg[#cmdReg].exact=true end
 local function toggle(cat
 ,name,aliases,desc,args,title,start)add(cat,name,desc,args,aliases,function(a)if
 live[name]then live[name]()live[name]=nil end local undo=start(a)if not undo
-then return false end live[name]=undo _nvL.notify(title,'On')end)add(cat,'un'..
+then return false end live[name]=undo _pupL.notify(title,'On')end)add(cat,'un'..
 name,'Turn off '..title:lower(),'',{},function()local undo=live[name]live[name]=
-nil if undo then undo()end _nvL.notify(title,'Off')end)end 
+nil if undo then undo()end _pupL.notify(title,'Off')end)end 
 local function me()
-local char=_nvL.lp.Character local hum=char and char:FindFirstChildOfClass(
+local char=_pupL.lp.Character local hum=char and char:FindFirstChildOfClass(
 'Humanoid')return char,hum,char and getRootPart(char)end 
 local function num(v,
 default,lo,hi)return math.clamp(tonumber(v)or default,lo,hi)end 
@@ -8503,7 +8503,7 @@ typing()return userInputService:GetFocusedTextBox()~=nil end
 local function key(
 k)return not typing()and userInputService:IsKeyDown(k)end 
 local function other(q
-)if not q or q==''then return nil end for _,p in findPlayers(q)do if p~=_nvL.lp
+)if not q or q==''then return nil end for _,p in findPlayers(q)do if p~=_pupL.lp
 then return p end end return nil end 
 local function rootOf(p)local char=p and p.
 Character return char and getRootPart(char)end 
@@ -8511,8 +8511,8 @@ local function place(cf)local _,_
 ,root=me()if not root then return false end root.AssemblyLinearVelocity=Vector3.
 zero root.CFrame=cf return true end 
 local function needPlayer(title,a)local p=
-other(a[2])if not p then _nvL.notify(title,'Player not found')return nil end if
-not rootOf(p)then _nvL.notify(title,p.DisplayName..' has no character')return
+other(a[2])if not p then _pupL.notify(title,'Player not found')return nil end if
+not rootOf(p)then _pupL.notify(title,p.DisplayName..' has no character')return
 nil end return p end 
 local function steer(hum,seat)local cam=workspace.
 CurrentCamera local look=cam.CFrame.LookVector local right=cam.CFrame.
@@ -8539,7 +8539,7 @@ then root.AssemblyLinearVelocity=Vector3.zero end end end)
 toggle('movement',
 'vfly',{'vehiclefly','carfly'},'Fly the vehicle you are sitting in','<speed>',
 'Vehicle fly',function(a)local speed=num(a[2],80,5,800)local _,hum=me()if not(
-hum and hum.SeatPart)then _nvL.notify('Vehicle fly','Sit in a vehicle first')
+hum and hum.SeatPart)then _pupL.notify('Vehicle fly','Sit in a vehicle first')
 return nil end local pos local conn=runService.Heartbeat:Connect(function(dt)
 local _,h=me()local seat=h and h.SeatPart if not seat then return end local base
 =seat.AssemblyRootPart or seat local dir=steer(h,seat)if not pos or(base.
@@ -8559,8 +8559,8 @@ top then base.AssemblyLinearVelocity=v+heading*math.min(top-along,top*dt*1.5)end
 end)return function()conn:Disconnect()for seat,was in saved do if seat.Parent
 then seat.MaxSpeed=was end end end end)
 local function shift(title,a,fn)local _,_
-,root=me()if not root then _nvL.notify(title,'No character')return false end
-place(fn(root,num(a[2],10,-100000,100000)))_nvL.notify(title,'Moved')end 
+,root=me()if not root then _pupL.notify(title,'No character')return false end
+place(fn(root,num(a[2],10,-100000,100000)))_pupL.notify(title,'Moved')end 
 add(
 'movement','tpup','Teleport straight up','<n>',{},function(a)return shift(
 'TP up',a,function(root,n)return root.CFrame+Vector3.new(0,n,0)end)end)
@@ -8577,15 +8577,15 @@ tonumber(a[4])if not(x and y and z)then local packed=a[2]and string.split(a[2],
 tonumber(packed[3])end end if x and y and z then return Vector3.new(x,y,z)end
 return nil end 
 add('movement','tppos','Teleport to x y z coordinates',
-'<x> <y> <z>',{'tpcoords'},function(a)local pos=xyz(a)if not pos then _nvL.
+'<x> <y> <z>',{'tpcoords'},function(a)local pos=xyz(a)if not pos then _pupL.
 notify('TP pos','Give x y z, like tppos 0 50 0')return false end local _,_,root=
-me()if not root then return false end place(root.CFrame.Rotation+pos)_nvL.
+me()if not root then return false end place(root.CFrame.Rotation+pos)_pupL.
 notify('TP pos',string.format('%d, %d, %d',pos.X,pos.Y,pos.Z))end)
 add('movement'
 ,'offset','Move yourself by x y z studs','<x> <y> <z>',{},function(a)local by=
-xyz(a)if not by then _nvL.notify('Offset','Give x y z, like offset 0 10 0')
+xyz(a)if not by then _pupL.notify('Offset','Give x y z, like offset 0 10 0')
 return false end local _,_,root=me()if not root then return false end place(root
-.CFrame+by)_nvL.notify('Offset','Moved')end)
+.CFrame+by)_pupL.notify('Offset','Moved')end)
 local lastDeath 
 local function backTo(spot,char)local root=char:WaitForChild('HumanoidRootPart',
 10)if not root then return end local held,began=0,os.clock()while root.Parent
@@ -8594,11 +8594,11 @@ and held<0.4 and os.clock()-began<4 do if(root.Position-spot.Position).Magnitude
 held+=runService.Heartbeat:Wait()end end end 
 add('movement','flashback',
 'Teleport to where you last died','',{'lastdeath'},function()if not lastDeath
-then _nvL.notify('Flashback','You have not died yet')return false end place(
-lastDeath)_nvL.notify('Flashback','Back where you died')end)
+then _pupL.notify('Flashback','You have not died yet')return false end place(
+lastDeath)_pupL.notify('Flashback','Back where you died')end)
 toggle('movement',
 'autoflashback',{'autofb'},'Go back to where you died every time you respawn',''
-,'Auto flashback',function()local conn=_nvL.lp.CharacterAdded:Connect(function(
+,'Auto flashback',function()local conn=_pupL.lp.CharacterAdded:Connect(function(
 char)local spot=lastDeath if spot then task.spawn(backTo,spot,char)end end)
 return function()conn:Disconnect()end end)
 toggle('movement','edgejump',{'ej'},
@@ -8644,19 +8644,19 @@ add(
 '<p> <secs>',{'ptp'},function(a)local p=needPlayer('Pulse TP',a)local _,_,root=
 me()if not(p and root)then return false end local home=root.CFrame local secs=
 num(a[3],1,0.05,30)place(rootOf(p).CFrame*CFrame.new(0,0,3))task.delay(secs,
-function()place(home)end)_nvL.notify('Pulse TP',p.DisplayName..' for '..secs..
+function()place(home)end)_pupL.notify('Pulse TP',p.DisplayName..' for '..secs..
 's')end)
 add('movement','torandom','Teleport to a random player','',{'tprandom'},
-function()local pool={}for _,p in players:GetPlayers()do if p~=_nvL.lp and
-rootOf(p)then pool[#pool+1]=p end end if#pool==0 then _nvL.notify('Random',
+function()local pool={}for _,p in players:GetPlayers()do if p~=_pupL.lp and
+rootOf(p)then pool[#pool+1]=p end end if#pool==0 then _pupL.notify('Random',
 'Nobody to go to')return false end local p=pool[math.random(#pool)]place(rootOf(
-p).CFrame*CFrame.new(0,0,3))_nvL.notify('Random',p.DisplayName)end)
+p).CFrame*CFrame.new(0,0,3))_pupL.notify('Random',p.DisplayName)end)
 end end function __DARKLUA_BUNDLE_MODULES.aS():
 typeof(__modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.aS if not v then v={c=
 __modImpl()}__DARKLUA_BUNDLE_MODULES.cache.aS=v end return v.c end end
 do
 local function __modImpl()return function(env)
-local _nvL=env._nvL
+local _pupL=env._pupL
 
 local cmdReg=env.cmdReg 
 local getRootPart=env.getRootPart 
@@ -8664,7 +8664,7 @@ local reg=env.reg
 local function add(cat,name,desc,args,aliases,fn)reg(name,desc,args
 ,aliases,fn)cmdReg[#cmdReg].cat=cat cmdReg[#cmdReg].exact=true end
 
-local function myRoot()local char=_nvL.lp.Character return char and
+local function myRoot()local char=_pupL.lp.Character return char and
 getRootPart(char)end 
 local function place(cf)local root=myRoot()if not root then
 return false end root.AssemblyLinearVelocity=Vector3.zero root.CFrame=cf return
@@ -8676,13 +8676,13 @@ FindFirstAncestorOfClass('Model')while model do if model:FindFirstChildOfClass(
 'Humanoid')then return true end model=model:FindFirstAncestorOfClass('Model')end
 return false end 
 local function goFind(title,a,
-class)local q=words(a)if not q then _nvL.notify(title,'Give a name')return false
+class)local q=words(a)if not q then _pupL.notify(title,'Give a name')return false
 end local exact,loose for _,d in workspace:GetDescendants()do if d:IsA(class)and
 not inCharacter(d)then local n=d.Name:lower()if n==q then exact=d break end if
 not loose and n:find(q,1,true)then loose=d end end end local found=exact or
-loose if not found then _nvL.notify(title,'Nothing called '..q)return false end
+loose if not found then _pupL.notify(title,'Nothing called '..q)return false end
 local cf=found:IsA('Model')and found:GetPivot()or found.CFrame place(CFrame.new(
-cf.Position+Vector3.new(0,4,0)))_nvL.notify(title,found.Name)end 
+cf.Position+Vector3.new(0,4,0)))_pupL.notify(title,found.Name)end 
 add('movement',
 'gotopart','Teleport to a part by name','<name>',{'topart'},function(a)return
 goFind('Go to part',a,'BasePart')end)
@@ -8691,7 +8691,7 @@ add('movement','gotomodel',
 'Go to model',a,'Model')end)
 add('misc','removeterrain',
 'Clear the terrain on your screen','',{'noterrain'},function()workspace.Terrain:
-Clear()_nvL.notify('Terrain','Cleared')end)
+Clear()_pupL.notify('Terrain','Cleared')end)
 end
 end function __DARKLUA_BUNDLE_MODULES.aT():typeof(__modImpl())local v=
 __DARKLUA_BUNDLE_MODULES.cache.aT if not v then v={c=__modImpl()}
@@ -8699,7 +8699,7 @@ __DARKLUA_BUNDLE_MODULES.cache.aT=v end return v.c end end
 do
 local function __modImpl()return function(env)
 local C=env.C 
-local _nvL=env._nvL
+local _pupL=env._pupL
 
 local cmdReg=env.cmdReg 
 local createInstance=env.createInstance 
@@ -8714,17 +8714,17 @@ local function add(cat,name,desc,args,aliases,fn)reg(name,desc,args
 
 local function toggle(cat,name,aliases,desc,args,title,start)add(cat,name,desc,
 args,aliases,function(a)if live[name]then live[name]()live[name]=nil end local
-undo=start(a)if not undo then return false end live[name]=undo _nvL.notify(title
+undo=start(a)if not undo then return false end live[name]=undo _pupL.notify(title
 ,'On')end)add(cat,'un'..name,'Turn off '..title:lower(),'',{},function()local
-undo=live[name]live[name]=nil if undo then undo()end _nvL.notify(title,'Off')end
+undo=live[name]live[name]=nil if undo then undo()end _pupL.notify(title,'Off')end
 )end 
-local function me()local char=_nvL.lp.Character local hum=char and char:
+local function me()local char=_pupL.lp.Character local hum=char and char:
 FindFirstChildOfClass('Humanoid')return char,hum,char and getRootPart(char)end
 
-local function accent()return typeof(_G._nv_themeColor)=='Color3'and _G.
-_nv_themeColor or C.ACCENT end 
+local function accent()return typeof(_G._pup_themeColor)=='Color3'and _G.
+_pup_themeColor or C.ACCENT end 
 local function persist(apply,revert)local current
-=_nvL.lp.Character if current then apply(current)end local conn=_nvL.lp.
+=_pupL.lp.Character if current then apply(current)end local conn=_pupL.lp.
 CharacterAdded:Connect(function(char)current=char char:WaitForChild('Humanoid',
 10)task.wait(0.3)if char.Parent then apply(char)end end)return function()conn:
 Disconnect()if current and current.Parent then revert(current)end end end
@@ -8758,8 +8758,8 @@ __modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.aW if not v then v={c=
 __modImpl()}__DARKLUA_BUNDLE_MODULES.cache.aW=v end return v.c end end
 do
 local function __modImpl()return function(env)
-local _nvL=env.
-_nvL 
+local _pupL=env.
+_pupL 
 local cmdReg=env.cmdReg 
 local createInstance=env.createInstance 
 local
@@ -8776,10 +8776,10 @@ cmdReg[#cmdReg].exact=true end
 local function toggle(cat,name,aliases,desc,args,
 title,start)add(cat,name,desc,args,aliases,function(a)if live[name]then live[
 name]()live[name]=nil end local undo=start(a)if not undo then return false end
-live[name]=undo _nvL.notify(title,'On')end)add(cat,'un'..name,'Turn off '..title
+live[name]=undo _pupL.notify(title,'On')end)add(cat,'un'..name,'Turn off '..title
 :lower(),'',{},function()local undo=live[name]live[name]=nil if undo then undo()
-end _nvL.notify(title,'Off')end)end 
-local function me()local char=_nvL.lp.
+end _pupL.notify(title,'Off')end)end 
+local function me()local char=_pupL.lp.
 Character local hum=char and char:FindFirstChildOfClass('Humanoid')return char,
 hum,char and getRootPart(char)end 
 local function num(v,default,lo,hi)return math
@@ -8813,7 +8813,7 @@ then return end hum.AutoRotate=false local md=hum.MoveDirection if md.Magnitude>
 hum.AutoRotate=true end end end)
 add('movement','tweenpos',
 'Glide smoothly to x y z coordinates','<x> <y> <z> <speed>',{},function(a)local
-goal=xyz(a)if not goal then _nvL.notify('Tween',
+goal=xyz(a)if not goal then _pupL.notify('Tween',
 'Give x y z, like tweenpos 0 20 0')return false end local speed=num(tonumber(a[2
 ])and a[5]or a[3],60,5,1000)local _,hum,root=me()if not(hum and root)then return
 false end local token={}live.tweenposToken=token task.spawn(function()hum.
@@ -8822,7 +8822,7 @@ runService.Heartbeat:Wait()local gap=goal-root.Position if gap.Magnitude<=speed*
 dt then root.CFrame=root.CFrame.Rotation+goal break end root.
 AssemblyLinearVelocity=Vector3.zero root.CFrame=root.CFrame.Rotation+(root.
 Position+gap.Unit*speed*dt)end root.AssemblyLinearVelocity=Vector3.zero hum.
-PlatformStand=false end)_nvL.notify('Tween',string.format('Going to %d, %d, %d',
+PlatformStand=false end)_pupL.notify('Tween',string.format('Going to %d, %d, %d',
 goal.X,goal.Y,goal.Z))end)
 toggle('movement','sprint',{},
 'Hold Shift to run faster','<times>','Sprint',function(a)local mult=num(a[2],1.6
@@ -8838,26 +8838,26 @@ toggle('movement','wiggle',{'shimmy'},'Wiggle side to side','',
 0)end)return function()conn:Disconnect()end end)
 add('movement','velocity',
 'Push yourself with a velocity of x y z','<x> <y> <z>',{'vel'},function(a)local
-v=xyz(a)local _,_,root=me()if not root then return false end if not v then _nvL.
+v=xyz(a)local _,_,root=me()if not root then return false end if not v then _pupL.
 notify('Velocity','Give x y z, like velocity 0 100 0')return false end root.
-AssemblyLinearVelocity=v _nvL.notify('Velocity','Pushed')end)
+AssemblyLinearVelocity=v _pupL.notify('Velocity','Pushed')end)
 local function
 launch(fn)local _,hum,root=me()if not(hum and root)then return false end return
 fn(hum,root)end 
 add('movement','groundpound','Slam down hard from the air','',{
 'slam'},function()return launch(function(hum,root)if hum.FloorMaterial~=Enum.
-Material.Air then _nvL.notify('Ground pound','Jump first')return false end root.
-AssemblyLinearVelocity=Vector3.new(0,-170,0)_nvL.notify('Ground pound','Slam')
+Material.Air then _pupL.notify('Ground pound','Jump first')return false end root.
+AssemblyLinearVelocity=Vector3.new(0,-170,0)_pupL.notify('Ground pound','Slam')
 end)end)
 add('movement','rocketjump','Blast up and forward','<power>',{},function
 (a)local p=num(a[2],1,0.2,5)return launch(function(hum,root)hum:ChangeState(Enum
 .HumanoidStateType.Jumping)root.AssemblyLinearVelocity=root.CFrame.LookVector*45
-*p+Vector3.new(0,115*p,0)_nvL.notify('Rocket jump','Up')end)end)
+*p+Vector3.new(0,115*p,0)_pupL.notify('Rocket jump','Up')end)end)
 add('movement',
 'lunge','Burst forward','<power>',{},function(a)local p=num(a[2],1,0.2,5)return
 launch(function(_,root)local look=root.CFrame.LookVector root.
 AssemblyLinearVelocity=Vector3.new(look.X,0,look.Z).Unit*95*p+Vector3.new(0,18,0
-)_nvL.notify('Lunge','Go')end)end)
+)_pupL.notify('Lunge','Go')end)end)
 toggle('movement','dash',{'dashkey'},
 'Press X to dash forward','<power>','Dash',function(a)local p=num(a[2],1,0.2,5)
 local ready=0 return onKey(Enum.KeyCode.X,function()if os.clock()<ready then
@@ -8876,7 +8876,7 @@ Raycast(from,dir,params)end local function flat(v,n)local p=v-n*v:Dot(n)return p
 .Magnitude>1e-3 and p.Unit or nil end local function turn(v,from,to)local axis=
 from:Cross(to)local sin=axis.Magnitude if sin<1e-5 then return v end return
 CFrame.fromAxisAngle(axis.Unit,math.atan2(sin,from:Dot(to))):VectorToWorldSpace(
-v)end local controls pcall(function()controls=require(_nvL.lp:WaitForChild(
+v)end local controls pcall(function()controls=require(_pupL.lp:WaitForChild(
 'PlayerScripts',2):WaitForChild('PlayerModule',2)):GetControls()end)
 local function input()local mv=controls and controls:GetMoveVector()if mv and mv
 .Magnitude>0.05 then return-mv.Z,mv.X end if typing()then return 0,0 end local k
@@ -8915,7 +8915,7 @@ return end if i.UserInputType==Enum.UserInputType.MouseWheel then S.zoom=math.
 clamp(S.zoom-i.Position.Z*2,4,40)elseif i.UserInputType==Enum.UserInputType.
 Touch then local d=i.Delta S.camLook=CFrame.fromAxisAngle(S.camUp,-d.X*0.008):
 VectorToWorldSpace(S.camLook)S.pitch=math.clamp(S.pitch-d.Y*0.008,math.rad(-80),
-math.rad(70))end end)conns[#conns+1]=_nvL.lp.CharacterAdded:Connect(function()if
+math.rad(70))end end)conns[#conns+1]=_pupL.lp.CharacterAdded:Connect(function()if
 live.walkonwalls then live.walkonwalls()live.walkonwalls=nil end end)conns[#
 conns+1]=runService.Heartbeat:Connect(function(dt)if not root.Parent or hum.
 Health<=0 then return end if not S.on then local md=hum.MoveDirection if md.
@@ -8981,7 +8981,7 @@ __DARKLUA_BUNDLE_MODULES.cache.aX if not v then v={c=__modImpl()}
 __DARKLUA_BUNDLE_MODULES.cache.aX=v end return v.c end end
 do local function
 __modImpl()return function(env)
-local _nvL=env._nvL 
+local _pupL=env._pupL 
 local cmdReg=env.cmdReg 
 local getRootPart=env.
 getRootPart 
@@ -8994,11 +8994,11 @@ args,aliases,fn)cmdReg[#cmdReg].cat=cat cmdReg[#cmdReg].exact=true end
 
 local function toggle(cat,name,aliases,desc,args,title,start)add(cat,name,desc,
 args,aliases,function(a)if live[name]then live[name]()live[name]=nil end local
-undo=start(a)if not undo then return false end live[name]=undo _nvL.notify(title
+undo=start(a)if not undo then return false end live[name]=undo _pupL.notify(title
 ,'On')end)add(cat,'un'..name,'Turn off '..title:lower(),'',{},function()local
-undo=live[name]live[name]=nil if undo then undo()end _nvL.notify(title,'Off')end
+undo=live[name]live[name]=nil if undo then undo()end _pupL.notify(title,'Off')end
 )end 
-local function me()local char=_nvL.lp.Character local hum=char and char:
+local function me()local char=_pupL.lp.Character local hum=char and char:
 FindFirstChildOfClass('Humanoid')return char,hum,char and getRootPart(char)end
 
 local function place(cf)local _,_,root=me()if not root then return false end
@@ -9022,34 +9022,34 @@ Size.Y/2+3,0))end
 local cursor={}
 add('movement','gotopartnext',
 [[Teleport to the next part with a name, one each time you run it]],'<name>',{
-'nextpart'},function(a)local q=words(a)if not q then _nvL.notify('Next part',
-'Give a part name')return false end local list=matching(q)if#list==0 then _nvL.
+'nextpart'},function(a)local q=words(a)if not q then _pupL.notify('Next part',
+'Give a part name')return false end local list=matching(q)if#list==0 then _pupL.
 notify('Next part','Nothing called '..q)return false end cursor[q]=(cursor[q]or
-0)%#list+1 place(above(list[cursor[q] ]))_nvL.notify('Next part',cursor[q]..
+0)%#list+1 place(above(list[cursor[q] ]))_pupL.notify('Next part',cursor[q]..
 ' of '..#list)end)
 toggle('movement','gotofolder',{'tourfolder'},
 'Visit every part in a folder or model, one after another','<name> <secs>',
 'Folder tour',function(a)local secs=tonumber(a[#a])and#a>2 and math.clamp(
 tonumber(a[#a]),0.1,10)or 0.6 local q=words(tonumber(a[#a])and#a>2 and{table.
-unpack(a,1,#a-1)}or a)if not q then _nvL.notify('Folder tour',
+unpack(a,1,#a-1)}or a)if not q then _pupL.notify('Folder tour',
 'Give a folder or model name')return nil end local box for _,d in workspace:
 GetDescendants()do if(d:IsA('Folder')or d:IsA('Model'))and not inCharacter(d)and
-d.Name:lower()==q then box=d break end end if not box then _nvL.notify(
+d.Name:lower()==q then box=d break end end if not box then _pupL.notify(
 'Folder tour','Nothing called '..q)return nil end local list={}for _,d in box:
 GetDescendants()do if d:IsA('BasePart')then list[#list+1]=d end if#list>=200
-then break end end if#list==0 then _nvL.notify('Folder tour',box.Name..
+then break end end if#list==0 then _pupL.notify('Folder tour',box.Name..
 ' has no parts')return nil end local on=true task.spawn(function()for i,p in
-list do if not on then break end if p.Parent then place(above(p))_nvL.notify(
+list do if not on then break end if p.Parent then place(above(p))_pupL.notify(
 'Folder tour',i..' of '..#list,1)end task.wait(secs)end if on and live.
 gotofolder then live.gotofolder=nil end end)return function()on=false end end)
 
 local function byDistance(far)local _,_,root=me()if not root then
 return false end local best,bestD for _,p in players:GetPlayers()do local r=p~=
-_nvL.lp and p.Character and getRootPart(p.Character)if r then local d=(r.
+_pupL.lp and p.Character and getRootPart(p.Character)if r then local d=(r.
 Position-root.Position).Magnitude if not bestD or(far and d>bestD)or(not far and
-d<bestD)then best,bestD=p,d end end end if not best then _nvL.notify(far and
+d<bestD)then best,bestD=p,d end end end if not best then _pupL.notify(far and
 'Farthest'or'Nearest','Nobody to go to')return false end place(getRootPart(best.
-Character).CFrame*CFrame.new(0,0,3))_nvL.notify(far and'Farthest'or'Nearest',
+Character).CFrame*CFrame.new(0,0,3))_pupL.notify(far and'Farthest'or'Nearest',
 best.DisplayName..', '..math.floor(bestD)..' studs')end 
 add('movement','nearest'
 ,'Teleport to the closest player','',{'closest'},function()return byDistance(
@@ -9060,46 +9060,46 @@ end end function
 __DARKLUA_BUNDLE_MODULES.aY():typeof(__modImpl())local v=
 __DARKLUA_BUNDLE_MODULES.cache.aY if not v then v={c=__modImpl()}
 __DARKLUA_BUNDLE_MODULES.cache.aY=v end return v.c end end
-local _nvL={
+local _pupL={
 bootAt=os.clock()}
-_nvL.notify=function(title,text)host.notify(title,text)end _nvL.xnotify=_nvL.notify
-function _nvL.discard(obj)if typeof(obj)~='Instance'then
+_pupL.notify=function(title,text)host.notify(title,text)end _pupL.xnotify=_pupL.notify
+function _pupL.discard(obj)if typeof(obj)~='Instance'then
 return end pcall(function()if obj:IsA('GuiObject')then obj.Visible=false elseif
 obj:IsA('LayerCollector')then obj.Enabled=false end game:GetService('Debris'):
 AddItem(obj,0)end)end 
-local _nvAny=
+local _pupAny=
 function(collection)for key,value in collection do return key,value end return
 nil end 
-local _nvClear=function(collection)local keys=table.create(8)local count
+local _pupClear=function(collection)local keys=table.create(8)local count
 =0 for key in collection do count+=1 keys[count]=key end for index=1,count do
 collection[keys[index] ]=nil end end 
 local function feelPresses(object,className
 )if className~='TextButton'and className~='ImageButton'then return end object.
-MouseButton1Down:Connect(function()local feel=_G._nv_haptic if feel then feel(
+MouseButton1Down:Connect(function()local feel=_G._pup_haptic if feel then feel(
 'tap',object)end end)end 
 local createInstance=function(className,properties)
 local object=Instance.new(className)feelPresses(object,className)if properties==
 nil then return object end local parent=properties.Parent for key,value in
-properties do if key=='Icon'then if _G._nv_setIcon then _G._nv_setIcon(object,
-value)else _nvL.iconQueue=_nvL.iconQueue or{}_nvL.iconQueue[object]=value end
+properties do if key=='Icon'then if _G._pup_setIcon then _G._pup_setIcon(object,
+value)else _pupL.iconQueue=_pupL.iconQueue or{}_pupL.iconQueue[object]=value end
 elseif key~='Parent'and type(key)=='string'then object[key]=value end end if
 parent~=nil then object.Parent=parent end return object end 
 do
-__DARKLUA_BUNDLE_MODULES.a()({_nvL=_nvL,createInstance=createInstance})end 
+__DARKLUA_BUNDLE_MODULES.a()({_pupL=_pupL,createInstance=createInstance})end 
 local function
-_nvN(n)if type(n)=='number'then return n end local v=tonumber(n)if type(v)==
+_pupN(n)if type(n)=='number'then return n end local v=tonumber(n)if type(v)==
 'number'then return v end return 0 end
 local
 _safeLoadstring=loadstring or load 
 local _safeHttpGet=game.HttpGet
 
-local function _nv_env()local env=_G pcall(function()if type(getgenv)==
+local function _pup_env()local env=_G pcall(function()if type(getgenv)==
 'function'then local e=getgenv()if type(e)=='table'then env=e end end end)return
 env end 
-local _genv=_nv_env()
+local _genv=_pup_env()
 local _request=rawget(_genv,'request')or rawget(
 _genv,'http_request')
-do __DARKLUA_BUNDLE_MODULES.c()({_nvL=_nvL,_request=
+do __DARKLUA_BUNDLE_MODULES.c()({_pupL=_pupL,_request=
 _request})end 
 local tweenService=game:GetService(
 'TweenService')
@@ -9108,10 +9108,10 @@ local runService=game:
 GetService('RunService')
 local userInputService=game:GetService(
 'UserInputService')
-_nvL.lp=players.LocalPlayer 
-if not _nvL.lp then pcall(function()_nvL.lp=players.
+_pupL.lp=players.LocalPlayer 
+if not _pupL.lp then pcall(function()_pupL.lp=players.
 LocalPlayerAdded:Wait()end)end 
-local mouse=_nvL.lp:GetMouse()
+local mouse=_pupL.lp:GetMouse()
 local
 _isMobile=userInputService.TouchEnabled and not userInputService.KeyboardEnabled
 
@@ -9123,7 +9123,7 @@ fromRGB(40,40,40),OVERLAY=Color3.fromRGB(15,15,15),SHINE=Color3.fromRGB(255,255,
 255),DIV=Color3.fromRGB(44,44,44),SUB=Color3.fromRGB(205,205,205),TIME=Color3.
 fromRGB(190,190,190),GLOW=Color3.fromRGB(110,110,110)}
 function _G.
-_nv_addBlendedShine(parent,radius,zIndex)if not parent then return end local
+_pup_addBlendedShine(parent,radius,zIndex)if not parent then return end local
 prior=parent:FindFirstChild('SurfaceShine')if prior then return prior end local
 rad=radius or 10 local wash=createInstance('Frame',{Name='SurfaceShine',Size=
 UDim2.fromScale(1,1),BackgroundColor3=C.SHINE,BackgroundTransparency=0.88,
@@ -9135,47 +9135,47 @@ Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0.22),
 NumberSequenceKeypoint.new(0.42,0.58),NumberSequenceKeypoint.new(0.78,0.92),
 NumberSequenceKeypoint.new(1,1)}),Parent=wash})end)return wash end
 
-local function _nv_accentColorSequence()local hi=C.ACCENT or Color3.fromRGB(32,
+local function _pup_accentColorSequence()local hi=C.ACCENT or Color3.fromRGB(32,
 186,168)local lo=hi:Lerp(Color3.new(0,0,0),0.22)return ColorSequence.new({
 ColorSequenceKeypoint.new(0,hi),ColorSequenceKeypoint.new(1,lo)})end 
 function _G
-._nv_addColorGradient(parent,radius,zIndex)if not parent then return end local
+._pup_addColorGradient(parent,radius,zIndex)if not parent then return end local
 prior=parent:FindFirstChild('ColorGradient')if prior then pcall(function()local
 g=prior:FindFirstChildOfClass('UIGradient')if g then g.Color=
-_nv_accentColorSequence()end end)return prior end local rad=radius or 10 local
+_pup_accentColorSequence()end end)return prior end local rad=radius or 10 local
 wash=createInstance('Frame',{Name='ColorGradient',Size=UDim2.fromScale(1,1),
 BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderSizePixel=0,
 ZIndex=zIndex or(parent.ZIndex+1),Active=false})pcall(function()wash.
 Interactable=false end)pcall(function()wash.Parent=parent end)pcall(function()
 createInstance('UICorner',{Parent=wash,CornerRadius=UDim.new(0,rad)})end)pcall(
 function()local washGrad=createInstance('UIGradient',{Rotation=90,Offset=Vector2
-.new(0,0.5),Color=_nv_accentColorSequence(),Transparency=NumberSequence.new({
+.new(0,0.5),Color=_pup_accentColorSequence(),Transparency=NumberSequence.new({
 NumberSequenceKeypoint.new(0,0.22),NumberSequenceKeypoint.new(0.42,0.58),
 NumberSequenceKeypoint.new(0.78,0.92),NumberSequenceKeypoint.new(1,1)}),Parent=
-wash})end)pcall(function()local bag=_G._nvColorGradients if type(bag)~='table'
-then bag={}_G._nvColorGradients=bag end bag[#bag+1]=wash end)return wash end
+wash})end)pcall(function()local bag=_G._pupColorGradients if type(bag)~='table'
+then bag={}_G._pupColorGradients=bag end bag[#bag+1]=wash end)return wash end
 
-function _G._nv_addBlueCornerGlow(parent,radius,zIndex,rotation)if not parent
+function _G._pup_addBlueCornerGlow(parent,radius,zIndex,rotation)if not parent
 then return end local glow=createInstance('Frame',{Name='BlueCornerGlow',Size=
 UDim2.fromScale(1,1),BackgroundColor3=C.ACCENT,BackgroundTransparency=0.78,
 BorderSizePixel=0,ZIndex=zIndex or parent.ZIndex,Active=false,Visible=_G.
-_nvThemeName~='Modern',Parent=parent})local glowCorner=createInstance('UICorner'
+_pupThemeName~='Modern',Parent=parent})local glowCorner=createInstance('UICorner'
 ,{CornerRadius=UDim.new(0,radius or 14),Parent=glow})local glowGradient=
 createInstance('UIGradient',{Rotation=rotation or 35,Transparency=NumberSequence
 .new({NumberSequenceKeypoint.new(0,0.35),NumberSequenceKeypoint.new(0.18,0.72),
 NumberSequenceKeypoint.new(0.48,0.94),NumberSequenceKeypoint.new(0.72,1),
-NumberSequenceKeypoint.new(1,1)}),Parent=glow})do local bag=_G._nvCornerGlows if
-type(bag)~='table'then bag={}_G._nvCornerGlows=bag end bag[#bag+1]=glow end
+NumberSequenceKeypoint.new(1,1)}),Parent=glow})do local bag=_G._pupCornerGlows if
+type(bag)~='table'then bag={}_G._pupCornerGlows=bag end bag[#bag+1]=glow end
 return glow end 
 local font=Enum.Font.
 GothamSemibold 
-_nvL.applyThemeTo=function()end
+_pupL.applyThemeTo=function()end
 
-_nvL.currentThemeName='Modern'
-_nvL.placeWindows=false 
-_nvL.keybindListening=false 
-_nvL.reloadCustom=function()end 
-local _nv_profileStore=_G._nv_profileStore or{path='PuppyAdmin/profiles.json',data
+_pupL.currentThemeName='Modern'
+_pupL.placeWindows=false 
+_pupL.keybindListening=false 
+_pupL.reloadCustom=function()end 
+local _pup_profileStore=_G._pup_profileStore or{path='PuppyAdmin/profiles.json',data
 ={version=1,order={},profiles={}},defaults={notifEnabled=true,welcomeEnabled=
 true,singleTabEnabled=false,autoHideNavbar=false,placeWindows=false,tabDocking=
 true,tabDockCorners={},saveWindows=false,immersiveMusic=true,haptics=true,
@@ -9194,52 +9194,52 @@ webhookJoinUrl=''}}
 local saveSettings=
 function()pcall(function()local hs=game:GetService('HttpService')local path=
 'PuppyAdmin/settings.json'if not isfolder('PuppyAdmin')then makefolder('PuppyAdmin')
-end writefile(path,hs:JSONEncode(_nv_profileStore:captureSettings()))end)end 
+end writefile(path,hs:JSONEncode(_pup_profileStore:captureSettings()))end)end 
 local sfx={tabOpen=function()end,
 tabClose=function()end,hover=function()end,scroll=function()end,notify=function(
 )end}
 pcall(function()local hs=game:GetService('HttpService')if isfile and isfile(
 'PuppyAdmin/binds.json')then local ok,data=pcall(hs.JSONDecode,hs,readfile(
-'PuppyAdmin/binds.json'))if ok and type(data)=='table'then _nvL._nv_binds=data end
+'PuppyAdmin/binds.json'))if ok and type(data)=='table'then _pupL._pup_binds=data end
 end end)
-_G._nv_propertyTweens=setmetatable({},{__mode=
+_G._pup_propertyTweens=setmetatable({},{__mode=
 'k'})
-local _nvTextLock=setmetatable({},{__mode='k'})
-function _nvL.
-_nvTextLockState(uiScale)local state=_nvTextLock[uiScale]if state~=nil then
+local _pupTextLock=setmetatable({},{__mode='k'})
+function _pupL.
+_pupTextLockState(uiScale)local state=_pupTextLock[uiScale]if state~=nil then
 return state or nil end local host=uiScale.Parent if not(host and host:IsA(
-'GuiObject'))then _nvTextLock[uiScale]=false return nil end local function
+'GuiObject'))then _pupTextLock[uiScale]=false return nil end local function
 nested(d)local p=d.Parent while p and p~=host do if p:IsA('GuiObject')then local
 u=p:FindFirstChildOfClass('UIScale')if u and u.Name~='TextLock'then return true
 end end p=p.Parent end return false end local texts={}for _,d in host:
 GetDescendants()do if(d:IsA('TextLabel')or d:IsA('TextBox')or(d:IsA('TextButton'
 )and d.Text~=''))and not d.TextScaled and not nested(d)then if#texts>=8 then
-_nvTextLock[uiScale]=false return nil end texts[#texts+1]=d end end if#texts==0
-then _nvTextLock[uiScale]=false return nil end state={on=false,list={}}for i=1,#
+_pupTextLock[uiScale]=false return nil end texts[#texts+1]=d end end if#texts==0
+then _pupTextLock[uiScale]=false return nil end state={on=false,list={}}for i=1,#
 texts do local lock=createInstance('UIScale',{Name='TextLock',Parent=texts[i]})
-state.list[i]=lock end _nvTextLock[uiScale]=state uiScale:
-GetPropertyChangedSignal('Scale'):Connect(function()local current=_nvTextLock[
+state.list[i]=lock end _pupTextLock[uiScale]=state uiScale:
+GetPropertyChangedSignal('Scale'):Connect(function()local current=_pupTextLock[
 uiScale]if not current then return end local inv=1 if current.on then local s=
 uiScale.Scale if s>0.05 and math.abs(s-1)>=0.004 then inv=1/s end end for i=1,#
 current.list do local lock=current.list[i]if lock.Parent and math.abs(lock.Scale
 -inv)>0.0008 then lock.Scale=inv end end end)return state end 
-do __DARKLUA_BUNDLE_MODULES.f()({_nvAny=_nvAny,runService=
+do __DARKLUA_BUNDLE_MODULES.f()({_pupAny=_pupAny,runService=
 runService,tweenService=tweenService})end 
 local function tween(obj,info,goals)if
 not(obj and obj.Parent)then return end if goals.GroupTransparency~=nil and obj:
 GetAttribute('NvFade')then local others={}for key,value in goals do if key~=
-'GroupTransparency'then others[key]=value end end local fade=_G._nv_frameFade(
-obj,goals.GroupTransparency,info)if not _nvAny(others)then return fade end goals
-=others end local reveal=_G._nv_revealBase local pending=reveal and not _G.
-_nv_revealing and reveal[obj]if pending then for key in goals do if pending[key]
+'GroupTransparency'then others[key]=value end end local fade=_G._pup_frameFade(
+obj,goals.GroupTransparency,info)if not _pupAny(others)then return fade end goals
+=others end local reveal=_G._pup_revealBase local pending=reveal and not _G.
+_pup_revealing and reveal[obj]if pending then for key in goals do if pending[key]
 ~=nil then pending[key]=nil end end end if obj:IsA('UIScale')and type(goals.
-Scale)=='number'then local a,b=obj.Scale,goals.Scale local state=_nvL.
-_nvTextLockState(obj)if state then state.on=a>=0.9 and a<=1.12 and b>=0.9 and b
+Scale)=='number'then local a,b=obj.Scale,goals.Scale local state=_pupL.
+_pupTextLockState(obj)if state then state.on=a>=0.9 and a<=1.12 and b>=0.9 and b
 <=1.12 if not state.on then for i=1,#state.list do local lock=state.list[i]if
 lock.Parent and lock.Scale~=1 then lock.Scale=1 end end end end end local
-tracked=_G._nv_propertyTweens[obj]if not tracked then tracked={}_G.
-_nv_propertyTweens[obj]=tracked end local meta=_G._nv_tweenMeta if not meta then
-meta=setmetatable({},{__mode='k'})_G._nv_tweenMeta=meta end local cancelled={}
+tracked=_G._pup_propertyTweens[obj]if not tracked then tracked={}_G.
+_pup_propertyTweens[obj]=tracked end local meta=_G._pup_tweenMeta if not meta then
+meta=setmetatable({},{__mode='k'})_G._pup_tweenMeta=meta end local cancelled={}
 local carry={}for property in goals do local previous=tracked[property]if
 previous and not cancelled[previous]then cancelled[previous]=true local m=meta[
 previous]local state=previous.PlaybackState if m and(state==Enum.PlaybackState.
@@ -9264,30 +9264,30 @@ userInputService=userInputService})end
 local sg=createInstance('ScreenGui',{Name='PuppyAdminReanim',ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,IgnoreGuiInset=true,DisplayOrder=56})host.parentGui(sg)
 if not pcall(
 function()__DARKLUA_BUNDLE_MODULES.i()({container=sg,userInputService=
-userInputService})end)then _G._nv_haptic,_G._nv_hapticsReset=nil,nil end 
+userInputService})end)then _G._pup_haptic,_G._pup_hapticsReset=nil,nil end 
 local _fixedPanels={}
-_G._nv_glassParts=
+_G._pup_glassParts=
 setmetatable({},{__mode='k'})
 do __DARKLUA_BUNDLE_MODULES.j()({createInstance=
 createInstance})end 
 do __DARKLUA_BUNDLE_MODULES.k()({C=C,createInstance=
 createInstance,tween=tween,userInputService=userInputService})end 
 _G.
-_nv_switchLook={ON=Color3.fromRGB(242,242,244),OFF=Color3.fromRGB(58,58,62),
+_pup_switchLook={ON=Color3.fromRGB(242,242,244),OFF=Color3.fromRGB(58,58,62),
 KNOB_ON=Color3.fromRGB(18,18,20),KNOB_OFF=Color3.new(1,1,1),TONE=0.4,MOTION=
 TweenInfo.new(0.22,Enum.EasingStyle.Quint,Enum.EasingDirection.Out)}
 _G.
-_nv_switchFills=_G._nv_switchFills or{}
-_G._nv_switchAccent=function()local c=_G.
-_nv_tintColor if typeof(c)~='Color3'then c=_G._nv_themeColor end if typeof(c)~=
+_pup_switchFills=_G._pup_switchFills or{}
+_G._pup_switchAccent=function()local c=_G.
+_pup_tintColor if typeof(c)~='Color3'then c=_G._pup_themeColor end if typeof(c)~=
 'Color3'then return Color3.new(1,1,1)end local h,s,v=c:ToHSV()return Color3.
 fromHSV(h,math.min(s,0.7),math.max(v,0.85))end 
-_G._nv_repaintSwitches=function(
-duration)local col=_G._nv_switchAccent()for fill in _G._nv_switchFills do if
+_G._pup_repaintSwitches=function(
+duration)local col=_G._pup_switchAccent()for fill in _G._pup_switchFills do if
 fill.Parent then tween(fill,TweenInfo.new(duration or 0.6),{BackgroundColor3=col
-})else _G._nv_switchFills[fill]=nil end end end 
-_G._nv_switch=function(parent,on
-,o)o=o or{}local look=_G._nv_switchLook local W,H,KW,KH,PW,PH=52,26,32,22,44,30
+})else _G._pup_switchFills[fill]=nil end end end 
+_G._pup_switch=function(parent,on
+,o)o=o or{}local look=_G._pup_switchLook local W,H,KW,KH,PW,PH=52,26,32,22,44,30
 local track=createInstance(o.clickable and'TextButton'or'Frame')if o.clickable
 then track.Text=''track.AutoButtonColor=false end track.Name=o.name or'Switch'
 track.AnchorPoint=o.anchor or Vector2.new(1,0.5)track.Position=o.position or
@@ -9297,8 +9297,8 @@ BackgroundTransparency=0.86 track:SetAttribute('NvNoTone',true)createInstance(
 'UICorner',{Parent=track,CornerRadius=UDim.new(1,0)})local fill=createInstance(
 'Frame',{Parent=track,Name='Fill',Size=UDim2.fromScale(1,1),
 BackgroundTransparency=1,BorderSizePixel=0,ZIndex=track.ZIndex})fill:
-SetAttribute('NvNoTone',true)_G._nv_switchFills[fill]=true fill.Destroying:
-Connect(function()_G._nv_switchFills[fill]=nil end)createInstance('UICorner',{
+SetAttribute('NvNoTone',true)_G._pup_switchFills[fill]=true fill.Destroying:
+Connect(function()_G._pup_switchFills[fill]=nil end)createInstance('UICorner',{
 Parent=fill,CornerRadius=UDim.new(1,0)})local knob=createInstance('Frame',{
 Parent=track,Name='Knob',AnchorPoint=Vector2.new(0.5,0.5),Size=UDim2.fromOffset(
 KW,KH),BackgroundColor3=Color3.new(1,1,1),BorderSizePixel=0,ZIndex=track.ZIndex+
@@ -9313,7 +9313,7 @@ Enum.EasingDirection.Out)local SETTLE=TweenInfo.new(0.16,Enum.EasingStyle.Quad,
 Enum.EasingDirection.Out)local GLIDE=TweenInfo.new(0.3,Enum.EasingStyle.Quart,
 Enum.EasingDirection.Out)local FILL=TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum
 .EasingDirection.Out)local NOW=TweenInfo.new(0)local LENS,ON_FILL=0.82,0.25
-local accent=_G._nv_switchAccent local function knobX(v)return v and(W-2-KW/2)or
+local accent=_G._pup_switchAccent local function knobX(v)return v and(W-2-KW/2)or
 (2+KW/2)end local function render(info)local lens=pressed and drag~=nil and drag
 .moved==true local kg={Size=lens and UDim2.fromOffset(PW,PH)or UDim2.fromOffset(
 KW,KH),Position=UDim2.new(0,knobX(state),0.5,0),BackgroundTransparency=lens and
@@ -9328,7 +9328,7 @@ Size=UDim2.fromOffset(KW,KH),BackgroundTransparency=0})tween(rim,SETTLE,{
 Transparency=1})tween(fill,FILL,{BackgroundTransparency=state and ON_FILL or 1})
 end local function travel()token+=1 travelAt=os.clock()settle()end
 local function set(v,animate)local changed=(v and true or false)~=state state=v
-and true or false if changed and pressed and _G._nv_haptic then _G._nv_haptic(
+and true or false if changed and pressed and _G._pup_haptic then _G._pup_haptic(
 'toggle')end if animate and changed and not drag then travel()else render(
 animate and look.MOTION or nil)end end local function hookPress(btn)if pressBtn
 then return end pressBtn=btn btn.InputBegan:Connect(function(input)if input.
@@ -9362,7 +9362,7 @@ depth<3 and not p:IsA('GuiButton')do p,depth=p.Parent,depth+1 end if p and p:
 IsA('GuiButton')then hookPress(p)else track.ChildAdded:Connect(function(c)if c:
 IsA('GuiButton')then hookPress(c)end end)end end return set,track,knob end
 
-function _G._nv_glass(obj,radius,noShadow)obj.BorderSizePixel=0 local corner=obj
+function _G._pup_glass(obj,radius,noShadow)obj.BorderSizePixel=0 local corner=obj
 :FindFirstChildOfClass('UICorner')or createInstance('UICorner',{Parent=obj})
 corner.CornerRadius=UDim.new(0,radius)local surface=obj if obj:IsA('CanvasGroup'
 )then obj.BackgroundTransparency=1 surface=createInstance('Frame',{Parent=obj,
@@ -9377,21 +9377,21 @@ Border,Color=Color3.new(1,1,1),Thickness=1})pcall(function()rim.
 BorderStrokePosition=Enum.BorderStrokePosition.Inner end)local light=
 createInstance('UIGradient',{Parent=rim,Rotation=90,Transparency=NumberSequence.
 new({NumberSequenceKeypoint.new(0,0.84),NumberSequenceKeypoint.new(0.5,0.92),
-NumberSequenceKeypoint.new(1,0.78)})})_G._nv_glassParts[body]=rim if _G.
-_nv_paintGlass then _G._nv_paintGlass(body,rim)end if not noShadow then pcall(
+NumberSequenceKeypoint.new(1,0.78)})})_G._pup_glassParts[body]=rim if _G.
+_pup_paintGlass then _G._pup_paintGlass(body,rim)end if not noShadow then pcall(
 function()local s=createInstance('UIShadow',{Name='DarkGlow',Color=Color3.new(0,
 0,0),BlurRadius=UDim.new(0,26),Offset=UDim2.fromOffset(0,10),Transparency=0.45,
 ZIndex=-1,Parent=obj})if obj:IsA('CanvasGroup')then local function follow()s.
-Transparency=_G._nv_glowT(s,0.45+0.55*obj.GroupTransparency)end obj:
+Transparency=_G._pup_glowT(s,0.45+0.55*obj.GroupTransparency)end obj:
 GetPropertyChangedSignal('GroupTransparency'):Connect(follow)follow()else s.
-Transparency=_G._nv_glowT(s,0.45)end end)end return rim end 
-_G._nv_glowT=_G.
-_nv_glowT or function(sh,t)sh:SetAttribute('NvGlowT',t)return t end 
+Transparency=_G._pup_glowT(s,0.45)end end)end return rim end 
+_G._pup_glowT=_G.
+_pup_glowT or function(sh,t)sh:SetAttribute('NvGlowT',t)return t end 
 do
-__DARKLUA_BUNDLE_MODULES.v()({_isMobile=_isMobile,_nvL=_nvL,userInputService=
+__DARKLUA_BUNDLE_MODULES.v()({_isMobile=_isMobile,_pupL=_pupL,userInputService=
 userInputService})end 
-do __DARKLUA_BUNDLE_MODULES.l()({_nvL=_nvL,_safeLoadstring=_safeLoadstring})end
-_nvL.
+do __DARKLUA_BUNDLE_MODULES.l()({_pupL=_pupL,_safeLoadstring=_safeLoadstring})end
+_pupL.
 chordSame={LeftShift={'LeftShift','RightShift'},RightShift={'LeftShift',
 'RightShift'},LeftControl={'LeftControl','RightControl'},RightControl={
 'LeftControl','RightControl'},LeftAlt={'LeftAlt','RightAlt'},RightAlt={'LeftAlt'
@@ -9399,42 +9399,42 @@ chordSame={LeftShift={'LeftShift','RightShift'},RightShift={'LeftShift',
 RightMeta={'LeftMeta','RightMeta','LeftSuper','RightSuper'},LeftSuper={
 'LeftMeta','RightMeta','LeftSuper','RightSuper'},RightSuper={'LeftMeta',
 'RightMeta','LeftSuper','RightSuper'}}
-function _nvL.chordFor(keyName)local binds
-=_nvL._nv_binds for _,held in userInputService:GetKeysPressed()do local name=
-held.KeyCode.Name if name~=keyName then for _,other in _nvL.chordSame[name]or{
+function _pupL.chordFor(keyName)local binds
+=_pupL._pup_binds for _,held in userInputService:GetKeysPressed()do local name=
+held.KeyCode.Name if name~=keyName then for _,other in _pupL.chordSame[name]or{
 name}do local cmd=binds[other..'+'..keyName]or binds[keyName..'+'..other]if cmd
 then return cmd end end end end return nil end 
-function _nvL.sameKey(a,b)if a==b
-then return true end for _,name in _nvL.chordSame[a]or{}do if name==b then
+function _pupL.sameKey(a,b)if a==b
+then return true end for _,name in _pupL.chordSame[a]or{}do if name==b then
 return true end end return false end 
-function _nvL.keyInChord(bound,keyName)
-local a,b=tostring(bound):match('^(.-)%+(.+)$')return a~=nil and(_nvL.sameKey(a,
-keyName)or _nvL.sameKey(b,keyName))end 
-function _nvL.chordMatches(bound,keyName)
+function _pupL.keyInChord(bound,keyName)
+local a,b=tostring(bound):match('^(.-)%+(.+)$')return a~=nil and(_pupL.sameKey(a,
+keyName)or _pupL.sameKey(b,keyName))end 
+function _pupL.chordMatches(bound,keyName)
 local a,b=tostring(bound):match('^(.-)%+(.+)$')if not a then return false end
-local other if _nvL.sameKey(a,keyName)then other=b elseif _nvL.sameKey(b,keyName
+local other if _pupL.sameKey(a,keyName)then other=b elseif _pupL.sameKey(b,keyName
 )then other=a else return false end for _,held in userInputService:
-GetKeysPressed()do if _nvL.sameKey(other,held.KeyCode.Name)then return true end
+GetKeysPressed()do if _pupL.sameKey(other,held.KeyCode.Name)then return true end
 end return false end 
-_nvL.keyWords={LeftMeta='Cmd',RightMeta='Cmd',LeftSuper=
+_pupL.keyWords={LeftMeta='Cmd',RightMeta='Cmd',LeftSuper=
 'Cmd',RightSuper='Cmd',LeftShift='Shift',RightShift='Shift',LeftControl='Ctrl',
 RightControl='Ctrl',LeftAlt='Alt',RightAlt='Alt',Return='Enter'}
-_G._nv_keyLabel=
+_G._pup_keyLabel=
 function(key)local parts={}for part in tostring(key):gmatch('[^+]+')do parts[#
-parts+1]=_nvL.keyWords[part]or part end return table.concat(parts,' ')end
+parts+1]=_pupL.keyWords[part]or part end return table.concat(parts,' ')end
 
 local function saveAutoExec()pcall(function()local hs=game:GetService(
 'HttpService')if not isfolder('PuppyAdmin')then makefolder('PuppyAdmin')end
-writefile('PuppyAdmin/autoexecute.json',hs:JSONEncode(_nvL._nv_autoexec))end)end
+writefile('PuppyAdmin/autoexecute.json',hs:JSONEncode(_pupL._pup_autoexec))end)end
 
-local function _nvMakeSliderSwitch
+local function _pupMakeSliderSwitch
 (parent,default,zindex,layout)layout=type(layout)=='table'and layout or{}local
-set,track=_G._nv_switch(parent,default,{z=zindex or 14,anchor=layout.anchor,
+set,track=_G._pup_switch(parent,default,{z=zindex or 14,anchor=layout.anchor,
 position=layout.position,name='SwitchTrack'})local visualOn=default and true or
 false return function(active,animated)active=active and true or false if
 visualOn==active then return end visualOn=active set(active,animated)end,track
 end 
-function _G._nv_pressable(item,amount)if not item:IsA('GuiButton'
+function _G._pup_pressable(item,amount)if not item:IsA('GuiButton'
 )or item:GetAttribute('NoPress')or item:GetAttribute('NvPress')or item:
 FindFirstChildOfClass('UIScale')then return end item:SetAttribute('NvPress',true
 )local scale,tint local down=false local function hasText()if item:IsA(
@@ -9461,63 +9461,63 @@ TweenInfo.new(0.25,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{
 BackgroundTransparency=1})end if scale then tween(scale,TweenInfo.new(0.3,Enum.
 EasingStyle.Back,Enum.EasingDirection.Out),{Scale=1})end end item.MouseButton1Up
 :Connect(release)item.MouseLeave:Connect(release)end 
-_G._nv_revealBase=_G.
-_nv_revealBase or setmetatable({},{__mode='k'})
-_nvL._nvRevealProps={TextLabel=
+_G._pup_revealBase=_G.
+_pup_revealBase or setmetatable({},{__mode='k'})
+_pupL._pupRevealProps={TextLabel=
 'TextTransparency',TextButton='TextTransparency',TextBox='TextTransparency',
 ImageLabel='ImageTransparency',ImageButton='ImageTransparency'}
-_nvL._nvSettle=
+_pupL._pupSettle=
 TweenInfo.new(0.36,Enum.EasingStyle.Quint,Enum.EasingDirection.Out)
 function _G.
-_nv_reveal(root,delay,rise)if not(root and root.Parent)then return end local
-base=_G._nv_revealBase local restore={}local function capture(node)local goal=
-base[node]if not goal then goal={}local rv=_G._nv_fadeRestValue local function
+_pup_reveal(root,delay,rise)if not(root and root.Parent)then return end local
+base=_G._pup_revealBase local restore={}local function capture(node)local goal=
+base[node]if not goal then goal={}local rv=_G._pup_fadeRestValue local function
 now(key)return rv and rv(node,key)or node[key]end if node:IsA('GuiObject')then
 local bt=now('BackgroundTransparency')if bt<1 then goal.BackgroundTransparency=
-bt end local prop=_nvL._nvRevealProps[node.ClassName]if prop then local v=now(
+bt end local prop=_pupL._pupRevealProps[node.ClassName]if prop then local v=now(
 prop)if v<1 then goal[prop]=v end end elseif node:IsA('UIStroke')or node.Name==
 'ButtonGlow'then local v=now('Transparency')if v<1 then goal.Transparency=v end
-end if not _nvAny(goal)then return end base[node]=goal end for key in goal do
+end if not _pupAny(goal)then return end base[node]=goal end for key in goal do
 node[key]=1 end restore[#restore+1]={node,goal}end capture(root)for _,node in
 root:GetDescendants()do capture(node)end local mover=root if root:GetAttribute(
-'_nvFade')and root.Parent and root.Parent:IsA('CanvasGroup')then mover=root.
+'_pupFade')and root.Parent and root.Parent:IsA('CanvasGroup')then mover=root.
 Parent end local home=rise and rise~=0 and mover:IsA('GuiObject')and(mover:
-GetAttribute('_nvRevealHome')or mover.Position)if home then mover:SetAttribute(
-'_nvRevealHome',home)mover.Position=home+UDim2.fromOffset(0,rise)end task.delay(
-delay or 0,function()_G._nv_revealing=true for _,item in restore do if item[1].
-Parent then pcall(tween,item[1],_nvL._nvSettle,item[2])end end _G._nv_revealing=
-false if home and mover.Parent then tween(mover,_nvL._nvSettle,{Position=home})
+GetAttribute('_pupRevealHome')or mover.Position)if home then mover:SetAttribute(
+'_pupRevealHome',home)mover.Position=home+UDim2.fromOffset(0,rise)end task.delay(
+delay or 0,function()_G._pup_revealing=true for _,item in restore do if item[1].
+Parent then pcall(tween,item[1],_pupL._pupSettle,item[2])end end _G._pup_revealing=
+false if home and mover.Parent then tween(mover,_pupL._pupSettle,{Position=home})
 end task.delay(0.4,function()for _,item in restore do if base[item[1] ]==item[2]
 then base[item[1] ]=nil end end if home and mover.Parent and mover:GetAttribute(
-'_nvRevealHome')==home then mover:SetAttribute('_nvRevealHome',nil)end if _G.
-_nv_applyUiOpacitySoon then _G._nv_applyUiOpacitySoon()end end)end)end 
+'_pupRevealHome')==home then mover:SetAttribute('_pupRevealHome',nil)end if _G.
+_pup_applyUiOpacitySoon then _G._pup_applyUiOpacitySoon()end end)end)end 
 function _G.
-_nv_scrollView(scroll)local origin=scroll:FindFirstChild('_nvOrigin')if not
-origin then origin=createInstance('Frame',{Name='_nvOrigin',
+_pup_scrollView(scroll)local origin=scroll:FindFirstChild('_pupOrigin')if not
+origin then origin=createInstance('Frame',{Name='_pupOrigin',
 BackgroundTransparency=1,BorderSizePixel=0,Size=UDim2.new(),Position=UDim2.new()
 ,Parent=scroll})end local s=1 local p=scroll while p and not p:IsA(
 'LayerCollector')do local u=p:FindFirstChildOfClass('UIScale')if u and u.Scale>0
 then s*=u.Scale end p=p.Parent end local y=math.max(scroll.AbsolutePosition.Y-
 origin.AbsolutePosition.Y,0)/s return y,scroll.AbsoluteWindowSize.Y/s,s,origin
 end 
-function _G._nv_onScrollMoved(scroll,fn)local _,_,_,origin=_G.
-_nv_scrollView(scroll)origin:GetPropertyChangedSignal('AbsolutePosition'):
+function _G._pup_onScrollMoved(scroll,fn)local _,_,_,origin=_G.
+_pup_scrollView(scroll)origin:GetPropertyChangedSignal('AbsolutePosition'):
 Connect(fn)scroll:GetPropertyChangedSignal('CanvasPosition'):Connect(fn)scroll:
 GetPropertyChangedSignal('AbsoluteWindowSize'):Connect(fn)end 
 function _G.
-_nv_scrollFadeAll(root)if not root or root:GetAttribute('_nvFadeWatch')then
-return end root:SetAttribute('_nvFadeWatch',true)for _,d in root:GetDescendants(
-)do if d:IsA('ScrollingFrame')then pcall(_G._nv_scrollFade,d)end end root.
+_pup_scrollFadeAll(root)if not root or root:GetAttribute('_pupFadeWatch')then
+return end root:SetAttribute('_pupFadeWatch',true)for _,d in root:GetDescendants(
+)do if d:IsA('ScrollingFrame')then pcall(_G._pup_scrollFade,d)end end root.
 DescendantAdded:Connect(function(d)if d:IsA('ScrollingFrame')then task.defer(
-function()pcall(_G._nv_scrollFade,d)end)end end)end 
+function()pcall(_G._pup_scrollFade,d)end)end end)end 
 local screen=sg 
 _G._floatingPanelScales={}
 local
-_nvFloatCloseRest=setmetatable({},{__mode='k'})
-_G._nv_placeFloatingPanel=
-function(pnl)return __DARKLUA_BUNDLE_MODULES.z()({_fixedPanels=_fixedPanels,_nvL
-=_nvL,screen=screen},pnl)end 
-function _G._nv_utilitySurface(pnl)pnl.
+_pupFloatCloseRest=setmetatable({},{__mode='k'})
+_G._pup_placeFloatingPanel=
+function(pnl)return __DARKLUA_BUNDLE_MODULES.z()({_fixedPanels=_fixedPanels,_pupL
+=_pupL,screen=screen},pnl)end 
+function _G._pup_utilitySurface(pnl)pnl.
 BackgroundTransparency=1 local corner=pnl:FindFirstChildOfClass('UICorner')or
 createInstance('UICorner',{Parent=pnl})corner.CornerRadius=UDim.new(0,20)local
 surface=pnl:FindFirstChild('UtilitySurface')or createInstance('Frame',{Parent=
@@ -9537,30 +9537,30 @@ edge.Color=Color3.new(1,1,1)edge.Thickness=1 edge.Transparency=0 pcall(function(
 FindFirstChildOfClass('UIGradient')or createInstance('UIGradient',{Parent=edge})
 rim.Rotation=90 rim.Color=ColorSequence.new(Color3.new(1,1,1))rim.Transparency=
 NumberSequence.new({NumberSequenceKeypoint.new(0,0.84),NumberSequenceKeypoint.
-new(0.5,0.92),NumberSequenceKeypoint.new(1,0.78)})if _G._nv_glassParts then _G.
-_nv_glassParts[g]=edge if _G._nv_paintGlass then _G._nv_paintGlass(g,edge)end
+new(0.5,0.92),NumberSequenceKeypoint.new(1,0.78)})if _G._pup_glassParts then _G.
+_pup_glassParts[g]=edge if _G._pup_paintGlass then _G._pup_paintGlass(g,edge)end
 end if not pnl:FindFirstChild('DarkGlow')then pcall(function()local sh=
 createInstance('UIShadow',{Name='DarkGlow',Color=Color3.new(0,0,0),BlurRadius=
 UDim.new(0,30),Offset=UDim2.fromOffset(0,12),Transparency=0.45,ZIndex=-1,Parent=
-pnl})sh.Transparency=_G._nv_glowT(sh,0.45)end)end end 
-do local _globalBg,_globalOv=nil,nil __DARKLUA_BUNDLE_MODULES.A()({_globalBg=_globalBg,_globalOv=_globalOv,_nvL=_nvL,createInstance=createInstance,saveSettings=function()end})end
+pnl})sh.Transparency=_G._pup_glowT(sh,0.45)end)end end 
+do local _globalBg,_globalOv=nil,nil __DARKLUA_BUNDLE_MODULES.A()({_globalBg=_globalBg,_globalOv=_globalOv,_pupL=_pupL,createInstance=createInstance,saveSettings=function()end})end
 function _G.
-_nv_utilitySlider(parent,label,initial,minimum,maximum,onChange,formatValue)
+_pup_utilitySlider(parent,label,initial,minimum,maximum,onChange,formatValue)
 return __DARKLUA_BUNDLE_MODULES.B()({createInstance=createInstance},parent,label
 ,initial,minimum,maximum,onChange,formatValue)end 
 do __DARKLUA_BUNDLE_MODULES.G()({
-_nvL=_nvL})end 
-function _G._nv_reanimationLayout(state,panel)return __DARKLUA_BUNDLE_MODULES.J(
-)({C=C,_nvL=_nvL,createInstance=createInstance,tween=tween,userInputService=
+_pupL=_pupL})end 
+function _G._pup_reanimationLayout(state,panel)return __DARKLUA_BUNDLE_MODULES.J(
+)({C=C,_pupL=_pupL,createInstance=createInstance,tween=tween,userInputService=
 userInputService},state,panel)end 
-_G._nv_panelZooms=function(pnl)for _,d in pnl:
+_G._pup_panelZooms=function(pnl)for _,d in pnl:
 GetDescendants()do if d:IsA('ScrollingFrame')then local node,grows=d,true while
 node and node~=pnl do if not node:IsA('GuiObject')or node.Size.Y.Scale<=0 then
 grows=false break end node=node.Parent end if grows and node==pnl then return
 false end end end return true end 
-_G._nv_panelLimits=function(pnl,ignoreContent)
-local dw=tonumber(pnl:GetAttribute('_nvDesignW'))or pnl.Size.X.Offset local dh=
-tonumber(pnl:GetAttribute('_nvDesignH'))or pnl.Size.Y.Offset local grow,wide=nil
+_G._pup_panelLimits=function(pnl,ignoreContent)
+local dw=tonumber(pnl:GetAttribute('_pupDesignW'))or pnl.Size.X.Offset local dh=
+tonumber(pnl:GetAttribute('_pupDesignH'))or pnl.Size.Y.Offset local grow,wide=nil
 ,false for _,d in pnl:GetDescendants()do if d:IsA('ScrollingFrame')then local
 node,ok,xs=d,true,true while node and node~=pnl do if not node:IsA('GuiObject')
 or node.Size.Y.Scale<=0 then ok=false break end if node.Size.X.Scale<=0 then xs=
@@ -9573,12 +9573,12 @@ pnl.AbsoluteSize.Y/math.max(1,pnl.Size.Y.Offset)if k<=0 then k=1 end local
 overflow=math.max(0,grow.AbsoluteCanvasSize.Y-grow.AbsoluteSize.Y)/k maxH=math.
 min(maxH,math.max(dh,pnl.Size.Y.Offset+overflow))end return dw,dh,math.max(dw,
 maxW),math.max(dh,maxH)end 
-_G._nv_playPlacedOpen=function(pnl,uiScale,rect)local
+_G._pup_playPlacedOpen=function(pnl,uiScale,rect)local
 sc=tonumber(rect.scale)or 1 if sc<=0 then sc=1 end local offsetW=math.max(1,
 tonumber(rect.offsetW)or pnl.Size.X.Offset)local offsetH=math.max(1,tonumber(
 rect.offsetH)or pnl.Size.Y.Offset)pnl.Size=UDim2.fromOffset(offsetW,offsetH)pnl:
-SetAttribute('_nvStretched',true)pnl:SetAttribute('_nvPlaceScale',sc)pnl:
-SetAttribute('_nvPlaceHold',true)local restAnchor=pnl.AnchorPoint local px=rect.
+SetAttribute('_pupStretched',true)pnl:SetAttribute('_pupPlaceScale',sc)pnl:
+SetAttribute('_pupPlaceHold',true)local restAnchor=pnl.AnchorPoint local px=rect.
 x+restAnchor.X*rect.w local py=rect.y+restAnchor.Y*rect.h local cx=rect.x+rect.w
 *0.5 local cy=rect.y+rect.h*0.5 pnl.AnchorPoint=Vector2.new(0.5,0.5)pnl.Position
 =UDim2.fromOffset(cx,cy)uiScale.Scale=sc*0.8 local locks={}for _,d in pnl:
@@ -9592,40 +9592,40 @@ math.abs(lock.Scale-inv)>0.0008 then lock.Scale=inv end end end local function
 clearLocks()if lockConn then lockConn:Disconnect()lockConn=nil end for i=1,#
 locks do local lock=locks[i]if lock.Parent then lock:Destroy()end end end
 applyLocks()lockConn=uiScale:GetPropertyChangedSignal('Scale'):Connect(
-applyLocks)pnl:SetAttribute('NvFade',true)if _G._nv_frameFade then _G.
-_nv_frameFade(pnl,1)end local ti=TweenInfo.new(0.5,Enum.EasingStyle.Quint,Enum.
+applyLocks)pnl:SetAttribute('NvFade',true)if _G._pup_frameFade then _G.
+_pup_frameFade(pnl,1)end local ti=TweenInfo.new(0.5,Enum.EasingStyle.Quint,Enum.
 EasingDirection.Out)tween(pnl,ti,{GroupTransparency=0})tween(uiScale,ti,{Scale=
-sc})local tok=pnl:GetAttribute('_nvCloseTok')task.delay(0.52,function()if
-uiScale.Parent and not pnl:GetAttribute('_nvClosing')then uiScale.Scale=sc end
-applyLocks()clearLocks()pnl:SetAttribute('_nvPlaceHold',nil)if not pnl.Parent or
-pnl:GetAttribute('_nvClosing')then return end if pnl:GetAttribute('_nvCloseTok')
+sc})local tok=pnl:GetAttribute('_pupCloseTok')task.delay(0.52,function()if
+uiScale.Parent and not pnl:GetAttribute('_pupClosing')then uiScale.Scale=sc end
+applyLocks()clearLocks()pnl:SetAttribute('_pupPlaceHold',nil)if not pnl.Parent or
+pnl:GetAttribute('_pupClosing')then return end if pnl:GetAttribute('_pupCloseTok')
 ~=tok then return end local moved=pnl.AnchorPoint.X~=0.5 or pnl.AnchorPoint.Y~=
 0.5 or math.abs(pnl.Position.X.Offset-cx)>1 or math.abs(pnl.Position.Y.Offset-cy
 )>1 if moved then return end pnl.AnchorPoint=restAnchor pnl.Position=UDim2.
 fromOffset(px,py)end)end 
-_G._nv_askPlaceWindow=function(pnl,showAt)return
-__DARKLUA_BUNDLE_MODULES.K()({_nvL=_nvL,runService=runService,screen=screen,
+_G._pup_askPlaceWindow=function(pnl,showAt)return
+__DARKLUA_BUNDLE_MODULES.K()({_pupL=_pupL,runService=runService,screen=screen,
 tween=tween,tweenService=tweenService,userInputService=userInputService},pnl,
 showAt)end
 (function()return __DARKLUA_BUNDLE_MODULES.L()({tween=tween})end)()
 local function makeFloatingPanel(w,h,anchorX,anchorY)return
-__DARKLUA_BUNDLE_MODULES.N()({C=C,_fixedPanels=_fixedPanels,_nvFloatCloseRest=
-_nvFloatCloseRest,_nvL=_nvL,createInstance=createInstance,runService=runService,
+__DARKLUA_BUNDLE_MODULES.N()({C=C,_fixedPanels=_fixedPanels,_pupFloatCloseRest=
+_pupFloatCloseRest,_pupL=_pupL,createInstance=createInstance,runService=runService,
 screen=screen,tween=tween,userInputService=userInputService},w,h,anchorX,anchorY
 )end 
 local function makePanelTitleBar(pnl,title,onClose)return
-__DARKLUA_BUNDLE_MODULES.O()({C=C,_nvFloatCloseRest=_nvFloatCloseRest,_nvL=_nvL,
+__DARKLUA_BUNDLE_MODULES.O()({C=C,_pupFloatCloseRest=_pupFloatCloseRest,_pupL=_pupL,
 createInstance=createInstance,tween=tween},pnl,title,onClose)end 
 local function getRootPart(char)if
 char and char:FindFirstChildOfClass('Humanoid')then return char:
 FindFirstChildOfClass('Humanoid').RootPart end return end 
-_G._nvMove=_G._nvMove
+_G._pupMove=_G._pupMove
 or{noclipOn=false,noclipConn=nil,noclipCache={},infJumpConn=nil,infJumpStateConn
 =nil,infJumpCharConn=nil,infJumpLandOnly=false,infJumpLastLand=0,FLYING=false,
 QEfly=true,iyflyspeed=1,vehicleflyspeed=1,flyKeyDown=nil,flyKeyUp=nil,
 _flyControl=nil,_flyMouseHeld=false,flyMouseDown=nil,flyMouseUp=nil}
 local _mv=_G
-._nvMove 
+._pupMove 
 do _mv.noclipHold=_mv.noclipHold or{}_mv.noclipWas=_mv.noclipWas or
 setmetatable({},{__mode='k'})local function inChar(p)local char=players.
 LocalPlayer.Character return char~=nil and p.Parent~=nil and p:IsDescendantOf(
@@ -9654,13 +9654,13 @@ noclipCache,i)end end)end players.LocalPlayer.CharacterAdded:Connect(
 rebuildNoclipCache)if players.LocalPlayer.Character then rebuildNoclipCache(
 players.LocalPlayer.Character)end end 
 (
-function()return __DARKLUA_BUNDLE_MODULES.Q()({_isMobile=_isMobile,_mv=_mv,_nvL=
-_nvL,createInstance=createInstance,getRootPart=getRootPart,runService=runService
+function()return __DARKLUA_BUNDLE_MODULES.Q()({_isMobile=_isMobile,_mv=_mv,_pupL=
+_pupL,createInstance=createInstance,getRootPart=getRootPart,runService=runService
 ,userInputService=userInputService})end)()
-do __DARKLUA_BUNDLE_MODULES.R()({_nvL=
-_nvL,createInstance=createInstance,getRootPart=getRootPart,runService=runService
+do __DARKLUA_BUNDLE_MODULES.R()({_pupL=
+_pupL,createInstance=createInstance,getRootPart=getRootPart,runService=runService
 })end 
-do __DARKLUA_BUNDLE_MODULES.S()({_nvL=_nvL,createInstance=createInstance,
+do __DARKLUA_BUNDLE_MODULES.S()({_pupL=_pupL,createInstance=createInstance,
 getRootPart=getRootPart,runService=runService,userInputService=userInputService}
 )end 
 local hiddenMap={}
@@ -9680,8 +9680,8 @@ teleportService=game:GetService('TeleportService')
 local function stopOrbit()if _orbs[1]then _orbs[1]:Disconnect()_orbs[1]=
 nil end if _orbs[2]then _orbs[2]:Disconnect()_orbs[2]=nil end if _orbs[3]then
 _orbs[3]:Disconnect()_orbs[3]=nil end if _orbs[4]then _orbs[4]:Disconnect()_orbs
-[4]=nil end _nvL.orbitTarget=nil end 
-_G._nv_csRef=_cs 
+[4]=nil end _pupL.orbitTarget=nil end 
+_G._pup_csRef=_cs 
 _cs.makePanelDraggable=function(pnl,bar,onMove
 ,onDragStart,onDragEnd)return __DARKLUA_BUNDLE_MODULES.W()({_cs=_cs,runService=
 runService,userInputService=userInputService},pnl,bar,onMove,onDragStart,
@@ -9695,22 +9695,22 @@ end if type(fn)=='function'then local ok,err=pcall(fn)if not ok then warn(
 'Puppy Admin: ensurePanel failed:',panelKey,err)if panelKey=='_reanimPanel'then if
 _G._reanimPanel then pcall(function()_G._reanimPanel:Destroy()end)end _G.
 _reanimPanel=nil _G._reanimSpeedPanel=nil end end end return _G[panelKey]end _G.
-_nvEnsurePanel=ensurePanel end 
+_pupEnsurePanel=ensurePanel end 
 (function()return __DARKLUA_BUNDLE_MODULES.ai(
-)({_nvAny=_nvAny,_nvL=_nvL,_safeLoadstring=_safeLoadstring,createInstance=
+)({_pupAny=_pupAny,_pupL=_pupL,_safeLoadstring=_safeLoadstring,createInstance=
 createInstance})end)()
 _initReanimPanel=function()return __DARKLUA_BUNDLE_MODULES
-.aj()({C=C,_cs=_cs,_nvAny=_nvAny,_nvL=_nvL,_nvMakeSliderSwitch=
-_nvMakeSliderSwitch,_nv_accentColorSequence=_nv_accentColorSequence,
+.aj()({C=C,_cs=_cs,_pupAny=_pupAny,_pupL=_pupL,_pupMakeSliderSwitch=
+_pupMakeSliderSwitch,_pup_accentColorSequence=_pup_accentColorSequence,
 _safeLoadstring=_safeLoadstring,createInstance=createInstance,font=font,
 makeFloatingPanel=makeFloatingPanel,makePanelTitleBar=makePanelTitleBar,
 runService=runService,sfx=sfx,tween=tween,tweenService=tweenService,
 userInputService=userInputService})end 
 _initFlyPanel=function()return __DARKLUA_BUNDLE_MODULES.ar()({_cs=_cs,
-_isMobile=_isMobile,_mv=_mv,_nvL=_nvL,makeFloatingPanel=makeFloatingPanel,
+_isMobile=_isMobile,_mv=_mv,_pupL=_pupL,makeFloatingPanel=makeFloatingPanel,
 makePanelTitleBar=makePanelTitleBar})end 
 _G._initFlyPanel=_initFlyPanel 
-local novoCmdReg
+local pupCmdReg
 do
 local
 cmdReg={}
@@ -9800,9 +9800,9 @@ aliases,fn)if type(aliases)=='function'then fn=aliases aliases={}end cmdReg[#
 cmdReg+1]={name=name,desc=desc,args=args,exec=fn,cat=_cmdCats[name]or'misc',
 aliases=aliases or{}}end 
 local function findPlayers(q)if not q or q==''then
-return{}end if q=='me'or q=='.'then return{_nvL.lp}end if q=='all'then return
+return{}end if q=='me'or q=='.'then return{_pupL.lp}end if q=='all'then return
 players:GetPlayers()end if q=='others'then local o={}for _,p in players:
-GetPlayers()do if p~=_nvL.lp then o[#o+1]=p end end return o end local out={}q=q
+GetPlayers()do if p~=_pupL.lp then o[#o+1]=p end end return o end local out={}q=q
 :lower()for _,p in players:GetPlayers()do if p.Name:lower()==q or p.DisplayName:
 lower()==q then return{p}end end for _,p in players:GetPlayers()do if p.Name:
 lower():sub(1,#q)==q or p.DisplayName:lower():sub(1,#q)==q then out[#out+1]=p
@@ -9812,53 +9812,53 @@ return out end
 local listPanel=__DARKLUA_BUNDLE_MODULES.aV()({
 C=C,_cs=_cs,createInstance=createInstance,makeFloatingPanel=makeFloatingPanel,
 makePanelTitleBar=makePanelTitleBar})
-__DARKLUA_BUNDLE_MODULES.aL()({C=C,_cs=_cs,_nvClear=_nvClear,_nvL=_nvL,_nvN=_nvN
-,_nv_env=_nv_env,_request=_request,_safeHttpGet=_safeHttpGet,_safeLoadstring=
+__DARKLUA_BUNDLE_MODULES.aL()({C=C,_cs=_cs,_pupClear=_pupClear,_pupL=_pupL,_pupN=_pupN
+,_pup_env=_pup_env,_request=_request,_safeHttpGet=_safeHttpGet,_safeLoadstring=
 _safeLoadstring,createInstance=createInstance,findPlayers=findPlayers,
 getRootPart=getRootPart,hiddenMap=hiddenMap,makeFloatingPanel=makeFloatingPanel,
 makePanelTitleBar=makePanelTitleBar,players=players,reg=reg,runService=
 runService,screen=screen,teleportService=teleportService,tween=tween})
-__DARKLUA_BUNDLE_MODULES.aM()({C=C,_cs=_cs,_nvL=_nvL,_orbs=_orbs,createInstance=
+__DARKLUA_BUNDLE_MODULES.aM()({C=C,_cs=_cs,_pupL=_pupL,_orbs=_orbs,createInstance=
 createInstance,findPlayers=findPlayers,getRootPart=getRootPart,mouse=mouse,reg=
 reg,runService=runService,spec=spec,stopOrbit=stopOrbit,userInputService=
 userInputService})
 __DARKLUA_BUNDLE_MODULES.aN()({_cs=_cs,_isMobile=_isMobile,_mv
-=_mv,_nvL=_nvL,_nvN=_nvN,_safeHttpGet=_safeHttpGet,_safeLoadstring=
+=_mv,_pupL=_pupL,_pupN=_pupN,_safeHttpGet=_safeHttpGet,_safeLoadstring=
 _safeLoadstring,createInstance=createInstance,findPlayers=findPlayers,
 getRootPart=getRootPart,makeFloatingPanel=makeFloatingPanel,makePanelTitleBar=
 makePanelTitleBar,players=players,reg=reg,runService=runService,userInputService
 =userInputService})
-__DARKLUA_BUNDLE_MODULES.aO()({C=C,_cs=_cs,_nvL=_nvL,_nvN=
-_nvN,createInstance=createInstance,findPlayers=findPlayers,getRootPart=
+__DARKLUA_BUNDLE_MODULES.aO()({C=C,_cs=_cs,_pupL=_pupL,_pupN=
+_pupN,createInstance=createInstance,findPlayers=findPlayers,getRootPart=
 getRootPart,players=players,reg=reg,runService=runService,tween=tween,
 userInputService=userInputService})
-__DARKLUA_BUNDLE_MODULES.aQ()({C=C,_cs=_cs,_nvL=_nvL,
-_nv_profileStore=_nv_profileStore,createInstance=createInstance,findPlayers=
+__DARKLUA_BUNDLE_MODULES.aQ()({C=C,_cs=_cs,_pupL=_pupL,
+_pup_profileStore=_pup_profileStore,createInstance=createInstance,findPlayers=
 findPlayers,font=font,getRootPart=getRootPart,makeFloatingPanel=
 makeFloatingPanel,makePanelTitleBar=makePanelTitleBar,players=players,reg=reg,
 runService=runService,saveAutoExec=saveAutoExec,saveSettings=saveSettings,tween=
 tween,tweenService=tweenService})
-__DARKLUA_BUNDLE_MODULES.aR()({_nvL=_nvL,reg=
+__DARKLUA_BUNDLE_MODULES.aR()({_pupL=_pupL,reg=
 reg})
-__DARKLUA_BUNDLE_MODULES.aS()({_cs=_cs,_nvL=_nvL,cmdReg=cmdReg,findPlayers=
+__DARKLUA_BUNDLE_MODULES.aS()({_cs=_cs,_pupL=_pupL,cmdReg=cmdReg,findPlayers=
 findPlayers,getRootPart=getRootPart,players=players,reg=reg,runService=
 runService,userInputService=userInputService})
 __DARKLUA_BUNDLE_MODULES.aT()({C=C
-,_nvL=_nvL,cmdReg=cmdReg,createInstance=createInstance,findPlayers=findPlayers,
+,_pupL=_pupL,cmdReg=cmdReg,createInstance=createInstance,findPlayers=findPlayers,
 getRootPart=getRootPart,mouse=mouse,players=players,reg=reg,runService=
 runService,screen=screen,userInputService=userInputService})
-__DARKLUA_BUNDLE_MODULES.aW()({C=C,_nvL=
-_nvL,cmdReg=cmdReg,createInstance=createInstance,getRootPart=getRootPart,reg=reg
+__DARKLUA_BUNDLE_MODULES.aW()({C=C,_pupL=
+_pupL,cmdReg=cmdReg,createInstance=createInstance,getRootPart=getRootPart,reg=reg
 ,runService=runService})
-__DARKLUA_BUNDLE_MODULES.aX()({_cs=_cs,_nvL=_nvL,cmdReg=
+__DARKLUA_BUNDLE_MODULES.aX()({_cs=_cs,_pupL=_pupL,cmdReg=
 cmdReg,createInstance=createInstance,getRootPart=getRootPart,makeFloatingPanel=
 makeFloatingPanel,makePanelTitleBar=makePanelTitleBar,players=players,reg=reg,
 runService=runService,userInputService=userInputService})
-__DARKLUA_BUNDLE_MODULES.aY()({_nvL=_nvL,_request=_request,cmdReg=cmdReg,
+__DARKLUA_BUNDLE_MODULES.aY()({_pupL=_pupL,_request=_request,cmdReg=cmdReg,
 findPlayers=findPlayers,getRootPart=getRootPart,listPanel=listPanel,players=
 players,reg=reg,runService=runService})
-novoCmdReg=cmdReg
+pupCmdReg=cmdReg
 end
-return { init = _initReanimPanel, gui = sg, cmds = novoCmdReg, nvL = _nvL, mv = _mv }
+return { init = _initReanimPanel, gui = sg, cmds = pupCmdReg, pupL = _pupL, mv = _mv }
 
 end

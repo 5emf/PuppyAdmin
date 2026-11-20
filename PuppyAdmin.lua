@@ -2774,14 +2774,14 @@ end
 ------------------------------------------------------------------------
 -- Built-in engine: reanimation and movement
 --
--- Novo.load runs the embedded engine bundle: the reanimation API (clone, real
+-- Pup.load runs the embedded engine bundle: the reanimation API (clone, real
 -- body following it, keyframe playback, tricks, pair, mimic, blend), the
 -- Reanimate panel (library, states, record, copy, live, tricks, keys,
 -- transitions), the movement engines and commands (fly, superfly + Fly panel,
 -- hatfly, helicopter, noclip, airwalk, swim, teleports, waypoints, follow /
 -- orbit / spectate, the movement library) and the UI kit those use. The block
 -- is generated, not hand-written; changes in it are marked (the panel module
--- publishes its state as _G._nv_reanimState, and its text says Puppy Admin).
+-- publishes its state as _G._pup_reanimState, and its text says Puppy Admin).
 --
 -- Conventions it keeps: _G._reanimAPI / _G._reanimPanel globals, files under
 -- the executor workspace's PuppyAdmin/ folder, and the icon pack from
@@ -2806,15 +2806,15 @@ local function resolveKeyCode(name)
     return nil
 end
 
-local Novo = { booted = false, failed = nil, gui = nil, cmds = nil, nvL = nil, panelFailed = nil }
+local Pup = { booted = false, failed = nil, gui = nil, cmds = nil, pupL = nil, panelFailed = nil }
 
-local function novoApi()
+local function pupApi()
     local api = _G._reanimLoaded and _G._reanimAPI
     return type(api) == "table" and api or nil
 end
 
-local function novoModel(getter)
-    local api = novoApi()
+local function pupModel(getter)
+    local api = pupApi()
     local fn = api and api[getter]
     if type(fn) ~= "function" then return nil end
     local ok, model = pcall(fn, plr)
@@ -2825,14 +2825,14 @@ end
 -- Teleport, ESP, the floor and the respawn guard read Reanim.active / .clone /
 -- .real; they are answered by the reanimation API at the moment they are read.
 local Reanim = setmetatable({}, { __index = function(_, key)
-    if key == "clone" then return novoModel("get_clone") end
-    if key == "real" then return novoModel("get_real_character") end
-    if key == "active" then return novoModel("get_clone") ~= nil end
+    if key == "clone" then return pupModel("get_clone") end
+    if key == "real" then return pupModel("get_real_character") end
+    if key == "active" then return pupModel("get_clone") ~= nil end
     return nil
 end })
 
 function Reanim.isClone(model)
-    return model ~= nil and novoModel("get_clone") == model
+    return model ~= nil and pupModel("get_clone") == model
 end
 
 -- The engine is a separate file in the repository (engine/engine-<version>.lua,
@@ -2840,8 +2840,8 @@ end
 -- otherwise downloaded once; the version in the name means a new engine is
 -- never served from a stale cache. Size and header are checked before it runs.
 do
-local ENGINE_VERSION = "b8ebeec019"
-local ENGINE_BYTES = 729670
+local ENGINE_VERSION = "edc7c2355f"
+local ENGINE_BYTES = 731108
 local ENGINE_DIR = "PuppyAdmin/engine"
 local ENGINE_NAME = "engine-" .. ENGINE_VERSION .. ".lua"
 local ENGINE_URL = SETTINGS.Auras.assetBase .. "engine/" .. ENGINE_NAME
@@ -2859,18 +2859,18 @@ local function engineCached()
 end
 
 -- Downloads and caches the engine source. Yields. Returns src or nil, error.
-function Novo.fetchEngine()
-    if Novo.fetching then
-        while Novo.fetching do task.wait(0.1) end
-        return engineCached() or Novo.fetchedSrc, Novo.fetchError
+function Pup.fetchEngine()
+    if Pup.fetching then
+        while Pup.fetching do task.wait(0.1) end
+        return engineCached() or Pup.fetchedSrc, Pup.fetchError
     end
-    Novo.fetching = true
+    Pup.fetching = true
     local start = os.clock()
     local ok, src = pcall(function() return game:HttpGet(ENGINE_URL) end)
     local result, err
     if ok and engineValid(src) then
         result = src
-        Novo.fetchedSrc = src -- kept for executors without writefile
+        Pup.fetchedSrc = src -- kept for executors without writefile
         pcall(function()
             if makefolder and isfolder and not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
             if makefolder and isfolder and not isfolder(ENGINE_DIR) then makefolder(ENGINE_DIR) end
@@ -2888,36 +2888,36 @@ function Novo.fetchEngine()
         err = ok and ("engine download was incomplete (" .. (type(src) == "string" and #src or 0) .. " of " .. ENGINE_BYTES .. " bytes)")
             or ("engine download failed: " .. tostring(src))
     end
-    Novo.fetchError = err
-    Novo.fetching = false
+    Pup.fetchError = err
+    Pup.fetching = false
     return result, err
 end
 
-function Novo.load(host)
-    if not Novo.chunk then
-        local src = engineCached() or Novo.fetchedSrc
+function Pup.load(host)
+    if not Pup.chunk then
+        local src = engineCached() or Pup.fetchedSrc
         if not src then
             if not coroutine.isyieldable() then
                 -- called where waiting is not allowed: download in the background
-                task.spawn(Novo.fetchEngine)
-                Novo.transient = true
+                task.spawn(Pup.fetchEngine)
+                Pup.transient = true
                 error("engine is downloading - try again in a few seconds", 0)
             end
             local err
-            src, err = Novo.fetchEngine()
-            if not src then Novo.transient = true; error(err, 0) end
+            src, err = Pup.fetchEngine()
+            if not src then Pup.transient = true; error(err, 0) end
         end
         local compileStart = os.clock()
         local fn, cerr = (loadstring or load)(src, "=PuppyAdminEngine")
         if not fn then error("engine did not compile: " .. tostring(cerr), 0) end
-        Novo.chunk = fn()
-        Novo.fetchedSrc = nil
+        Pup.chunk = fn()
+        Pup.fetchedSrc = nil
         Perf.since("Engine compile", compileStart)
     end
-    return Novo.chunk(host)
+    return Pup.chunk(host)
 end
 
-Novo.engineCached = engineCached
+Pup.engineCached = engineCached
 end
 
 -- One-time copy of what older versions saved under the engine's previous
@@ -2952,33 +2952,33 @@ local function migrateLegacyData()
 end
 
 -- Runs the embedded engine once (engines, UI kit, command registry).
-function Novo.boot()
-    if Novo.booted then return true end
-    if Novo.failed then
-        note("Puppy Admin", "Unavailable: " .. Novo.failed:sub(1, 60), RED)
+function Pup.boot()
+    if Pup.booted then return true end
+    if Pup.failed then
+        note("Puppy Admin", "Unavailable: " .. Pup.failed:sub(1, 60), RED)
         return false
     end
     pcall(migrateLegacyData)
     local loadStart = os.clock()
-    local ok, res = pcall(Novo.load, {
+    local ok, res = pcall(Pup.load, {
         notify = function(title, text) note(tostring(title or "Puppy Admin"), tostring(text or "")) end,
         parentGui = parentGui,
     })
-    if not ok and Novo.transient then
+    if not ok and Pup.transient then
         -- download problems are retried on the next use
-        Novo.transient = false
+        Pup.transient = false
         note("Puppy Admin", tostring(res):sub(1, 90), RED)
         return false
     end
     if not ok or type(res) ~= "table" or type(res.init) ~= "function" or type(res.cmds) ~= "table" then
-        Novo.failed = ok and "engine returned nothing" or tostring(res)
-        note("Puppy Admin", "Engine failed: " .. Novo.failed:sub(1, 60), RED)
+        Pup.failed = ok and "engine returned nothing" or tostring(res)
+        note("Puppy Admin", "Engine failed: " .. Pup.failed:sub(1, 60), RED)
         return false
     end
     Perf.since("Engine start (first reanim / movement command)", loadStart)
-    Novo.booted, Novo.gui, Novo.cmds, Novo.nvL, Novo.init = true, res.gui, res.cmds, res.nvL, res.init
-    if Novo.gui then
-        Novo.gui.Enabled = not Hide.uiHidden
+    Pup.booted, Pup.gui, Pup.cmds, Pup.pupL, Pup.init = true, res.gui, res.cmds, res.pupL, res.init
+    if Pup.gui then
+        Pup.gui.Enabled = not Hide.uiHidden
         -- the engine's palette is the default theme's, so theme presets and
         -- colour roles recolour its windows like every other window. Only the
         -- windows you can see (Fly panel, lists); the hidden reanimation panel
@@ -2988,11 +2988,11 @@ function Novo.boot()
             task.defer(function()
                 if not child.Parent or child.Name == "ReanimPanel" then return end
                 pcall(Theme.attach, child)
-                if child:FindFirstChild("UtilitySurface") then pcall(Novo.stylePanel, child) end
+                if child:FindFirstChild("UtilitySurface") then pcall(Pup.stylePanel, child) end
             end)
         end
-        for _, c in ipairs(Novo.gui:GetChildren()) do themeWindow(c) end
-        table.insert(conns, Novo.gui.ChildAdded:Connect(themeWindow))
+        for _, c in ipairs(Pup.gui:GetChildren()) do themeWindow(c) end
+        table.insert(conns, Pup.gui.ChildAdded:Connect(themeWindow))
     end
     return true
 end
@@ -3001,7 +3001,7 @@ end
 -- background (no gradient), theme stroke, 14 px bold title, and the theme's
 -- background image. Re-applied each time the panel opens, because the
 -- engine's tone pass repaints its surfaces on open.
-function Novo.stylePanel(panel)
+function Pup.stylePanel(panel)
     if typeof(panel) ~= "Instance" then return end
     local function apply()
         local corner = panel:FindFirstChildOfClass("UICorner")
@@ -3034,11 +3034,11 @@ function Novo.stylePanel(panel)
 end
 
 -- Builds the Reanimate panel on first use.
-function Novo.ensure()
+function Pup.ensure()
     if typeof(_G._reanimPanel) == "Instance" then return true end
-    if not Novo.boot() then return false end
-    if Novo.panelFailed then
-        note("Reanim", "Panel failed: " .. Novo.panelFailed:sub(1, 120), RED)
+    if not Pup.boot() then return false end
+    if Pup.panelFailed then
+        note("Reanim", "Panel failed: " .. Pup.panelFailed:sub(1, 120), RED)
         return false
     end
     -- the panel builder catches its own errors and only warn()s them; keep the
@@ -3053,17 +3053,17 @@ function Novo.ensure()
         end)
     end)
     local initStart = os.clock()
-    local okInit, err = pcall(Novo.init)
+    local okInit, err = pcall(Pup.init)
     Perf.since("Reanimation logic start (first reanim)", initStart)
     task.wait() -- MessageOut can arrive a frame late
     if logConn then logConn:Disconnect() end
-    task.delay(2, function() pcall(Novo.purgeBuiltins) end)
-    pcall(Novo.hookRecordings)
-    task.delay(8, function() pcall(Novo.purgeBuiltins) end)
+    task.delay(2, function() pcall(Pup.purgeBuiltins) end)
+    pcall(Pup.hookRecordings)
+    task.delay(8, function() pcall(Pup.purgeBuiltins) end)
     if captured then warn("[PuppyAdmin] reanimation panel: " .. captured) end
     if not okInit or typeof(_G._reanimPanel) ~= "Instance" then
-        Novo.panelFailed = okInit and (captured or "panel was not created") or tostring(err)
-        note("Reanim", "Panel failed: " .. Novo.panelFailed:sub(1, 120), RED)
+        Pup.panelFailed = okInit and (captured or "panel was not created") or tostring(err)
+        note("Reanim", "Panel failed: " .. Pup.panelFailed:sub(1, 120), RED)
         return false
     end
     return true
@@ -3087,11 +3087,11 @@ local function watchReanimate(api)
     api._puppyWatched = true
 end
 
-local function novoLoadApi()
+local function pupLoadApi()
     if not _G._reanimLoaded and type(_G.loadReanimAPI) == "function" then
         pcall(_G.loadReanimAPI, nil)
     end
-    local api = novoApi()
+    local api = pupApi()
     watchReanimate(api)
     return api
 end
@@ -3178,7 +3178,7 @@ end
 -- A keyframe file link (a Lua table like the ones the recorder saves).
 -- Yields. Returns ok, display name or reason, file path.
 local function importLink(url)
-    local rs = _G._nv_reanimState
+    local rs = _G._pup_reanimState
     local ok, src = pcall(function() return game:HttpGet(url) end)
     if not ok or type(src) ~= "string" or #src < 10 then return false, "Could not download that link" end
     local data
@@ -3212,7 +3212,7 @@ end
 -- The engine reads PuppyAdmin/custom once at start, only its top level (plus
 -- Recorded) and only lower-case .lua/.txt/.json. This re-runs that scan and
 -- then adds anything it missed: files in any subfolder, any letter case.
-Novo.legacyCopy = migrateLegacyData
+Pup.legacyCopy = migrateLegacyData
 
 -- Every path under PuppyAdmin/custom, sorted: equal means nothing changed.
 local function customFolderSignature()
@@ -3235,18 +3235,18 @@ local function customFolderSignature()
 end
 
 -- force: always rebuild (Reload files). Otherwise only when the folder changed.
-function Novo.reloadCustom(force)
+function Pup.reloadCustom(force)
     pcall(migrateLegacyData)
-    local rsNow = _G._nv_reanimState
+    local rsNow = _G._pup_reanimState
     local sig = customFolderSignature()
-    if not force and sig and sig == Novo.customSig and type(rsNow) == "table" and type(rsNow.customItems) == "table" then
+    if not force and sig and sig == Pup.customSig and type(rsNow) == "table" and type(rsNow.customItems) == "table" then
         return #rsNow.customItems, 0
     end
-    Novo.customSig = sig
+    Pup.customSig = sig
     local scanStart = os.clock()
-    local nvL = Novo.nvL
-    if type(nvL) == "table" and type(nvL.reloadCustom) == "function" then pcall(nvL.reloadCustom) end
-    local rs = _G._nv_reanimState
+    local pupL = Pup.pupL
+    if type(pupL) == "table" and type(pupL.reloadCustom) == "function" then pcall(pupL.reloadCustom) end
+    local rs = _G._pup_reanimState
     if type(rs) ~= "table" or type(rs.customItems) ~= "table" or type(rs.reanimAddItem) ~= "function" then return 0 end
     if not (listfiles and isfolder) then return #rs.customItems end
     local have = {}
@@ -3285,15 +3285,15 @@ end
 -- now also copied into Your animations (PuppyAdmin/custom/Recorded) and added
 -- to the list right away.
 local function addToYourAnimations(name, path, category)
-    local rs = _G._nv_reanimState
+    local rs = _G._pup_reanimState
     if type(rs) ~= "table" or type(rs.reanimAddItem) ~= "function" or type(rs.customItems) ~= "table" then return end
     for _, it in ipairs(rs.customItems) do if it.url == path then return end end
     pcall(rs.reanimAddItem, name, path, rs.customItems, category)
     if rs.localAnimCache then rs.localAnimCache[path] = nil end
 end
 
-function Novo.hookRecordings()
-    local rs = _G._nv_reanimState
+function Pup.hookRecordings()
+    local rs = _G._pup_reanimState
     if type(rs) ~= "table" or rs._puppyRecHook or type(rs.addRecordingToCustom) ~= "function" then return end
     rs._puppyRecHook, rs._puppyAdded = true, {}
     local original = rs.refreshRecordedList
@@ -3315,14 +3315,14 @@ end
 
 -- Copy another player's animation into Your animations (the original panel's
 -- keyframe recorder). One recording at a time, up to a minute.
-Novo.copyRec = nil
-function Novo.startCopy(target)
-    local K = _G._nv_keyframeRecorder
+Pup.copyRec = nil
+function Pup.startCopy(target)
+    local K = _G._pup_keyframeRecorder
     if type(K) ~= "table" or type(K.start) ~= "function" then return false, "Recorder not ready - open the panel again in a moment" end
-    if Novo.copyRec and Novo.copyRec.active then return false, "Already recording " .. Novo.copyRec.player.DisplayName end
+    if Pup.copyRec and Pup.copyRec.active then return false, "Already recording " .. Pup.copyRec.player.DisplayName end
     local s, err = K.start(target)
     if not s then return false, tostring(err or "Could not start") end
-    Novo.copyRec = s
+    Pup.copyRec = s
     s.onStop = function(sess)
         local okB, kfs = pcall(sess.build)
         if not okB or type(kfs) ~= "table" or #kfs < 2 then note("Reanim", "Recording of " .. sess.player.DisplayName .. " was too short", RED); return end
@@ -3343,22 +3343,22 @@ function Novo.startCopy(target)
     return true
 end
 
-function Novo.stopCopy()
-    local s = Novo.copyRec
+function Pup.stopCopy()
+    local s = Pup.copyRec
     if not (s and s.active) then return false end
     s.stop()
     return true
 end
 table.insert(cleanups, function()
-    local s = Novo.copyRec
+    local s = Pup.copyRec
     if s and s.active then s.onStop = nil; pcall(s.stop) end
 end)
 
 -- There is no built-in library any more: favourites, idle/walk/jump picks and
 -- keys that still point at old library links (http) are cleared. Imported
 -- animations are local files and are never touched.
-function Novo.purgeBuiltins()
-    local rs, L = _G._nv_reanimState, _G._nv_reanimLayout
+function Pup.purgeBuiltins()
+    local rs, L = _G._pup_reanimState, _G._pup_reanimLayout
     if type(rs) ~= "table" then return end
     local function remote(url) return type(url) == "string" and url:match("^https?://") ~= nil end
     local changed = 0
@@ -3395,11 +3395,11 @@ end
 
 -- Pasted keyframes (Lua table source or the recorder's JSON), the way the
 -- original panel's paste box saved them. Returns ok, display name or reason, path.
-function Novo.importText(raw, wantedName)
+function Pup.importText(raw, wantedName)
     raw = tostring(raw or ""):gsub("^%s+", ""):gsub("%s+$", "")
     if raw == "" then return false, "Paste keyframe data first" end
     if not (writefile and readfile) then return false, "Needs writefile/readfile" end
-    local rs = _G._nv_reanimState
+    local rs = _G._pup_reanimState
     local ext = "lua"
     local okJson, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
     if okJson and type(decoded) == "table" then
@@ -3430,11 +3430,11 @@ function Novo.importText(raw, wantedName)
 end
 
 -- Yields. Returns ok, display name or reason, file path.
-function Novo.importCatalog(raw)
+function Pup.importCatalog(raw)
     raw = tostring(raw or ""):match("^%s*(.-)%s*$")
     if raw:match("^https?://") then return importLink(raw) end
     -- pasted keyframes rather than an ID
-    if #raw > 40 and (raw:find("{", 1, true) or raw:find("Time", 1, true)) then return Novo.importText(raw) end
+    if #raw > 40 and (raw:find("{", 1, true) or raw:find("Time", 1, true)) then return Pup.importText(raw) end
     local id = raw:match("%d+")
     if not id then return false, "Give an animation or emote ID, or a keyframe file link" end
     if not (writefile and readfile) then return false, "Needs writefile/readfile" end
@@ -3459,7 +3459,7 @@ function Novo.importCatalog(raw)
     local path = "PuppyAdmin/custom/" .. display .. ".lua"
     local okWrite = pcall(writefile, path, encodeFrames(display, frames))
     if not okWrite then return false, "Could not write " .. path end
-    local rs = _G._nv_reanimState
+    local rs = _G._pup_reanimState
     if type(rs) == "table" and type(rs.reanimAddItem) == "function" and type(rs.customItems) == "table" then
         local have = false
         for _, it in ipairs(rs.customItems) do if it.url == path then have = true end end
@@ -3471,7 +3471,7 @@ end
 
 -- open: true / false, or nil to toggle. Shows the script's Reanimation window;
 -- the engine's own panel is built (it hosts the logic) but kept hidden.
-function Novo.setOpen(open)
+function Pup.setOpen(open)
     local panel = UIAPI.panels.reanim
     if not panel then return end
     if open == nil then open = not panel.Visible end
@@ -3481,10 +3481,10 @@ end
 
 -- Goes through the panel's power button logic (3 s cooldown, R6 warning,
 -- trick preferences, status line), so the panel and the command agree.
-function Novo.panelState()
-    if not Novo.ensure() then return nil end
-    novoLoadApi()
-    local rs = _G._nv_reanimState
+function Pup.panelState()
+    if not Pup.ensure() then return nil end
+    pupLoadApi()
+    local rs = _G._pup_reanimState
     if type(rs) ~= "table" or type(rs.toggleReanim) ~= "function" then
         note("Reanim", "Panel is not ready yet", RED)
         return nil
@@ -3492,8 +3492,8 @@ function Novo.panelState()
     return rs
 end
 
-function Novo.setActive(on)
-    local rs = Novo.panelState()
+function Pup.setActive(on)
+    local rs = Pup.panelState()
     if not rs then return end
     if on == nil then on = not rs.reanimActive end
     if (rs.reanimActive == true) ~= on then rs.toggleReanim() end
@@ -3507,19 +3507,19 @@ do
     local resetEvent = Instance.new("BindableEvent")
     local function endReanimation()
         if not Reanim.active then return end
-        local rs = _G._nv_reanimState
+        local rs = _G._pup_reanimState
         if type(rs) == "table" and rs.reanimActive and type(rs.toggleReanim) == "function" then
             rs.reanimLastUsed = 0
             pcall(rs.toggleReanim)
         else
-            local api = novoApi()
+            local api = pupApi()
             if api then pcall(api.reanimate, false) end
         end
         local t0 = os.clock()
         while Reanim.active and os.clock() - t0 < 4 do task.wait(0.1) end
         task.wait(0.2)
     end
-    Novo.endReanimation = endReanimation
+    Pup.endReanimation = endReanimation
     table.insert(conns, resetEvent.Event:Connect(function()
         task.spawn(function()
             endReanimation()
@@ -3547,17 +3547,17 @@ do
     local setUI = Hide.setUI
     function Hide.setUI(hidden)
         setUI(hidden)
-        if Novo.gui then Novo.gui.Enabled = not hidden end
+        if Pup.gui then Pup.gui.Enabled = not hidden end
     end
 end
 
 table.insert(cleanups, function()
-    local rs = _G._nv_reanimState
+    local rs = _G._pup_reanimState
     if type(rs) == "table" and rs.reanimActive and type(rs.toggleReanim) == "function" then
         rs.reanimLastUsed = 0
         pcall(rs.toggleReanim)
     elseif Reanim.active then
-        local api = novoApi()
+        local api = pupApi()
         if api then pcall(api.reanimate, false) end
     end
     for _, key in ipairs({ "_reanimPanel", "_reanimSpeedPanel" }) do
@@ -3565,18 +3565,18 @@ table.insert(cleanups, function()
         if typeof(p) == "Instance" then pcall(function() p:Destroy() end) end
         _G[key] = nil
     end
-    if Novo.gui then pcall(function() Novo.gui:Destroy() end) end
+    if Pup.gui then pcall(function() Pup.gui:Destroy() end) end
     -- a later run of the script must register a fresh API, not find this one
-    _G._reanimAPI, _G._reanimLoaded, _G._nv_reanimState = nil, nil, nil
+    _G._reanimAPI, _G._reanimLoaded, _G._pup_reanimState = nil, nil, nil
 end)
 
 
 -- Generated from the engine's registry: every command in its "movement" group,
 -- plus the fly / noclip / swim / hatfly / helicopter family. Each runs the
--- engine's own handler (Novo.run); this table only feeds help, aliases and autocomplete.
+-- engine's own handler (Pup.run); this table only feeds help, aliases and autocomplete.
 -- Generated from the engine's registry: its graphics / FPS commands. Each runs
--- the engine's own handler (Novo.run); this table feeds help and the Performance panel.
-local NOVO_PERF = {
+-- the engine's own handler (Pup.run); this table feeds help and the Performance panel.
+local PUP_PERF = {
     { name = "antilag", args = "", desc = "Lower graphics for more FPS, undo with unantilag", aliases = { "boostfps", "lowgraphics" } },
     { name = "fps", args = "", desc = "Show current framerate", aliases = {} },
     { name = "fullbright", args = "", desc = "Maximize all light ranges", aliases = {} },
@@ -3601,7 +3601,7 @@ local NOVO_PERF = {
     { name = "untexturebp", args = "", desc = "Remove all textures/decals from workspace parts", aliases = {} },
 }
 
-local NOVO_MOVE = {
+local PUP_MOVE = {
     { name = "airwalk", args = "", desc = "Walk on air (Space to go up)", aliases = { "aw" } },
     { name = "autoflashback", args = "", desc = "Go back to where you died every time you respawn", aliases = { "autofb" } },
     { name = "balloonfloat", args = "", desc = "Float up slowly holding a balloon", aliases = { "balloon" } },
@@ -3710,18 +3710,18 @@ local NOVO_MOVE = {
 ------------------------------------------------------------------------
 -- Movement: the engine's movement commands, run through its own registry
 --
--- The handlers are the engine's code (embedded above in Novo.load): fly and
+-- The handlers are the engine's code (embedded above in Pup.load): fly and
 -- its speed/keys, superfly and its panel, hatfly, helicopter, noclip holds,
 -- airwalk, swim, every teleport / waypoint / follow command, and the
 -- movement library (cframefly, vfly, dash, glide, wallrun, ...). They are
 -- called the way the engine's command bar calls them: exec({ name, args... }).
 ------------------------------------------------------------------------
 
-Novo.active = {}   -- commands with an "un..." counterpart that are on right now
+Pup.active = {}   -- commands with an "un..." counterpart that are on right now
 
-function Novo.find(name)
-    if not Novo.boot() then return nil end
-    for _, c in ipairs(Novo.cmds) do
+function Pup.find(name)
+    if not Pup.boot() then return nil end
+    for _, c in ipairs(Pup.cmds) do
         if c.name == name then return c end
     end
     return nil
@@ -3729,8 +3729,8 @@ end
 
 -- a: PuppyAdmin args (without the command name). Runs on its own thread
 -- because the handlers wait (fly restarts, tweens, teleports).
-function Novo.run(name, a)
-    local c = Novo.find(name)
+function Pup.run(name, a)
+    local c = Pup.find(name)
     if not c or type(c.exec) ~= "function" then
         note("Movement", "Not available: " .. tostring(name), RED)
         return
@@ -3738,9 +3738,9 @@ function Novo.run(name, a)
     local packed = { name }
     for _, v in ipairs(a or {}) do table.insert(packed, v) end
     if name:sub(1, 2) == "un" then
-        Novo.active[name:sub(3)] = nil
-    elseif Novo.find("un" .. name) then
-        Novo.active[name] = true
+        Pup.active[name:sub(3)] = nil
+    elseif Pup.find("un" .. name) then
+        Pup.active[name] = true
     end
     task.spawn(function()
         local ok, err = pcall(c.exec, packed)
@@ -3752,35 +3752,35 @@ end
 -- State the Movement panel shows. Fly, superfly, noclip, swim and the fly
 -- speed are the engine's own fields; helicopter, hatfly and airwalk keep their
 -- state in module locals, so those follow the commands sent from here.
-Novo.state = {}
-function Novo.state.flying() return type(_G._nvMove) == "table" and _G._nvMove.FLYING == true end
-function Novo.state.superfly() return type(_G._nvSuperfly) == "table" and _G._nvSuperfly.enabled == true end
-function Novo.state.noclip() return type(_G._nvMove) == "table" and type(_G._nvMove.noclipHold) == "table" and _G._nvMove.noclipHold.user == true end
-function Novo.state.swimming() return Novo.nvL ~= nil and Novo.nvL.swimming == true end
-function Novo.state.flySpeed() return type(_G._nvMove) == "table" and tonumber(_G._nvMove.iyflyspeed) or 1 end
-function Novo.state.setFlySpeed(v)
-    if Novo.boot() and type(Novo.nvL.setFlySpeed) == "function" then pcall(Novo.nvL.setFlySpeed, v) end
+Pup.state = {}
+function Pup.state.flying() return type(_G._pupMove) == "table" and _G._pupMove.FLYING == true end
+function Pup.state.superfly() return type(_G._pupSuperfly) == "table" and _G._pupSuperfly.enabled == true end
+function Pup.state.noclip() return type(_G._pupMove) == "table" and type(_G._pupMove.noclipHold) == "table" and _G._pupMove.noclipHold.user == true end
+function Pup.state.swimming() return Pup.pupL ~= nil and Pup.pupL.swimming == true end
+function Pup.state.flySpeed() return type(_G._pupMove) == "table" and tonumber(_G._pupMove.iyflyspeed) or 1 end
+function Pup.state.setFlySpeed(v)
+    if Pup.boot() and type(Pup.pupL.setFlySpeed) == "function" then pcall(Pup.pupL.setFlySpeed, v) end
 end
-function Novo.state.on(name)
-    if name == "helicopter" and not Novo.state.flying() then Novo.active.helicopter = nil end
-    return Novo.active[name] == true
+function Pup.state.on(name)
+    if name == "helicopter" and not Pup.state.flying() then Pup.active.helicopter = nil end
+    return Pup.active[name] == true
 end
 
 table.insert(cleanups, function()
-    if not Novo.booted then return end
+    if not Pup.booted then return end
     local off = {}
-    for name in pairs(Novo.active) do off["un" .. name] = true end
+    for name in pairs(Pup.active) do off["un" .. name] = true end
     off.unfly, off.unnoclip, off.unswim, off.unsuperfly = true, true, true, true
     for name in pairs(off) do
-        local c = Novo.find(name)
+        local c = Pup.find(name)
         if c and type(c.exec) == "function" then pcall(c.exec, { name }) end
     end
-    Novo.active = {}
+    Pup.active = {}
 end)
 
 ------------------------------------------------------------------------
 -- World and visuals: infinite baseplate, ESP (chams, hitboxes, tracers).
--- Movement is the built-in engine's code (see Novo / NOVO_MOVE above).
+-- Movement is the built-in engine's code (see Pup / PUP_MOVE above).
 ------------------------------------------------------------------------
 
 local Baseplate, BASEPLATE_PRESETS, bpApplyAll, Esp, isMobile
@@ -4391,7 +4391,7 @@ local cmds = {
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
 
--- Movement aliases come from the engine's own registrations (NOVO_MOVE).
+-- Movement aliases come from the engine's own registrations (PUP_MOVE).
 local ALIASES = {
     anim = "reanim", reanimui = "reanim", boost = "performance", fpsboost = "performance", minigames = "games", arcade = "games",
     wh = "esp", wallhack = "esp", unwh = "unesp", noesp = "unesp", ibp = "infbaseplate",
@@ -4779,20 +4779,20 @@ end
 function H.reanim(a)
     local l = a[1] and a[1]:lower()
     if l == "on" or l == "off" then
-        Novo.setActive(l == "on")
+        Pup.setActive(l == "on")
     elseif l == "import" then
-        if not Novo.ensure() then return end
+        if not Pup.ensure() then return end
         task.spawn(function()
             note("Reanim", "Importing " .. tostring(a[2]) .. "...")
-            local ok, name, path = Novo.importCatalog(a[2])
+            local ok, name, path = Pup.importCatalog(a[2])
             if not ok then note("Reanim", name, RED); return end
             note("Reanim", "Imported " .. name .. " - in Library > Your animations", LIGHT)
-            local rs = _G._nv_reanimState
+            local rs = _G._pup_reanimState
             if Reanim.active and type(rs) == "table" and type(rs.playAnim) == "function" then pcall(rs.playAnim, name, path) end
             if UIAPI.syncFns.reanim then pcall(UIAPI.syncFns.reanim) end
         end)
     else
-        Novo.setOpen()
+        Pup.setOpen()
     end
 end
 
@@ -5082,12 +5082,12 @@ end
 do
     local docsTaken = {}
     local all = {}
-    for _, c in ipairs(NOVO_MOVE) do all[#all + 1] = c end
-    for _, c in ipairs(NOVO_PERF) do all[#all + 1] = c end
+    for _, c in ipairs(PUP_MOVE) do all[#all + 1] = c end
+    for _, c in ipairs(PUP_PERF) do all[#all + 1] = c end
     for _, c in ipairs(all) do
         local name = c.name
         if not H[name] then
-            H[name] = function(a) Novo.run(name, a) end
+            H[name] = function(a) Pup.run(name, a) end
         end
         if not table.find(cmds, name) then table.insert(cmds, name) end
         cmdDocs[name] = name .. (c.args ~= "" and (" " .. c.args) or "") .. " - " .. c.desc
@@ -5104,9 +5104,9 @@ end
 -- tp keeps its two forms: a player (goto) or x y z (tppos).
 function H.tp(a)
     if tonumber(a[1]) and tonumber(a[2]) and tonumber(a[3]) then
-        Novo.run("tppos", a)
+        Pup.run("tppos", a)
     elseif a[1] then
-        Novo.run("goto", a)
+        Pup.run("goto", a)
     else
         note("Teleport", "Usage: tp [name] or tp [x] [y] [z]")
     end
@@ -5115,13 +5115,13 @@ end
 -- clicktp [on|off]: click anywhere to teleport there.
 function H.clicktp(a)
     local l = a[1] and a[1]:lower()
-    if l == "off" or l == "0" or l == "false" then Novo.run("unclicktp", {}) else Novo.run("clicktp", {}) end
+    if l == "off" or l == "0" or l == "false" then Pup.run("unclicktp", {}) else Pup.run("clicktp", {}) end
 end
 
 -- rejoin kicks you first on a solo server; let antikick pass it.
 function H.rejoin(a)
     AntiKick.allowUntil = os.clock() + 3
-    Novo.run("rejoin", a)
+    Pup.run("rejoin", a)
 end
 
 function H.moveui() UIAPI.togglePanel("move") end
@@ -5686,7 +5686,7 @@ function UIAPI.sync()
 end
 
 function UIAPI.togglePanel(key)
-    if key == "reanim" then Novo.setOpen(); return end
+    if key == "reanim" then Pup.setOpen(); return end
     local f = UIAPI.panels[key]
     if f then
         f.Visible = not f.Visible
@@ -6153,7 +6153,7 @@ function buildMovementPanel(screenGui)
         table.insert(syncers, function() s.set(get()) end)
     end
     sectionTitle(body, add, "Flight")
-    local S = Novo.state
+    local S = Pup.state
     switch("Fly", function() return S.flying() and not S.superfly() and not S.on("helicopter") end, function(on) H[on and "fly" or "unfly"]({}) end)
     switch("Superfly (opens the Fly panel)", function() return S.superfly() end, function(on) H[on and "superfly" or "unsuperfly"]({}) end)
     switch("Helicopter", function() return S.on("helicopter") end, function(on) H[on and "helicopter" or "unhelicopter"]({}) end)
@@ -6648,7 +6648,7 @@ end
 ------------------------------------------------------------------------
 -- Reanimation panel (opened with `reanim`). Built with the script's own UI
 -- pieces, so it follows the theme in Settings like every other window. It
--- drives the reanimation engine's state (_G._nv_reanimState): the engine's
+-- drives the reanimation engine's state (_G._pup_reanimState): the engine's
 -- original panel is still created, hidden, because its logic (library
 -- loader, idle/walk/jump loop, recorder, live mode, sync, tricks) runs there.
 ------------------------------------------------------------------------
@@ -6657,7 +6657,7 @@ local function buildReanimPanel(screenGui)
     local W, HGT = 380, 580
     local f = uiWindow(screenGui, "reanim", "Reanimation", UDim2.fromOffset(W, HGT), UDim2.new(0.5, 30, 0.5, -HGT / 2))
     local IW = W - 40
-    local function RS() return _G._nv_reanimState end
+    local function RS() return _G._pup_reanimState end
     local function call(name, ...)
         local rs = RS()
         local fn = type(rs) == "table" and rs[name]
@@ -6673,7 +6673,7 @@ local function buildReanimPanel(screenGui)
     local power = uiButton(f, "Reanimate", UDim2.fromOffset(128, 30), UDim2.new(1, -144, 0, 44), function()
         if not ready() then note("Reanim", "Not ready yet - open again in a moment", RED); return end
         local rs = RS()
-        Novo.setActive(not rs.reanimActive)
+        Pup.setActive(not rs.reanimActive)
     end)
 
     -- tabs ------------------------------------------------------------------
@@ -6727,7 +6727,7 @@ local function buildReanimPanel(screenGui)
         uiButton(body, "Play", UDim2.fromOffset(70, 28), UDim2.fromOffset(12 + IW - 70, add(0) - 34), function()
             local url = urlBox.Text:match("^%s*(.-)%s*$")
             if not url:match("^https?://") then note("Reanim", "Enter an http(s) link", RED); return end
-            local api = novoApi()
+            local api = pupApi()
             if not (api and Reanim.active) then note("Reanim", "Reanimate first", RED); return end
             task.spawn(function()
                 local ok, err = pcall(api.play_animation, url, tonumber(RS() and RS().reanimSpeed) or 1)
@@ -6746,7 +6746,7 @@ local function buildReanimPanel(screenGui)
         local search = uiBox(page, UDim2.fromOffset(16, 0), UDim2.fromOffset(IW - 188, 28), "Search")
         uiButton(page, "Reload files", UDim2.fromOffset(64, 28), UDim2.fromOffset(16 + IW - 180, 0), function()
             task.spawn(function()
-                local total, added = Novo.reloadCustom(true)
+                local total, added = Pup.reloadCustom(true)
                 note("Reanim", tostring(total or 0) .. " animations in PuppyAdmin/custom" .. ((added or 0) > 0 and (" (" .. added .. " from subfolders)") or ""), LIGHT)
                 if refreshLibrary then refreshLibrary(true) end
             end)
@@ -6769,12 +6769,12 @@ local function buildReanimPanel(screenGui)
         local function runImport(fn, ...)
             local args = { ... }
             task.spawn(function()
-                if not Novo.ensure() then return end
+                if not Pup.ensure() then return end
                 note("Reanim", "Importing...")
                 local ok, name, path = fn(table.unpack(args))
                 if not ok then note("Reanim", tostring(name), RED); return end
                 note("Reanim", "Imported " .. name .. " - in Your animations", LIGHT)
-                local rs = _G._nv_reanimState
+                local rs = _G._pup_reanimState
                 if Reanim.active and type(rs) == "table" and type(rs.playAnim) == "function" then pcall(rs.playAnim, name, path) end
                 showImported(name)
             end)
@@ -6782,7 +6782,7 @@ local function buildReanimPanel(screenGui)
         uiButton(page, "Import", UDim2.fromOffset(62, 28), UDim2.fromOffset(16 + IW - 134, 34), function()
             local raw = importBox.Text
             importBox.Text = ""
-            runImport(Novo.importCatalog, raw)
+            runImport(Pup.importCatalog, raw)
         end)
 
         -- Paste window: a multi-line box keeps the line breaks of pasted
@@ -6818,7 +6818,7 @@ local function buildReanimPanel(screenGui)
         local saveB = uiButton(paste, "Save to Your animations", UDim2.new(0.6, -16, 0, 30), UDim2.new(0, 12, 1, -38), function()
             local raw, nm = pasteBox.Text, pasteName.Text
             runImport(function()
-                local ok, name, path = Novo.importText(raw, nm)
+                local ok, name, path = Pup.importText(raw, nm)
                 if ok then
                     paste.Visible = false
                     pasteBox.Text, pasteName.Text = "", ""
@@ -6844,7 +6844,7 @@ local function buildReanimPanel(screenGui)
         make("UIPadding", { PaddingTop = UDim.new(0, 3), PaddingLeft = UDim.new(0, 3) }, list)
         local MAX_ROWS = 150
         local lastSig
-        local function LAYOUT() local L = _G._nv_reanimLayout; return type(L) == "table" and L or nil end
+        local function LAYOUT() local L = _G._pup_reanimLayout; return type(L) == "table" and L or nil end
         local function titleOf(name)
             local L = LAYOUT()
             if L and type(L.title) == "function" then
@@ -7148,11 +7148,11 @@ local function buildReanimPanel(screenGui)
         end)
         y = add(38)
         uiButton(body, "Mimic them", UDim2.fromOffset((IW - 8) / 2, 30), UDim2.fromOffset(12, y), function()
-            local p, api = target(), novoApi()
+            local p, api = target(), pupApi()
             if p and api and api.mimic_start then local ok, err = pcall(api.mimic_start, p); if not ok then note("Reanim", tostring(err):sub(1, 80), RED) end end
         end)
         uiButton(body, "Stop mimic", UDim2.fromOffset((IW - 8) / 2, 30), UDim2.fromOffset(12 + (IW + 8) / 2, y), function()
-            local api = novoApi()
+            local api = pupApi()
             if api and api.mimic_stop then pcall(api.mimic_stop, "Mimic off") end
         end)
         local copyLbl = label(body, { Position = UDim2.fromOffset(12, add(24)), Size = UDim2.fromOffset(IW, 20), Text = "", TextColor3 = PAL.DIM, TextSize = 11 })
@@ -7161,22 +7161,22 @@ local function buildReanimPanel(screenGui)
         uiButton(body, "Record them", UDim2.fromOffset((IW - 8) / 2, 30), UDim2.fromOffset(12, y), function()
             local p = target()
             if not p then return end
-            local ok, err = Novo.startCopy(p)
+            local ok, err = Pup.startCopy(p)
             if ok then note("Reanim", "Recording " .. p.DisplayName .. " (up to 1 minute)", LIGHT) else note("Reanim", err, RED) end
         end)
         uiButton(body, "Stop & save", UDim2.fromOffset((IW - 8) / 2, 30), UDim2.fromOffset(12 + (IW + 8) / 2, y), function()
-            if not Novo.stopCopy() then note("Reanim", "Not recording anyone") end
+            if not Pup.stopCopy() then note("Reanim", "Not recording anyone") end
         end)
         local recLbl = label(body, { Position = UDim2.fromOffset(12, add(24)), Size = UDim2.fromOffset(IW, 20), Text = "", TextColor3 = PAL.DIM, TextSize = 11 })
         table.insert(syncers, function()
-            local s = Novo.copyRec
+            local s = Pup.copyRec
             recLbl.Text = (s and s.active) and string.format("Recording %s - %ds", s.player.DisplayName, math.floor(s.elapsed or 0))
                 or "Saved recordings go to Library > Your animations"
         end)
         label(body, { Position = UDim2.fromOffset(12, add(44)), Size = UDim2.fromOffset(IW, 40), TextWrapped = true, TextSize = 11,
             TextColor3 = PAL.DIM, Text = "Sync plays their current moves on your reanimated body. Mimic follows their movement and pose." })
         table.insert(syncers, function()
-            local rs, api = RS(), novoApi()
+            local rs, api = RS(), pupApi()
             local syncing = rs and type(rs.isSyncing) == "function" and rs.isSyncing()
             local mimic = api and api.mimic_active and api.mimic_active()
             copyLbl.Text = "Sync: " .. (syncing and ("on" .. (rs.syncTarget and (" - " .. rs.syncTarget.DisplayName) or "")) or "off")
@@ -7188,7 +7188,7 @@ local function buildReanimPanel(screenGui)
     local function sync()
         local rs = RS()
         if type(rs) ~= "table" then
-            statusLbl.Text = Novo.failed and ("Unavailable: " .. Novo.failed:sub(1, 40)) or "Starting..."
+            statusLbl.Text = Pup.failed and ("Unavailable: " .. Pup.failed:sub(1, 40)) or "Starting..."
             return
         end
         local active = rs.reanimActive == true
@@ -7201,10 +7201,10 @@ local function buildReanimPanel(screenGui)
     f:GetPropertyChangedSignal("Visible"):Connect(function()
         if not f.Visible then return end
         task.spawn(function()
-            Novo.ensure()
+            Pup.ensure()
             if typeof(_G._reanimPanel) == "Instance" then _G._reanimPanel.Visible = false end
-            novoLoadApi()
-            pcall(Novo.reloadCustom)
+            pupLoadApi()
+            pcall(Pup.reloadCustom)
             if refreshLibrary then pcall(refreshLibrary, true) end
             while f.Visible and genv.PuppyAdminActive do
                 pcall(sync)
@@ -7329,12 +7329,12 @@ local perfOn = {}
 
 local function perfSet(onCmd, offCmd, on)
     perfOn[onCmd] = on and offCmd or nil
-    Novo.run(on and onCmd or offCmd, {})
+    Pup.run(on and onCmd or offCmd, {})
 end
 
 local function fpsSwitch(fnName, on)
     task.spawn(function()
-        if not Novo.boot() then return end
+        if not Pup.boot() then return end
         local fn = _G[fnName]
         if type(fn) == "function" then
             pcall(fn, on)
@@ -7346,11 +7346,11 @@ end
 
 table.insert(cleanups, function()
     for onCmd, offCmd in pairs(perfOn) do
-        local c = Novo.booted and Novo.find(offCmd)
+        local c = Pup.booted and Pup.find(offCmd)
         if c and type(c.exec) == "function" then pcall(c.exec, { offCmd }) end
     end
     perfOn = {}
-    for _, fnName in ipairs({ "_nv_applyUnlockFps", "_nv_applyBgFpsCap" }) do
+    for _, fnName in ipairs({ "_pup_applyUnlockFps", "_pup_applyBgFpsCap" }) do
         if type(_G[fnName]) == "function" then pcall(_G[fnName], false) end
     end
 end)
@@ -7369,17 +7369,17 @@ local function buildPerformancePanel(screenGui)
     end
 
     sectionTitle(body, add, "FPS")
-    switch("Unlock FPS", function() return Novo.nvL ~= nil and Novo.nvL.unlockFpsEnabled == true end,
-        function(on) fpsSwitch("_nv_applyUnlockFps", on) end)
-    switch("Low FPS when tabbed out (24)", function() return Novo.nvL ~= nil and Novo.nvL.bgFpsCapEnabled == true end,
-        function(on) fpsSwitch("_nv_applyBgFpsCap", on) end)
+    switch("Unlock FPS", function() return Pup.pupL ~= nil and Pup.pupL.unlockFpsEnabled == true end,
+        function(on) fpsSwitch("_pup_applyUnlockFps", on) end)
+    switch("Low FPS when tabbed out (24)", function() return Pup.pupL ~= nil and Pup.pupL.bgFpsCapEnabled == true end,
+        function(on) fpsSwitch("_pup_applyBgFpsCap", on) end)
     local y = add(38)
-    uiButton(body, "Show FPS", UDim2.fromOffset(half, 30), UDim2.fromOffset(12, y), function() Novo.run("fps", {}) end)
+    uiButton(body, "Show FPS", UDim2.fromOffset(half, 30), UDim2.fromOffset(12, y), function() Pup.run("fps", {}) end)
     uiButton(body, "Timing report", UDim2.fromOffset(half, 30), UDim2.fromOffset(12 + half + 8, y), function() H.perf() end)
 
     sectionTitle(body, add, "Quick boost")
-    switch("Anti-lag (lower graphics)", function() return Novo.active.antilag == true end, function(on)
-        Novo.run(on and "antilag" or "unantilag", {})
+    switch("Anti-lag (lower graphics)", function() return Pup.active.antilag == true end, function(on)
+        Pup.run(on and "antilag" or "unantilag", {})
     end)
 
     sectionTitle(body, add, "Graphics")
@@ -7395,7 +7395,7 @@ local function buildPerformancePanel(screenGui)
     end)
     y = add(38)
     uiButton(body, "Remove terrain (until rejoin)", UDim2.fromOffset(IW, 30), UDim2.fromOffset(12, y), function()
-        Novo.run("removeterrain", {})
+        Pup.run("removeterrain", {})
     end, true)
     label(body, { Position = UDim2.fromOffset(12, add(40)), Size = UDim2.fromOffset(IW, 36), TextWrapped = true, TextSize = 11,
         TextColor3 = PAL.DIM, Text = "Everything here is on your screen only. Kill / stop turns off what you switched on." })
@@ -8962,7 +8962,7 @@ Watch.start()
 -- fetch the engine file in the background once per version, so the first reanim / movement command does not wait for it
 task.spawn(function()
     task.wait(3)
-    if genv.PuppyAdminActive == true and not Novo.chunk and not Novo.engineCached() then pcall(Novo.fetchEngine) end
+    if genv.PuppyAdminActive == true and not Pup.chunk and not Pup.engineCached() then pcall(Pup.fetchEngine) end
 end)
 Chat.start()
 
