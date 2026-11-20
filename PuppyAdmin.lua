@@ -2478,10 +2478,11 @@ table.insert(cleanups, function() AntiKick.on = false end)
 -- publishes its state as _G._nv_reanimState, and its text says Puppy Admin).
 --
 -- Conventions it keeps: _G._reanimAPI / _G._reanimPanel globals, files under
--- the executor workspace's PuppyAdmin/ folder, the animation library from
--- static.rawth.net and the icon pack from molto.pages.dev (both downloaded
--- and run with loadstring by the engine). Another script that uses the same
--- _G names in the same session would collide with it.
+-- the executor workspace's PuppyAdmin/ folder, and the icon pack from
+-- molto.pages.dev (downloaded and run with loadstring by the engine). There
+-- is no built-in animation library: only animations you import exist
+-- (PuppyAdmin/custom). Another script that uses the same _G names in the same
+-- session would collide with it.
 ------------------------------------------------------------------------
 
 local DIGIT_NAMES = {
@@ -9465,8 +9466,8 @@ reanimAddItem=reanimAddItem local globalLoadLbl=createInstance('TextLabel',{
 Parent=_RS.reanimScroll,BackgroundTransparency=1,Position=UDim2.new(0,10,0,10),
 Size=UDim2.new(1,-20,0,20),Font=font,TextSize=12,TextColor3=C.SUB,Text=
 'Loading...',ZIndex=153})_RS.reanimScroll.CanvasSize=UDim2.new(0,0,0,40)task.
-spawn(function()local ok,resp=pcall(function()return game:HttpGet(
-'https://static.rawth.net/animations.lua')end)if not ok or not resp then
+spawn(function()local ok,resp=pcall(function()return 'return {}' --[[PuppyAdmin patch: no built-in library]]
+end)if not ok or not resp then
 globalLoadLbl.Text='Failed to load list'return end local animTable local loadOk=
 pcall(function()animTable=_safeLoadstring(resp)()end)if not loadOk or type(
 animTable)~='table'then globalLoadLbl.Text='Bad response'return end local chosen
@@ -12319,6 +12320,8 @@ function Novo.ensure()
     task.wait() -- MessageOut can arrive a frame late
     if logConn then logConn:Disconnect() end
     if typeof(_G._reanimPanel) == "Instance" then Novo.stylePanel(_G._reanimPanel) end
+    task.delay(2, function() pcall(Novo.purgeBuiltins) end)
+    task.delay(8, function() pcall(Novo.purgeBuiltins) end)
     if captured then warn("[PuppyAdmin] reanimation panel: " .. captured) end
     if not okInit or typeof(_G._reanimPanel) ~= "Instance" then
         Novo.panelFailed = okInit and (captured or "panel was not created") or tostring(err)
@@ -12434,10 +12437,84 @@ local function encodeFrames(name, frames)
     return table.concat(out)
 end
 
+-- A keyframe file link (a Lua table like the ones the recorder saves).
+-- Yields. Returns ok, display name or reason, file path.
+local function importLink(url)
+    local rs = _G._nv_reanimState
+    local ok, src = pcall(function() return game:HttpGet(url) end)
+    if not ok or type(src) ~= "string" or #src < 10 then return false, "Could not download that link" end
+    local data
+    if type(rs) == "table" and type(rs.loadAnim) == "function" then
+        local okL, d = pcall(rs.loadAnim, src)
+        data = okL and d or nil
+    end
+    if type(data) ~= "table" then return false, "That link is not a keyframe animation" end
+    local key = next(data)
+    local list = key and data[key]
+    if type(list) ~= "table" or #list < 2 then return false, "That animation has no keyframes" end
+    local base = tostring(type(key) == "string" and key or url:match("([^/]+)$") or "Animation")
+    base = base:gsub("%.%w+$", ""):gsub("[^%w%s%-_%.%(%)]", ""):gsub("%s+", " "):sub(1, 40)
+    if base == "" then base = "Animation" end
+    pcall(function()
+        if not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
+        if not isfolder("PuppyAdmin/custom") then makefolder("PuppyAdmin/custom") end
+    end)
+    local path = "PuppyAdmin/custom/" .. base .. ".lua"
+    if not pcall(writefile, path, src) then return false, "Could not write " .. path end
+    if type(rs) == "table" and type(rs.reanimAddItem) == "function" and type(rs.customItems) == "table" then
+        local have = false
+        for _, it in ipairs(rs.customItems) do if it.url == path then have = true end end
+        if not have then pcall(rs.reanimAddItem, base, path, rs.customItems, "Imported") end
+        if rs.localAnimCache then rs.localAnimCache[path] = nil end
+    end
+    return true, base, path
+end
+
+-- There is no built-in library any more: favourites, idle/walk/jump picks and
+-- keys that still point at old library links (http) are cleared. Imported
+-- animations are local files and are never touched.
+function Novo.purgeBuiltins()
+    local rs, L = _G._nv_reanimState, _G._nv_reanimLayout
+    if type(rs) ~= "table" then return end
+    local function remote(url) return type(url) == "string" and url:match("^https?://") ~= nil end
+    local changed = 0
+    for i = #(rs.favsItems or {}), 1, -1 do
+        local it = rs.favsItems[i]
+        if type(it) == "table" and remote(it.url) then
+            if type(L) == "table" and type(L.toggleFav) == "function" then
+                pcall(L.toggleFav, it)
+            else
+                pcall(function() it.row:Destroy() end)
+                table.remove(rs.favsItems, i)
+            end
+            changed = changed + 1
+        end
+    end
+    if changed > 0 and type(rs.saveFavsItems) == "function" then pcall(rs.saveFavsItems) end
+    local states = 0
+    for slot, a in pairs(type(rs.stateAnims) == "table" and rs.stateAnims or {}) do
+        if type(a) == "table" and remote(a.url) then rs.stateAnims[slot] = nil; states = states + 1 end
+    end
+    if states > 0 then
+        if type(rs.saveStateAnims) == "function" then pcall(rs.saveStateAnims) end
+        if type(rs.startStateLoop) == "function" then pcall(rs.startStateLoop) end
+    end
+    local keys = 0
+    for k, bind in pairs(type(rs.favKeybinds) == "table" and rs.favKeybinds or {}) do
+        if type(bind) == "table" and remote(bind.url) then rs.favKeybinds[k] = nil; keys = keys + 1 end
+    end
+    if keys > 0 and type(rs.saveReanimKeybinds) == "function" then pcall(rs.saveReanimKeybinds) end
+    if changed + states + keys > 0 then
+        note("Reanim", "Removed old built-in animations (" .. changed .. " favourites, " .. states .. " states, " .. keys .. " keys)", GREY)
+    end
+end
+
 -- Yields. Returns ok, display name or reason, file path.
 function Novo.importCatalog(raw)
-    local id = tostring(raw or ""):match("%d+")
-    if not id then return false, "Give an animation or emote ID" end
+    raw = tostring(raw or ""):match("^%s*(.-)%s*$")
+    if raw:match("^https?://") then return importLink(raw) end
+    local id = raw:match("%d+")
+    if not id then return false, "Give an animation or emote ID, or a keyframe file link" end
     if not (writefile and readfile) then return false, "Needs writefile/readfile" end
     local seq = findKeyframeSequence(id)
     if not seq then return false, "Could not load an animation from " .. id .. " (bundles and private animations do not work)" end
@@ -13392,7 +13469,7 @@ local cmdDocs = {
     aura = "aura [name] [players] [color] - Give an aura everyone using the script sees (tag managers only)",
     unaura = "unaura [name|all] [players] - Take auras away (tag managers only)",
     auras = "auras - List auras and who has them",
-    reanim = "reanim [on|off | import <animation or emote ID>] - Reanimation panel; on/off toggles reanimation; import loads a Roblox catalog animation. Also: anim, reanimui",
+    reanim = "reanim [on|off | import <ID or keyframe link>] - Reanimation panel for your own imported animations; on/off toggles reanimation. Also: anim, reanimui",
     prefix = "prefix [add|remove|set] [chars] - Chat command prefixes",
     uikey = "uikey [key] - Key that shows/hides the script UI",
     settings = "settings - Toggles the settings window",
@@ -15367,7 +15444,7 @@ local function buildReanimPanel(screenGui)
     do
         local page = pages.Library
         local source = 1
-        local SOURCES = { { "globalItems", "All animations" }, { "favsItems", "Favorites" }, { "customItems", "Your animations" } }
+        local SOURCES = { { "customItems", "Your animations" }, { "favsItems", "Favorites" } }
         local search = uiBox(page, UDim2.fromOffset(16, 0), UDim2.fromOffset(IW - 120, 28), "Search")
         local srcBtn
         srcBtn = uiButton(page, SOURCES[1][2], UDim2.fromOffset(112, 28), UDim2.fromOffset(16 + IW - 112, 0), function()
@@ -15376,13 +15453,13 @@ local function buildReanimPanel(screenGui)
             refreshLibrary()
         end)
         srcBtn.TextSize = 11
-        local importBox = uiBox(page, UDim2.fromOffset(16, 34), UDim2.fromOffset(IW - 78, 28), "Import: Roblox animation or emote ID")
+        local importBox = uiBox(page, UDim2.fromOffset(16, 34), UDim2.fromOffset(IW - 78, 28), "Import: animation/emote ID or keyframe link")
         uiButton(page, "Import", UDim2.fromOffset(70, 28), UDim2.fromOffset(16 + IW - 70, 34), function()
             local id = importBox.Text
             importBox.Text = ""
             H.reanim({ "import", id })
             task.delay(1, function()
-                source = 3
+                source = 1
                 srcBtn.Text = SOURCES[source][2]
                 if refreshLibrary then refreshLibrary(true) end
             end)
@@ -15630,8 +15707,9 @@ local function buildReanimPanel(screenGui)
                 end
             end
             if shown == 0 then
-                label(list, { Size = UDim2.new(1, -6, 0, 26), Text = (#items == 0 and "Loading the library..." or "Nothing matches"),
-                    TextColor3 = PAL.DIM, TextSize = 12, LayoutOrder = 1 })
+                label(list, { Size = UDim2.new(1, -6, 0, 40), TextWrapped = true, TextSize = 12, LayoutOrder = 1, TextColor3 = PAL.DIM,
+                    Text = (#items == 0 and (source == 1 and "No animations yet. Import one above with a Roblox animation or emote ID, or a keyframe link."
+                        or "No favourites yet. Right-click one of your animations > Add to favorites.") or "Nothing matches") })
             end
             hint.Text = (shown > MAX_ROWS and ("Showing the first " .. MAX_ROWS .. " - search to narrow.  ") or "")
                 .. "Click to play.  Right-click or ... for more."
