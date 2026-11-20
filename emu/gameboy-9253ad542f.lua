@@ -1,4 +1,4 @@
--- PuppyAdmin gameboy ee60d69c8a (original Game Boy emulator; games are loaded from your own PuppyAdmin/roms folder)
+-- PuppyAdmin gameboy 9253ad542f (original Game Boy emulator; games are loaded from your own PuppyAdmin/roms folder)
 local GB = (function()
 -- Puppy Admin Game Boy core (original DMG). Plain Lua that runs in Luau.
 -- GB.new(romString, saveString?) -> emu   (errors on a ROM it cannot run)
@@ -1259,20 +1259,38 @@ do
     end
     Zip.inflate = inflate
 
+    -- what a file that is not a zip looks like, for the error message
+    local function describe(z)
+        local head = z:sub(1, 8)
+        if head:sub(1, 6) == "7z\188\175\39\28" then return "this is a .7z archive, not a .zip - unpack it and use the .gb file" end
+        if head:sub(1, 4) == "Rar!" then return "this is a .rar archive, not a .zip - unpack it and use the .gb file" end
+        if head:sub(1, 2) == "\31\139" then return "this is a .gz file, not a .zip - unpack it and use the .gb file" end
+        local hex = {}
+        for k = 1, #head do hex[k] = string.format("%02X", byte(head, k)) end
+        local mangled = select(2, z:gsub("\239\191\189", "")) > 16
+        return "not a zip file (" .. #z .. " bytes, starts " .. table.concat(hex, " ") .. ")"
+            .. (mangled and " - the executor read it as text and changed the bytes" or "")
+    end
+    Zip.describe = describe
+
     function Zip.extract(z)
-        if type(z) ~= "string" or z:sub(1, 2) ~= "PK" then return nil, "not a zip file" end
+        if type(z) ~= "string" then return nil, "file read returned " .. type(z) .. ", not data" end
+        -- the archive may sit after other data (self-extractors, a prefix added on download)
+        local start = z:find("PK\3\4", 1, true)
+        if not start then return nil, describe(z) end
+        local base = start - 1
         -- central directory: find the end record from the back
         local eocd
         for p = #z - 21, math.max(1, #z - 65557), -1 do
             if u32(z, p) == 0x06054b50 then eocd = p; break end
         end
-        if not eocd then return nil, "zip directory not found" end
-        local count, cdPos = u16(z, eocd + 10), u32(z, eocd + 16) + 1
+        if not eocd then return nil, "zip directory not found (" .. #z .. " bytes - the file may be cut short)" end
+        local count, cdPos = u16(z, eocd + 10), u32(z, eocd + 16) + 1 + base
         local p = cdPos
         for _ = 1, count do
             if u32(z, p) ~= 0x02014b50 then return nil, "bad zip directory" end
             local method, csize, nameLen, extraLen, commentLen = u16(z, p + 10), u32(z, p + 20), u16(z, p + 28), u16(z, p + 30), u16(z, p + 32)
-            local local0 = u32(z, p + 42) + 1
+            local local0 = u32(z, p + 42) + 1 + base
             local name = z:sub(p + 46, p + 45 + nameLen)
             local low = name:lower()
             if low:sub(-3) == ".gb" or low:sub(-4) == ".gbc" then

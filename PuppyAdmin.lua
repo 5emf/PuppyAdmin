@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-14" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-15" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -8865,7 +8865,7 @@ end
 -- The games are never part of the script or the repository.
 ------------------------------------------------------------------------
 
-UIAPI.GB_MODULE = { version = "ee60d69c8a", bytes = 63890 }
+UIAPI.GB_MODULE = { version = "9253ad542f", bytes = 65090 }
 
 function UIAPI.buildGameBoyPanel(screenGui)
     local W, HGT = 360, 470
@@ -9003,11 +9003,20 @@ function UIAPI.buildGameBoyPanel(screenGui)
                 if not okImg then error(why, 0) end
                 local mod = loadModule()
                 local path = ROM_DIR .. "/" .. name
-                local data = readfile(path)
-                if name:lower():match("%.zip$") then
+                -- some executors return a buffer instead of a string for files
+                local okRead, data = pcall(readfile, path)
+                if not okRead then error("could not read " .. name .. ": " .. tostring(data), 0) end
+                if typeof(data) == "buffer" then data = buffer.tostring(data) end
+                if type(data) ~= "string" then error("reading " .. name .. " gave " .. typeof(data) .. ", not data", 0) end
+                -- zip by content, whatever the file is called
+                if data:find("PK\3\4", 1, true) or name:lower():match("%.zip$") then
                     local rom, inner = mod.Zip.extract(data)
                     if not rom then error(inner, 0) end
                     data = rom
+                end
+                -- every Game Boy cartridge carries the same logo bytes at 0x104
+                if #data < 0x150 or data:sub(0x105, 0x108) ~= "\206\237\102\102" then
+                    error((mod.Zip.describe and mod.Zip.describe(data) or "not a Game Boy game") .. " - not a valid Game Boy game file", 0)
                 end
                 local save
                 pcall(function() if isfile(savePath(path)) then save = readfile(savePath(path)) end end)
