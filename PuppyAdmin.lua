@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-24" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-25" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -9407,6 +9407,8 @@ function UIAPI.buildDoomPanel(screenGui)
     local f = uiWindow(screenGui, "doom", "Doom", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2, 0.5, -HGT / 2))
     local DIR, CACHE_DIR = "PuppyAdmin/doom", "PuppyAdmin/engine"
     local DM = UIAPI.DOOM_MODULE
+    local FREEDOOM = { label = "Freedoom Phase 1 (download)", file = "freedoom1.wad", bytes = 28795076,
+        url = SETTINGS.Auras.assetBase .. "assets/doom/freedoom1.wad" }
     local MOD_NAME = "doom-" .. DM.version .. ".lua"
     local TIC = 1 / 35
 
@@ -9428,6 +9430,10 @@ function UIAPI.buildDoomPanel(screenGui)
             end
         end)
         table.sort(out, function(a, b) return a:lower() < b:lower() end)
+        -- Freedoom Phase 1 (free, BSD) is in the repository: offered until it is downloaded
+        local have = false
+        for _, n in ipairs(out) do if n:lower() == "freedoom1.wad" then have = true end end
+        if not have then table.insert(out, 1, FREEDOOM.label) end
         return out
     end
     local listed = {}
@@ -9447,7 +9453,8 @@ function UIAPI.buildDoomPanel(screenGui)
     local overlay = label(bezel, {
         Position = UDim2.fromOffset(16, 4), Size = UDim2.fromOffset(sw - 24, sh), TextWrapped = true, ZIndex = 3,
         TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = Color3.fromRGB(230, 230, 230), TextSize = 13,
-        Text = "Put a Doom WAD (DOOM1.WAD, DOOM.WAD, DOOM2.WAD or Freedoom) in your executor's workspace/PuppyAdmin/doom folder, then pick it above.",
+        Text = "Pick \"Freedoom Phase 1\" above to play right away (free, downloaded once), or put your own WAD "
+            .. "(DOOM1.WAD, DOOM.WAD, DOOM2.WAD) in your executor's workspace/PuppyAdmin/doom folder and pick it.",
     })
     local status = label(f, { Position = UDim2.fromOffset(16, 340), Size = UDim2.fromOffset(W - 32, 16), TextSize = 11,
         TextColor3 = PAL.DIM, TextTruncate = Enum.TextTruncate.AtEnd, Text = statusBase })
@@ -9522,7 +9529,20 @@ function UIAPI.buildDoomPanel(screenGui)
                 local okImg, why = makeImage()
                 if not okImg then error(why, 0) end
                 local Doom = loadModule()
-                local wad = UIAPI.gbReadFile and UIAPI.gbReadFile(name, { DIR .. "/" .. name }) or readBinary(DIR .. "/" .. name)
+                local downloaded
+                if name == FREEDOOM.label then
+                    -- one download (28 MB), then it is a normal file in PuppyAdmin/doom
+                    overlay.Text = "Downloading Freedoom Phase 1 (28 MB)...\nThis happens once."
+                    local okDl, body = pcall(function() return game:HttpGet(FREEDOOM.url) end)
+                    if not okDl or type(body) ~= "string" or #body ~= FREEDOOM.bytes or not Doom.identify(body) then
+                        error("Freedoom download failed or was incomplete (" .. (type(body) == "string" and #body or 0) .. " of " .. FREEDOOM.bytes .. " bytes)", 0)
+                    end
+                    pcall(writefile, DIR .. "/" .. FREEDOOM.file, body)
+                    downloaded = body
+                    name = FREEDOOM.file
+                    overlay.Text = "Starting Freedoom..."
+                end
+                local wad = downloaded or (UIAPI.gbReadFile and UIAPI.gbReadFile(name, { DIR .. "/" .. name }) or readBinary(DIR .. "/" .. name))
                 if not wad then error("could not read " .. name, 0) end
                 if not Doom.identify(wad) then error(name .. " is not a Doom WAD this engine knows (DOOM1, DOOM, DOOM2 or Freedoom)", 0) end
                 local d = Doom.new(Doom.makeWasm, {
