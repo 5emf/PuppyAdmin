@@ -345,6 +345,7 @@ local Cfg = {
     tagDefs = {},      -- named tags shared by several players (see Tags below)
     tagClickTp = true, -- clicking someone else's tag teleports you to them
     skipIntro = false, -- start without the brand intro
+    uiFont = "Default", -- Settings > Font (UIFont.choices())
     games = {},        -- mini game best scores: game id -> number
 }
 
@@ -14983,6 +14984,145 @@ local PAL = {
 }
 
 ------------------------------------------------------------------------
+-- Fonts: one choice for the whole script (Settings > Font), and custom
+-- .ttf fonts shipped in the repository (assets/fonts). A custom font is
+-- downloaded once into PuppyAdmin/fonts, then used through a font family
+-- file and getcustomasset (executor). Every text object keeps its own
+-- weight and style; only the family changes. "Default" restores the
+-- fonts each widget was built with.
+------------------------------------------------------------------------
+
+local UIFont = { custom = {}, families = {}, original = setmetatable({}, { __mode = "k" }) }
+do
+    -- label -> repository file
+    UIFont.CUSTOM = { ["Kingdom Hearts"] = "KingdomHearts.ttf" }
+    local DIR = "PuppyAdmin/fonts"
+    local ROBLOX = {
+        "Gotham", "BuilderSans", "SourceSans", "Arial", "Roboto", "Ubuntu", "Nunito", "Montserrat", "FredokaOne",
+        "Cartoon", "Arcade", "Code", "RobotoMono", "Highway", "SciFi", "Bangers", "Creepster", "LuckiestGuy",
+        "PermanentMarker", "IndieFlower", "Merriweather", "Garamond", "Michroma", "Oswald", "TitilliumWeb", "SpecialElite",
+    }
+
+    -- choices shown in Settings: Default, custom fonts, then Roblox fonts this client has
+    function UIFont.choices()
+        if UIFont.list then return UIFont.list end
+        local l = { "Default" }
+        local names = {}
+        for name in pairs(UIFont.CUSTOM) do names[#names + 1] = name end
+        table.sort(names)
+        for _, n in ipairs(names) do l[#l + 1] = n end
+        for _, n in ipairs(ROBLOX) do
+            local ok, e = pcall(function() return Enum.Font[n] end)
+            if ok and e then
+                local okF, f = pcall(Font.fromEnum, e)
+                if okF and f then UIFont.families[n] = f.Family; l[#l + 1] = n end
+            end
+        end
+        UIFont.list = l
+        return l
+    end
+
+    -- Font family id for a custom font, or nil when the executor cannot load it. Yields on first download.
+    function UIFont.customFamily(label)
+        if UIFont.custom[label] ~= nil then return UIFont.custom[label] or nil end
+        local file = UIFont.CUSTOM[label]
+        if not file or not (writefile and readfile and isfile and getcustomasset) then UIFont.custom[label] = false; return nil end
+        local ok, family = pcall(function()
+            if makefolder and isfolder and not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
+            if makefolder and isfolder and not isfolder(DIR) then makefolder(DIR) end
+            local ttf = DIR .. "/" .. file
+            if not isfile(ttf) then
+                local body = game:HttpGet(SETTINGS.Auras.assetBase .. "assets/fonts/" .. file)
+                -- a real TrueType file starts with 00 01 00 00 or "true"
+                if type(body) ~= "string" or #body < 1000 or not (body:sub(1, 4) == "\0\1\0\0" or body:sub(1, 4) == "true") then
+                    error("download is not a TrueType font")
+                end
+                writefile(ttf, body)
+            end
+            local json = DIR .. "/" .. file:gsub("%.ttf$", "") .. ".json"
+            writefile(json, HttpService:JSONEncode({
+                name = label,
+                faces = { { name = "Regular", weight = 400, style = "normal", assetId = getcustomasset(ttf) } },
+            }))
+            return getcustomasset(json)
+        end)
+        if not ok then warn("[PuppyAdmin] font " .. label .. ": " .. tostring(family)) end
+        UIFont.custom[label] = ok and family or false
+        return ok and family or nil
+    end
+
+    -- Font object for a label, keeping weight / style of the given font
+    function UIFont.make(label, weight, style)
+        local family = UIFont.CUSTOM[label] and UIFont.customFamily(label) or UIFont.families[label]
+        if not family then return nil end
+        local ok, f = pcall(Font.new, family, weight or Enum.FontWeight.Regular, style or Enum.FontStyle.Normal)
+        return ok and f or nil
+    end
+
+    local current -- family id in use, nil = Default
+
+    local function isText(inst)
+        return inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox")
+    end
+
+    function UIFont.applyTo(inst)
+        if not isText(inst) or inst:GetAttribute("PuppyAdminKeepFont") then return end
+        local orig = UIFont.original[inst]
+        if not orig then
+            if not current then return end
+            orig = inst.FontFace
+            UIFont.original[inst] = orig
+        end
+        pcall(function()
+            if current then
+                inst.FontFace = Font.new(current, orig.Weight, orig.Style)
+            else
+                inst.FontFace = orig
+            end
+        end)
+    end
+
+    function UIFont.applyTree(root)
+        UIFont.applyTo(root)
+        for _, d in ipairs(root:GetDescendants()) do UIFont.applyTo(d) end
+    end
+
+    UIFont.roots = {}
+    function UIFont.attach(root)
+        table.insert(UIFont.roots, root)
+        table.insert(conns, root.DescendantAdded:Connect(function(d)
+            if current then task.defer(function() if d.Parent then UIFont.applyTo(d) end end) end
+        end))
+        if current then UIFont.applyTree(root) end
+    end
+
+    -- label from UIFont.choices(); returns ok, message. Yields for a first download.
+    function UIFont.set(label, quiet)
+        local family
+        if label ~= "Default" then
+            UIFont.choices()
+            family = UIFont.CUSTOM[label] and UIFont.customFamily(label) or UIFont.families[label]
+            if not family then return false, label .. " is not available on this executor" end
+        end
+        current = family
+        Cfg.uiFont = label
+        if not quiet then cfgSave() end
+        for i = #UIFont.roots, 1, -1 do
+            local r = UIFont.roots[i]
+            if r.Parent then UIFont.applyTree(r) else table.remove(UIFont.roots, i) end
+        end
+        return true, "Font: " .. label
+    end
+
+    function UIFont.load()
+        if type(Cfg.uiFont) == "string" and Cfg.uiFont ~= "Default" then
+            local ok = UIFont.set(Cfg.uiFont, true)
+            if not ok then current = nil end
+        end
+    end
+end
+
+------------------------------------------------------------------------
 -- Theme: recolours the script's own UI (terminal, notifications, every panel).
 -- Panels read PAL when they paint; older widgets were built with fixed colour
 -- literals, so those are mapped to a role by their current colour instead.
@@ -15099,6 +15239,7 @@ do
 
     -- New widgets: built either from PAL (already themed) or from the default literals.
     function Theme.attach(root)
+        UIFont.attach(root)
         table.insert(Theme.roots, root)
         table.insert(conns, root.DescendantAdded:Connect(function(d)
             task.defer(function()
@@ -15291,6 +15432,7 @@ do
 
     Theme.load()
     Theme.applyPAL()
+    UIFont.load()
     Theme.attach(notifGui)
     Theme.loadImage()
 end
@@ -18184,7 +18326,7 @@ local function createUI()
         return b
     end
 
-    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 712), "SETTINGS")
+    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 760), "SETTINGS")
 
     fieldLabel(settingsFrame, "Chat command prefixes (comma separated, 1-3 symbols)", 45)
     local prefixBox = fieldBox(settingsFrame, 65, table.concat(Cfg.prefixes, ", "))
@@ -18319,6 +18461,16 @@ local function createUI()
             end)
         end
     end)
+
+    fieldLabel(settingsFrame, "Script font (every window; Default = original fonts)", 656)
+    local fontChoices = UIFont.choices()
+    uiDropdown(settingsFrame, "Font: ", UDim2.new(1, -30, 0, 28), UDim2.new(0, 15, 0, 676), fontChoices,
+        table.find(fontChoices, Cfg.uiFont) or 1, function(_, name)
+            task.spawn(function()
+                local ok, msg = UIFont.set(name)
+                note("Font", msg, ok and LIGHT or RED)
+            end)
+        end)
 
     local killBtn = actionButton(settingsFrame, "KILL SCRIPT", UDim2.new(0, 15, 1, -45), UDim2.new(1, -30, 0, 32), Color3.fromRGB(130, 35, 35))
     killBtn.MouseButton1Click:Connect(function() shutdown(false) end)
@@ -18485,7 +18637,7 @@ end
 
 ------------------------------------------------------------------------
 -- Brand intro: title text fades in on execute, holds, fades out after 5s.
--- Style only - no copyrighted logo, font or imagery is reproduced.
+-- The title uses the Kingdom Hearts font from assets/fonts (downloaded once).
 ------------------------------------------------------------------------
 
 local function safeFont(name, fallback)
@@ -18505,6 +18657,7 @@ local function showBrandIntro()
 
     local holder = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Active = false }, g)
     local titleFont = safeFont("Garamond", Enum.Font.GothamBold)
+    local titleFace = UIFont.make("Kingdom Hearts")
     local subFont = safeFont("SourceSansItalic", Enum.Font.SourceSansItalic)
     local GOLD = Color3.fromRGB(255, 221, 150)
 
@@ -18515,8 +18668,8 @@ local function showBrandIntro()
             Size = UDim2.fromOffset(700, 100),
             BackgroundTransparency = 1,
             Font = titleFont,
-            Text = "PUPPY ADMIN",
-            TextSize = size,
+            Text = titleFace and "Puppy Admin" or "PUPPY ADMIN",
+            TextSize = titleFace and math.floor(size * 1.25) or size,
             TextColor3 = color,
             TextTransparency = 1,
             TextStrokeTransparency = 1,
@@ -18527,6 +18680,9 @@ local function showBrandIntro()
     local glowOuter = titleLabel(60, GOLD)
     local glowInner = titleLabel(56, GOLD)
     local main = titleLabel(50, Color3.fromRGB(255, 255, 255))
+    if titleFace then
+        for _, l in ipairs({ glowOuter, glowInner, main }) do pcall(function() l.FontFace = titleFace end) end
+    end
     make("UIGradient", {
         Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 250, 235)),
