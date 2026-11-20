@@ -66,6 +66,7 @@ local S = {
     toolRotSpeed = 1,
     lerpOrbit = 1,                   -- V3 default
     lerpShape = 14,                  -- uncalibrated: follow rate for tail/wings
+    enabled = false,                 -- master switch: nothing touches your tools until `tools on`
     orbitOn = true,
     tailOn = false,
     wingsOn = false,
@@ -13371,7 +13372,7 @@ local ALIASES = {
 }
 
 local cmdDocs = {
-    tools = "tools [sub] [value] - Orbit/tail/wings; no sub opens the panel, 'tools help' lists subs",
+    tools = "tools [on|off|sub] [value] - Orbit/tail/wings with your tools; starts off ('tools on'). No sub opens the panel, 'tools help' lists subs",
     moveui = "moveui - Movement panel (fly modes, speed, noclip, airwalk, swim)",
     infbaseplate = "infbaseplate - Endless floor under you (opens its panel)",
     uninfbaseplate = "uninfbaseplate - Remove the endless floor",
@@ -13507,6 +13508,11 @@ end
 local function setLayout(which, on)
     local key = (which == "orbit") and "orbitOn" or ((which == "tail") and "tailOn" or "wingsOn")
     S[key] = on and true or false
+    if not S.enabled then
+        local title = which:sub(1, 1):upper() .. which:sub(2)
+        note(title, (S[key] and "On" or "Off") .. " - takes effect when the tools system is on (tools on)")
+        return
+    end
     if S[key] and #slots == 0 then H.equip() end
     assignRoles()
     if not (S.orbitOn or S.tailOn or S.wingsOn) then
@@ -13902,6 +13908,8 @@ do
 -- Tools: every orbit / tail / wings command lives under `tools` ---------------------
 
 local TOOL_SUBS = {
+    { "on", "", "Turn the tools system on (it starts off; nothing touches your tools until then)" },
+    { "off", "", "Turn it off and give your tools back" },
     { "orbit", "[on|off]", "Orbit layout" },
     { "tail", "[on|off]", "Tail layout" },
     { "wings", "[on|off]", "Wings layout" },
@@ -13939,6 +13947,7 @@ function H.tools(a)
         UIAPI.showOutput("TOOLS", lines)
         return
     end
+    if sub == "on" or sub == "off" then S.setEnabled(sub == "on"); return end
     if not TOOL_SUB_SET[sub] or not H[sub] then
         note("Tools", "Unknown '" .. sub .. "' - try tools help", RED)
         return
@@ -14671,6 +14680,7 @@ function buildToolsPanel(screenGui)
     local function fmt1(v) return string.format("%.1f", v) end
     local function fmtStill(v) return v == 0 and "still" or string.format("%.1f", v) end
 
+    switch("Tools system (lets orbit/tail/wings move your tools)", function() return S.enabled end, function(on) S.setEnabled(on) end)
     local status = label(body, { Position = UDim2.fromOffset(12, add(22)), Size = UDim2.new(1, -24, 0, 18), TextColor3 = PAL.DIM, TextSize = 11 })
     local by = add(36)
     uiButton(body, "Equip all", UDim2.new(0.5, -18, 0, 28), UDim2.fromOffset(12, by), function() H.equip(); UIAPI.sync() end)
@@ -16240,6 +16250,7 @@ local charConns = {}
 local function hookCharacter(c, async)
     for _, cn in ipairs(charConns) do pcall(function() cn:Disconnect() end) end
     table.clear(charConns)
+    if not S.enabled then return end -- tools system off: tools and grips are left alone
     table.insert(charConns, c.ChildAdded:Connect(function(t)
         if t:IsA("Tool") then
             task.wait()
@@ -16259,13 +16270,39 @@ local function hookCharacter(c, async)
     end))
 end
 hookCharacter(chr, false)
+
+-- Tools system on / off. Off (the default) leaves your tools completely alone;
+-- turning it off again releases every tool back to normal (in your backpack).
+function S.setEnabled(on)
+    on = on and true or false
+    if S.enabled == on then return end
+    S.enabled = on
+    if on then
+        hookCharacter(chr, true)
+        note("Tools", "Tools system on - orbit/tail/wings now use your tools", LIGHT)
+    else
+        local released = {}
+        for i = #slots, 1, -1 do
+            destroySlotObjects(slots[i])
+            table.insert(released, slots[i].tool)
+        end
+        table.clear(slots)
+        table.clear(pendingTools)
+        hookCharacter(chr, false)
+        for _, tool in ipairs(released) do
+            pcall(function() if tool.Parent then tool.Parent = bp end end)
+        end
+        note("Tools", "Tools system off - your tools are back to normal")
+    end
+    if UIAPI.sync then UIAPI.sync() end
+end
 table.insert(cleanups, function()
     for _, cn in ipairs(charConns) do pcall(function() cn:Disconnect() end) end
     table.clear(charConns)
 end)
 
 table.insert(conns, RunService.RenderStepped:Connect(function(dt)
-    if not genv.PuppyAdminActive then return end
+    if not genv.PuppyAdminActive or not S.enabled then return end
     if not targetHRP or not targetHRP.Parent then targetHRP = hrp end
 
     S.rot = S.rot + S.speed
@@ -16313,6 +16350,7 @@ local lastHRPPos = hrp.Position
 local hrpVel = Vector3.zero
 
 table.insert(conns, RunService.PostSimulation:Connect(function(dt)
+    if not S.enabled then return end
     if not targetHRP or not targetHRP.Parent then return end
 
     local currentTime = os.clock()
