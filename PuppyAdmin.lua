@@ -8824,208 +8824,6 @@ then _nvL.applyThemeTo(_G._reanimSpeedPanel)end end)end end function
 __DARKLUA_BUNDLE_MODULES.aj():typeof(__modImpl())local v=
 __DARKLUA_BUNDLE_MODULES.cache.aj if not v then v={c=__modImpl()}
 __DARKLUA_BUNDLE_MODULES.cache.aj=v end return v.c end end
-do local function
-__modImpl()return function(Cards,env)local _nvL,createInstance,spring,ease=env.
-_nvL,env.createInstance,env.spring,env.ease local WHITE,SUBTLE=env.WHITE,env.
-SUBTLE local uis=game:GetService('UserInputService')local ts=game:GetService(
-'TextService')local BOLD,MEDIUM=Enum.Font.GothamBold,Enum.Font.GothamMedium
-local CORAL=Color3.fromRGB(255,96,96)local CAP_H=36 local CHOOSE_W,CHOOSE_H,
-LISTEN_W,LISTEN_H=372,156,316,124 local WIDE_W=460 local B={active=false,layers=
-{},opts={}}local NAMES={LeftShift='Shift',RightShift='Shift',LeftControl='Ctrl',
-RightControl='Ctrl',LeftAlt='Alt',RightAlt='Alt',Return='Enter',CapsLock='Caps',
-PageUp='PgUp',PageDown='PgDn',Insert='Ins',Delete='Del',One='1',Two='2',Three=
-'3',Four='4',Five='5',Six='6',Seven='7',Eight='8',Nine='9',Zero='0',Minus='-',
-Equals='=',Comma=',',Period='.',Slash='/',BackSlash='\\',Semicolon=';',Quote="'"
-,LeftBracket='[',RightBracket=']',Backquote='`'}local COMMAND={LeftMeta=true,
-RightMeta=true,LeftSuper=true,RightSuper=true}local MODIFIER={LeftShift=true,
-RightShift=true,LeftControl=true,RightControl=true,LeftAlt=true,RightAlt=true,
-LeftMeta=true,RightMeta=true,LeftSuper=true,RightSuper=true}local function
-widthOf(s,size,font)if s==''then return 0 end local ok,v=pcall(function()return
-ts:GetTextSize(s,size,font,Vector2.new(600,60)).X end)return ok and math.ceil(v)
-or#s*size end local function track(layer,o,prop)layer.items[#layer.items+1]={o=o
-,prop=prop,base=o[prop]}return o end local function frame(parent,props)props.
-Parent=parent props.BorderSizePixel=0 if props.BackgroundTransparency==nil then
-props.BackgroundTransparency=1 end local f=createInstance('Frame',props)f:
-SetAttribute('NvNoTone',true)return f end local function text(layer,parent,str,
-font,size,color,x,y,w,h,align)return track(layer,createInstance('TextLabel',{
-Parent=parent,BackgroundTransparency=1,Font=font,TextSize=size,TextColor3=color,
-Text=str,Position=UDim2.fromOffset(x,y),Size=UDim2.fromOffset(w,h),
-TextXAlignment=align or Enum.TextXAlignment.Left,ZIndex=9}),'TextTransparency')
-end local function newLayer(name)local f=frame(B.stage,{Name=name,AnchorPoint=
-Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.5),Visible=false,ZIndex=8})
-local layer={f=f,items={},k=0}B.layers[name]=layer return layer end
-local function capWidth(key)if COMMAND[key]then return 46 end if key=='Remove'
-then return CAP_H end local name=NAMES[key]or key return math.max(CAP_H,widthOf(
-name,15,BOLD)+22)end local function makeCap(layer,parent,key,x,y,h)h=h or CAP_H
-local w=key and capWidth(key)or h local base=track(layer,frame(parent,{Name=
-'Cap',BackgroundColor3=Color3.fromRGB(2,2,3),BackgroundTransparency=0,Position=
-UDim2.fromOffset(x,y),Size=UDim2.fromOffset(w,h),ZIndex=9}),
-'BackgroundTransparency')createInstance('UICorner',{Parent=base,CornerRadius=
-UDim.new(0,10)})local face=track(layer,frame(base,{Name='Face',BackgroundColor3=
-WHITE,BackgroundTransparency=key and 0 or 0.94,Size=UDim2.new(1,0,1,-4),ZIndex=
-10}),'BackgroundTransparency')createInstance('UICorner',{Parent=face,
-CornerRadius=UDim.new(0,10)})createInstance('UIGradient',{Parent=face,Rotation=
-90,Color=ColorSequence.new(Color3.fromRGB(30,30,33),Color3.fromRGB(13,13,15))})
-local rim=track(layer,createInstance('UIStroke',{Parent=face,ApplyStrokeMode=
-Enum.ApplyStrokeMode.Border,Color=WHITE,Thickness=1,Transparency=key and 0.72 or
-0.6}),'Transparency')pcall(function()rim.BorderStrokePosition=Enum.
-BorderStrokePosition.Inner end)if key and(COMMAND[key]or key=='Remove')then
-local icon=track(layer,createInstance('ImageLabel',{Parent=face,
-BackgroundTransparency=1,AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.
-fromScale(0.5,0.5),Size=key=='Remove'and UDim2.fromOffset(17,17)or UDim2.
-fromOffset(19,19),ImageColor3=key=='Remove'and CORAL or WHITE,ScaleType=Enum.
-ScaleType.Fit,ZIndex=11}),'ImageTransparency')icon:SetAttribute('NvNoTone',true)
-if _G._nv_lazyFluent then _G._nv_lazyFluent(icon,key=='Remove'and'delete'or
-'keycommand')end elseif key then track(layer,createInstance('TextLabel',{Parent=
-face,BackgroundTransparency=1,Font=BOLD,TextSize=15,TextColor3=WHITE,Text=NAMES[
-key]or key,Size=UDim2.fromScale(1,1),ZIndex=11}),'TextTransparency')end return{
-base=base,face=face,rim=rim,w=w,press={x=0,v=0,g=0},y=-1}end local function
-capStep(cap,dt)spring(cap.press,dt,34,0.6)local y=math.floor(math.clamp(cap.
-press.x,0,1.2)*3+0.5)if y~=cap.y then cap.y=y cap.face.Position=UDim2.
-fromOffset(0,y)end end local function plus(layer,parent,x,y)text(layer,parent,
-'+',MEDIUM,15,SUBTLE,x,y,18,CAP_H-4,Enum.TextXAlignment.Center)end function B.
-option(layer,title,keys,onPick)local card=createInstance('TextButton',{Parent=
-layer.f,Name='Option',Text='',AutoButtonColor=false,BackgroundColor3=WHITE,
-BackgroundTransparency=0.955,BorderSizePixel=0,ZIndex=9})card:SetAttribute(
-'NvNoTone',true)local o={card=card,hover={x=0,v=0,g=0},caps={},tint=keys[1]==
-'Remove'and CORAL or nil}layer.items[#layer.items+1]={o=card,prop=
-'BackgroundTransparency',base=0.955,option=o}createInstance('UICorner',{Parent=
-card,CornerRadius=UDim.new(0,16)})local rim=track(layer,createInstance(
-'UIStroke',{Parent=card,ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Color=WHITE,
-Thickness=1,Transparency=0.86}),'Transparency')pcall(function()rim.
-BorderStrokePosition=Enum.BorderStrokePosition.Inner end)o.rim=rim local total=0
-for i,key in keys do total+=capWidth(key)+(i>1 and 18 or 0)end local holder=
-frame(card,{Name='Keys',AnchorPoint=Vector2.new(0.5,0),Position=UDim2.new(0.5,0,
-0,14),Size=UDim2.fromOffset(total,CAP_H),ZIndex=9})local cx=0 for i,key in keys
-do if i>1 then plus(layer,holder,cx,1)cx+=18 end local cap=makeCap(layer,holder,
-key,cx,0)o.caps[i]=cap cx+=cap.w end o.label=text(layer,card,title,BOLD,13,WHITE
-,0,62,0,18,Enum.TextXAlignment.Center)o.label.Size=UDim2.new(1,0,0,18)card.
-MouseEnter:Connect(function()o.hover.g=1 o.over=true o.overAt=os.clock()if _G.
-_nv_haptic then _G._nv_haptic('tick')end end)card.MouseLeave:Connect(function()o
-.hover.g=0 o.over=false end)card.Activated:Connect(function()if B.phase==
-'choose'then onPick()end end)return o end function B.arrange(count)local w=count
-==3 and math.min(WIDE_W,Cards.maxWidth())or CHOOSE_W local pad=count==3 and 16
-or 20 local c=B.layers.Choose c.f.Size=UDim2.fromOffset(w,CHOOSE_H)B.head.
-Position=UDim2.fromOffset(pad+2,14)B.side.Position=UDim2.fromOffset(w-pad-162,14
-)local box=(w-pad*2-(count-1)*10)/count for i,o in B.options do local on=i<=
-count if o.card.Visible~=on then o.card.Visible=on end o.card.Position=UDim2.
-fromOffset(pad+(i-1)*(box+10),46)o.card.Size=UDim2.fromOffset(box,94)end end
-function B.build(stage)B.stage=stage local c=newLayer('Choose')B.head=text(c,c.f
-,'',MEDIUM,13,SUBTLE,22,14,200,18)B.name=text(c,c.f,'',BOLD,13,WHITE,22,14,200,
-18)B.side=text(c,c.f,'',MEDIUM,12,SUBTLE,CHOOSE_W-182,14,160,18,Enum.
-TextXAlignment.Right)B.options={B.option(c,'One key',{'G'},function()B.pick(1)
-end),B.option(c,'Two keys',{'LeftMeta','L'},function()B.pick(2)end),B.option(c,
-'Remove Keybind',{'Remove'},function()B.clear()end)}local l=newLayer('Listen')l.
-f.Size=UDim2.fromOffset(LISTEN_W,LISTEN_H)B.ask=text(l,l.f,'',BOLD,13,WHITE,0,14
-,LISTEN_W,18,Enum.TextXAlignment.Center)B.row=frame(l.f,{Name='Row',Position=
-UDim2.fromOffset(0,40),Size=UDim2.fromOffset(LISTEN_W,CAP_H),ZIndex=9})B.hint=
-text(l,l.f,'Esc to cancel, Backspace to clear',MEDIUM,12,SUBTLE,0,90,LISTEN_W,16
-,Enum.TextXAlignment.Center)local d=newLayer('Done')B.doneRow=frame(d.f,{Name=
-'Row',Position=UDim2.fromOffset(0,0),Size=UDim2.fromScale(1,1),ZIndex=9})end
-function B.clearRow(layer,row)local keep={}for _,item in layer.items do if not
-item.o:IsDescendantOf(row)then keep[#keep+1]=item end end layer.items=keep for _
-,child in row:GetChildren()do child:Destroy()end end function B.drawKeys(keys,
-slots)local layer=B.layers.Listen B.clearRow(layer,B.row)B.liveCaps={}local
-total,widths=0,{}for i=1,slots do widths[i]=keys[i]and capWidth(keys[i])or CAP_H
-+10 total+=widths[i]+(i>1 and 18 or 0)end local x=math.floor((LISTEN_W-total)/2)
-for i=1,slots do if i>1 then plus(layer,B.row,x,0)x+=18 end local cap=makeCap(
-layer,B.row,keys[i],x,0)if not keys[i]then cap.base.Size=UDim2.fromOffset(widths
-[i],CAP_H)cap.ghost=true else cap.press.x=1 end B.liveCaps[i]=cap x+=widths[i]
-end end function B.setPhase(name)B.phase=name B.wanted=name=='choose'and'Choose'
-or(name=='listen'and'Listen'or'Done')B.deadline=os.clock()+(name=='choose'and 15
-or 10)end function B.size(w,h)if B.card and B.card.alive then B.card:set({stage=
-{w=w,h=h,radius=h>60 and 30 or nil}})end end function B.pick(slots)if _G.
-_nv_haptic then _G._nv_haptic('tap')end B.slots,B.keys=slots,{}_nvL.
-keybindListening=true B.ask.Text=slots==1 and('Press a key for '..B.label)or(
-'Hold two keys for '..B.label)B.hint.Text=(B.opts.apply and not B.opts.remove)
-and'Esc to cancel'or'Esc to cancel, Backspace to clear'B.drawKeys({},slots)B.
-setPhase('listen')B.size(LISTEN_W,LISTEN_H)end function B.showDone(keys,line,
-tint)local layer=B.layers.Done B.clearRow(layer,B.doneRow)B.liveCaps=nil local x
-=16 local cap=30 for i,key in keys do if i>1 then track(layer,createInstance(
-'TextLabel',{Parent=B.doneRow,BackgroundTransparency=1,Font=MEDIUM,TextSize=14,
-TextColor3=SUBTLE,Text='+',Position=UDim2.fromOffset(x,13),Size=UDim2.
-fromOffset(16,26),ZIndex=9}),'TextTransparency')x+=16 end local c=makeCap(layer,
-B.doneRow,key,x,12,cap+2)x+=c.w end if#keys>0 then x+=10 end local tw=widthOf(
-line,13,BOLD)+3 text(layer,B.doneRow,line,BOLD,13,WHITE,x,18,tw,18)x+=tw+10
-local mark=track(layer,createInstance('ImageLabel',{Parent=B.doneRow,
-BackgroundTransparency=1,Position=UDim2.fromOffset(x,19),Size=UDim2.fromOffset(
-15,15),ImageColor3=tint or Cards.accent(),ScaleType=Enum.ScaleType.Fit,ZIndex=9}
-),'ImageTransparency')mark:SetAttribute('NvNoTone',true)if _G._nv_lazyFluent
-then _G._nv_lazyFluent(mark,tint and'dismiss'or'check')end x+=15+18 layer.f.Size
-=UDim2.fromOffset(x,54)B.setPhase('done')B.size(x,54)if B.card and B.card.alive
-then B.card:setHold(1.8)end end function B.release()if B.phase~='done'then B.
-phase='closing'end B.active=false _nvL.keybindListening=false if B.began then B.
-began:Disconnect()B.began=nil end if B.ended then B.ended:Disconnect()B.ended=
-nil end end function B.finish(fn,...)local opts=B.opts B.release()if type(opts[
-fn])=='function'then pcall(opts[fn],...)end end function B.cancel()if not B.
-active then return end B.finish('closed')if B.card and B.card.alive then B.card:
-close()end end function B.commit(keys)local joined=table.concat(keys,'+')local
-binds,cmd=_nvL._nv_binds,B.cmd local replaced if B.opts.apply then local ok,note
-=B.opts.apply(joined)if ok==false then if _G._nv_haptic then _G._nv_haptic(
-'error')end B.keys={}B.ask.Text=tostring(note or'That key is taken')..
-', pick another'B.drawKeys({},B.slots)return end replaced=note else replaced=
-binds[joined]for k,v in binds do if v==cmd then binds[k]=nil end end binds[
-joined]=cmd end if _G._nv_haptic then _G._nv_haptic('success')end local line=(B.
-opts.verb or'runs')..' '..B.label if replaced and replaced~=cmd then line..=
-', replaced '..tostring(replaced):sub(1,18)end B.finish('saved',joined)B.
-showDone(keys,line)end function B.clear()local binds,cmd=_nvL._nv_binds,B.cmd
-local had=0 if B.opts.apply then if not B.opts.remove then return end local ok,n
-=pcall(B.opts.remove)had=ok and tonumber(n)or 0 else for k,v in binds do if v==
-cmd then binds[k]=nil had+=1 end end end if _G._nv_haptic then _G._nv_haptic(
-'tap')end B.finish('saved',nil)local line='Nothing bound to '..B.label if had>0
-then line=(had>1 and'Removed keybinds from 'or'Removed keybind from ')..B.label
-end B.showDone({},line,CORAL)end function B.keyDown(input,gp)if input.
-UserInputType~=Enum.UserInputType.Keyboard or not B.active then return end local
-k=input.KeyCode.Name B.deadline=os.clock()+(B.phase=='choose'and 15 or 10)if k==
-'Escape'then B.cancel()return end if B.phase~='listen'then return end if uis:
-GetFocusedTextBox()then return end if k=='Backspace'or k=='Delete'then B.clear()
-return end if gp and not MODIFIER[k]and#B.keys==0 then return end if table.find(
-B.keys,k)then return end B.keys[#B.keys+1]=k if#B.keys>=B.slots then B.commit(B.
-keys)return end if _G._nv_haptic then _G._nv_haptic('tick')end B.ask.Text=
-'Keep holding, now press the second key'B.drawKeys(B.keys,B.slots)end function B
-.keyUp(input)if input.UserInputType~=Enum.UserInputType.Keyboard or not B.active
-or B.phase~='listen'then return end local at=table.find(B.keys,input.KeyCode.
-Name)if not at then return end B.keys={}B.ask.Text=
-'Hold both keys together for '..B.label B.drawKeys({},B.slots)end function B.
-paint(layer,dt)local goal=B.wanted and layer==B.layers[B.wanted]and 1 or 0 layer
-.k=ease(layer.k,goal,goal==1 and 15 or 26,dt)if layer.k<0.01 and goal==0 then
-layer.k=0 end local vis=layer.k>0 if layer.f.Visible~=vis then layer.f.Visible=
-vis end if not vis then return end for _,item in layer.items do local base=item.
-base if item.option then base=0.955-0.05*item.option.hover.x end local v=1-(1-
-base)*layer.k if math.abs(item.o[item.prop]-v)>0.004 then item.o[item.prop]=v
-end end end function B.frame(_,_,dt,now)for _,layer in B.layers do B.paint(layer
-,dt)end if B.phase=='choose'then for _,o in B.options do spring(o.hover,dt,24,
-0.8)local beat=o.over and(now-o.overAt)%1.15 or nil for c,cap in o.caps do local
-step=beat and beat-(c-1)*0.09 cap.press.g=(step and step>=0 and step<0.26)and 1
-or 0 capStep(cap,dt)end o.rim.Color=WHITE:Lerp(o.tint or Cards.accent(),o.hover.
-x)end if(uis.MouseEnabled==false or not Cards.pointerOver(8))and now>B.deadline
-then B.cancel()end elseif B.phase=='listen'then local caps=B.liveCaps if caps
-then local pulse=0.72-0.26*(0.5+0.5*math.sin(now*3.4))for _,cap in caps do if
-cap.ghost then cap.rim.Transparency=1-(1-pulse)*B.layers.Listen.k else cap.press
-.g=1 end capStep(cap,dt)end end if now>B.deadline then B.cancel()end end end
-function B.prompt(cmd,opts)if not cmd or cmd==''or type(_nvL._nv_binds)~='table'
-then return false end if B.active then B.cancel()end B.cmd,B.opts=cmd,opts or{}B
-.label=cmd:sub(1,24)local have=0 if B.opts.apply then have=tonumber(B.opts.has)
-or 0 else for _,v in _nvL._nv_binds do if v==cmd then have+=1 end end end local
-wide=have>0 and math.min(WIDE_W,Cards.maxWidth())or CHOOSE_W local card=Cards.
-open('bind',{priority=Cards.PRIORITY.bind,noSwipe=true,live=true,stage=true,
-frame=B.frame,closed=function()if B.active then B.finish('closed')end end,view={
-stage={w=wide,h=CHOOSE_H,radius=30}}})if not card.alive or not card.stage then
-return false end B.card=card if B.stage~=card.stage then B.layers={}B.build(card
-.stage)end B.optionCount=have>0 and 3 or 2 B.arrange(B.optionCount)B.options[3].
-label.Text=have>1 and'Remove Keybinds'or'Remove Keybind'B.active=true _nvL.
-keybindListening=true local lead='Bind'local leadW=widthOf(lead,13,MEDIUM)+6 B.
-head.Text=lead B.head.Size=UDim2.fromOffset(leadW,18)B.name.Position=UDim2.
-fromOffset(B.head.Position.X.Offset+leadW,14)B.name.Text=B.label B.name.Size=
-UDim2.fromOffset(widthOf(B.label,13,BOLD)+4,18)local current=B.opts.current B.
-side.Text=current and('Now '..(_G._nv_keyLabel and _G._nv_keyLabel(current)or
-current))or'Esc to cancel'B.setPhase('choose')B.began=uis.InputBegan:Connect(B.
-keyDown)B.ended=uis.InputEnded:Connect(B.keyUp)Cards.ping()return true end _G.
-_nv_bindPrompt=B.prompt Cards.onStop(function()if B.active then B.release()end
-if _G._nv_bindPrompt==B.prompt then _G._nv_bindPrompt=nil end end)end end
-function __DARKLUA_BUNDLE_MODULES.br():typeof(__modImpl())local v=
-__DARKLUA_BUNDLE_MODULES.cache.br if not v then v={c=__modImpl()}
-__DARKLUA_BUNDLE_MODULES.cache.br=v end return v.c end end
 local _nvL={
 bootAt=os.clock()}
 _nvL.notify=function(title,text)host.notify(title,text)end _nvL.xnotify=_nvL.notify
@@ -9160,6 +8958,8 @@ uiScale]if not current then return end local inv=1 if current.on then local s=
 uiScale.Scale if s>0.05 and math.abs(s-1)>=0.004 then inv=1/s end end for i=1,#
 current.list do local lock=current.list[i]if lock.Parent and math.abs(lock.Scale
 -inv)>0.0008 then lock.Scale=inv end end end)return state end 
+do __DARKLUA_BUNDLE_MODULES.f()({_nvAny=_nvAny,runService=
+runService,tweenService=tweenService})end 
 local function tween(obj,info,goals)if
 not(obj and obj.Parent)then return end if goals.GroupTransparency~=nil and obj:
 GetAttribute('NvFade')then local others={}for key,value in goals do if key~=
@@ -9193,9 +8993,20 @@ EasingDirection,0,false,wait)local follow pcall(function()follow=tweenService:
 Create(obj,restInfo,rest)end)if follow then meta[follow]={goals=rest,info=
 restInfo,start=os.clock()}for key in rest do tracked[key]=follow end pcall(
 function()follow:Play()end)end end return motion end 
+do
+__DARKLUA_BUNDLE_MODULES.h()({createInstance=createInstance,tween=tween,
+userInputService=userInputService})end 
+local sg=createInstance('ScreenGui',{Name='PuppyAdminReanim',ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,IgnoreGuiInset=true,DisplayOrder=56})host.parentGui(sg)
+if not pcall(
+function()__DARKLUA_BUNDLE_MODULES.i()({container=sg,userInputService=
+userInputService})end)then _G._nv_haptic,_G._nv_hapticsReset=nil,nil end 
 local _fixedPanels={}
 _G._nv_glassParts=
 setmetatable({},{__mode='k'})
+do __DARKLUA_BUNDLE_MODULES.j()({createInstance=
+createInstance})end 
+do __DARKLUA_BUNDLE_MODULES.k()({C=C,createInstance=
+createInstance,tween=tween,userInputService=userInputService})end 
 _G.
 _nv_switchLook={ON=Color3.fromRGB(242,242,244),OFF=Color3.fromRGB(58,58,62),
 KNOB_ON=Color3.fromRGB(18,18,20),KNOB_OFF=Color3.new(1,1,1),TONE=0.4,MOTION=
@@ -9311,6 +9122,7 @@ GetPropertyChangedSignal('GroupTransparency'):Connect(follow)follow()else s.
 Transparency=_G._nv_glowT(s,0.45)end end)end return rim end 
 _G._nv_glowT=_G.
 _nv_glowT or function(sh,t)sh:SetAttribute('NvGlowT',t)return t end 
+do __DARKLUA_BUNDLE_MODULES.l()({_nvL=_nvL,_safeLoadstring=_safeLoadstring})end
 _nvL.
 chordSame={LeftShift={'LeftShift','RightShift'},RightShift={'LeftShift',
 'RightShift'},LeftControl={'LeftControl','RightControl'},RightControl={
@@ -9426,7 +9238,6 @@ return end root:SetAttribute('_nvFadeWatch',true)for _,d in root:GetDescendants(
 )do if d:IsA('ScrollingFrame')then pcall(_G._nv_scrollFade,d)end end root.
 DescendantAdded:Connect(function(d)if d:IsA('ScrollingFrame')then task.defer(
 function()pcall(_G._nv_scrollFade,d)end)end end)end 
-local sg=createInstance('ScreenGui',{Name='PuppyAdminReanim',ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,IgnoreGuiInset=true,DisplayOrder=56})host.parentGui(sg)
 local screen=sg 
 _G._floatingPanelScales={}
 local
@@ -9460,10 +9271,13 @@ end if not pnl:FindFirstChild('DarkGlow')then pcall(function()local sh=
 createInstance('UIShadow',{Name='DarkGlow',Color=Color3.new(0,0,0),BlurRadius=
 UDim.new(0,30),Offset=UDim2.fromOffset(0,12),Transparency=0.45,ZIndex=-1,Parent=
 pnl})sh.Transparency=_G._nv_glowT(sh,0.45)end)end end 
+do local _globalBg,_globalOv=nil,nil __DARKLUA_BUNDLE_MODULES.A()({_globalBg=_globalBg,_globalOv=_globalOv,_nvL=_nvL,createInstance=createInstance,saveSettings=function()end})end
 function _G.
 _nv_utilitySlider(parent,label,initial,minimum,maximum,onChange,formatValue)
 return __DARKLUA_BUNDLE_MODULES.B()({createInstance=createInstance},parent,label
 ,initial,minimum,maximum,onChange,formatValue)end 
+do __DARKLUA_BUNDLE_MODULES.G()({
+_nvL=_nvL})end 
 function _G._nv_reanimationLayout(state,panel)return __DARKLUA_BUNDLE_MODULES.J(
 )({C=C,_nvL=_nvL,createInstance=createInstance,tween=tween,userInputService=
 userInputService},state,panel)end 
@@ -9521,6 +9335,7 @@ _G._nv_askPlaceWindow=function(pnl,showAt)return
 __DARKLUA_BUNDLE_MODULES.K()({_nvL=_nvL,runService=runService,screen=screen,
 tween=tween,tweenService=tweenService,userInputService=userInputService},pnl,
 showAt)end
+(function()return __DARKLUA_BUNDLE_MODULES.L()({tween=tween})end)()
 local function makeFloatingPanel(w,h,anchorX,anchorY)return
 __DARKLUA_BUNDLE_MODULES.N()({C=C,_fixedPanels=_fixedPanels,_nvFloatCloseRest=
 _nvFloatCloseRest,_nvL=_nvL,createInstance=createInstance,runService=runService,
@@ -9571,10 +9386,24 @@ function NovoReanim.ensure()
     end
     NovoReanim.booted, NovoReanim.gui = true, res.gui
     if NovoReanim.gui then NovoReanim.gui.Enabled = not Hide.uiHidden end
+    -- the panel builder catches its own errors and only warn()s them; keep the
+    -- first such line so the failure note says what actually broke
+    local captured
+    local logConn
+    pcall(function()
+        logConn = game:GetService("LogService").MessageOut:Connect(function(msg, kind)
+            if not captured and kind == Enum.MessageType.MessageWarning and tostring(msg):find("Novoline", 1, true) then
+                captured = tostring(msg)
+            end
+        end)
+    end)
     local okInit, err = pcall(res.init)
+    task.wait() -- MessageOut can arrive a frame late
+    if logConn then logConn:Disconnect() end
+    if captured then warn("[PuppyAdmin] reanimation panel: " .. captured) end
     if not okInit or typeof(_G._reanimPanel) ~= "Instance" then
-        NovoReanim.failed = okInit and "panel was not created" or tostring(err)
-        note("Reanim", "Panel failed: " .. NovoReanim.failed:sub(1, 60), RED)
+        NovoReanim.failed = okInit and (captured or "panel was not created") or tostring(err)
+        note("Reanim", "Panel failed: " .. NovoReanim.failed:sub(1, 120), RED)
         return false
     end
     return true
