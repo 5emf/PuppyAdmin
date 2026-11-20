@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-7" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-8" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -143,7 +143,7 @@ local function urlImageAsset(url, tag)
     local h = 0
     for i = 1, #url do h = (h * 33 + string.byte(url, i)) % 2147483647 end
     local ext = (url:gsub("[?#].*$", ""):match("%.(%w+)$") or "png"):lower()
-    if not ({ png = true, jpg = true, jpeg = true, webp = true, gif = true, bmp = true })[ext] then ext = "png" end
+    if not ({ png = true, jpg = true, jpeg = true, webp = true, gif = true, bmp = true, mp3 = true, ogg = true })[ext] then ext = "png" end
     local file = "PuppyAdmin/" .. tag .. "_" .. tostring(h) .. "." .. ext
     pcall(function()
         if isfolder and makefolder and not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
@@ -8996,7 +8996,8 @@ end
 
 ------------------------------------------------------------------------
 -- Brand intro: title text fades in on execute, holds, fades out after 5s.
--- The title uses the Kingdom Hearts font from assets/fonts (downloaded once).
+-- Heart backdrop, title image (Kingdom Hearts font) and start-up sound from
+-- assets/intro; the heart and title spin horizontally while the sound plays.
 ------------------------------------------------------------------------
 
 local function safeFont(name, fallback)
@@ -9015,53 +9016,46 @@ local function showBrandIntro()
     if g.Parent == nil then return end
 
     local holder = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Active = false }, g)
-    local titleFont = safeFont("Garamond", Enum.Font.GothamBold)
-    local titleFace = UIFont.make("Kingdom Hearts")
     local subFont = safeFont("SourceSansItalic", Enum.Font.SourceSansItalic)
     local GOLD = Color3.fromRGB(255, 221, 150)
+    local BASE = SETTINGS.Auras.assetBase .. "assets/intro/"
 
-    -- backdrop behind the title (assets/intro/heart_moon_v2.png); skipped while the file is not in the repository
-    local heart
-    local heartAsset = urlImageAsset(SETTINGS.Auras.assetBase .. "assets/intro/heart_moon_v2.png", "intro")
+    -- Files in assets/intro, downloaded once into PuppyAdmin/ (each part is skipped if it cannot load):
+    --   heart_moon_v2.png  backdrop,  title.png  the title drawn in the Kingdom Hearts font
+    --   (an image, so it can be squeezed for the spin; text cannot),  kh_item_get.mp3  start-up sound.
+    local heartAsset = urlImageAsset(BASE .. "heart_moon_v2.png", "intro")
+    local titleAsset = urlImageAsset(BASE .. "title.png", "intro")
+    local soundAsset = urlImageAsset(BASE .. "kh_item_get.mp3", "intro")
+
+    local HEART_W, TITLE_W, TITLE_H = 380, 258, 89
+    local heart, title
     if heartAsset then
         heart = make("ImageLabel", {
             AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.42, 6),
-            Size = UDim2.fromOffset(380, 380), BackgroundTransparency = 1, Image = heartAsset,
-            ImageTransparency = 1, ScaleType = Enum.ScaleType.Fit, ZIndex = 0,
+            Size = UDim2.fromOffset(HEART_W, HEART_W), BackgroundTransparency = 1, Image = heartAsset,
+            ImageTransparency = 1, ScaleType = Enum.ScaleType.Stretch, ZIndex = 1,
+        }, holder)
+    end
+    if titleAsset then
+        title = make("ImageLabel", {
+            AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.42, 0),
+            Size = UDim2.fromOffset(TITLE_W, TITLE_H), BackgroundTransparency = 1, Image = titleAsset,
+            ImageTransparency = 1, ScaleType = Enum.ScaleType.Stretch, ZIndex = 2,
         }, holder)
     end
 
-    local function titleLabel(size, color)
-        return make("TextLabel", {
-            AnchorPoint = Vector2.new(0.5, 0.5),
-            Position = UDim2.new(0.5, 0, 0.42, 0),
-            Size = UDim2.fromOffset(700, 100),
-            BackgroundTransparency = 1,
-            Font = titleFont,
-            Text = titleFace and "Puppy Admin" or "PUPPY ADMIN",
-            TextSize = titleFace and math.floor(size * 1.25) or size,
-            TextColor3 = color,
-            TextTransparency = 1,
-            TextStrokeTransparency = 1,
+    -- text title when the image is not available (no spin for it)
+    local textTitle
+    if not title then
+        local face = UIFont.make("Kingdom Hearts")
+        textTitle = make("TextLabel", {
+            AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.42, 0), Size = UDim2.fromOffset(700, 100),
+            BackgroundTransparency = 1, Font = safeFont("Garamond", Enum.Font.GothamBold),
+            Text = face and "Puppy Admin" or "PUPPY ADMIN", TextSize = face and 62 or 50, TextColor3 = GOLD,
+            TextStrokeColor3 = Color3.fromRGB(20, 40, 85), TextTransparency = 1, TextStrokeTransparency = 1, ZIndex = 2,
         }, holder)
+        if face then pcall(function() textTitle.FontFace = face end) end
     end
-
-    -- two oversized, more-transparent copies behind the crisp one fake a soft glow
-    local glowOuter = titleLabel(60, GOLD)
-    local glowInner = titleLabel(56, GOLD)
-    local main = titleLabel(50, Color3.fromRGB(255, 255, 255))
-    -- dark outline keeps the gold title readable on the pale heart and bright games
-    main.TextStrokeColor3 = Color3.fromRGB(20, 40, 85)
-    if titleFace then
-        for _, l in ipairs({ glowOuter, glowInner, main }) do pcall(function() l.FontFace = titleFace end) end
-    end
-    make("UIGradient", {
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 250, 235)),
-            ColorSequenceKeypoint.new(0.5, GOLD),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 250, 235)),
-        }),
-    }, main)
 
     local sub = make("TextLabel", {
         AnchorPoint = Vector2.new(0.5, 0.5),
@@ -9072,23 +9066,58 @@ local function showBrandIntro()
         Text = "r e a n i m a t i o n  &  a d m i n  t o o l s",
         TextSize = 15,
         TextColor3 = GOLD,
+        TextStrokeColor3 = Color3.fromRGB(20, 40, 85),
         TextTransparency = 1,
+        TextStrokeTransparency = 1,
+        ZIndex = 2,
     }, holder)
+
+    if soundAsset then
+        pcall(function()
+            local snd = Instance.new("Sound")
+            snd.Name = "PuppyAdminIntroSound"
+            snd.SoundId = soundAsset
+            snd.Volume = 0.7
+            snd.Parent = game:GetService("SoundService")
+            snd:Play()
+            local function gone() if snd.Parent then snd:Destroy() end end
+            snd.Ended:Connect(gone)
+            task.delay(5, gone)
+        end)
+    end
 
     local fadeIn = TweenInfo.new(1.1, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
     local fadeOut = TweenInfo.new(1.1, Enum.EasingStyle.Sine, Enum.EasingDirection.In)
-    TweenService:Create(glowOuter, fadeIn, { TextTransparency = 0.8 }):Play()
-    TweenService:Create(glowInner, fadeIn, { TextTransparency = 0.6 }):Play()
-    TweenService:Create(main, fadeIn, { TextTransparency = 0, TextStrokeTransparency = 0.35 }):Play()
-    TweenService:Create(sub, fadeIn, { TextTransparency = 0.3 }):Play()
     if heart then TweenService:Create(heart, fadeIn, { ImageTransparency = 0.1 }):Play() end
+    if title then TweenService:Create(title, fadeIn, { ImageTransparency = 0 }):Play() end
+    if textTitle then TweenService:Create(textTitle, fadeIn, { TextTransparency = 0, TextStrokeTransparency = 0.35 }):Play() end
+    TweenService:Create(sub, fadeIn, { TextTransparency = 0.3, TextStrokeTransparency = 0.6 }):Play()
+
+    -- Horizontal spin: two turns that slow to a stop over the length of the sound. A
+    -- turn is faked by squeezing the width with |cos|; the far side is drawn a little darker.
+    if heart or title then
+        local SPIN_TIME, TURNS = 1.6, 2
+        local start = os.clock()
+        local spin
+        spin = RunService.RenderStepped:Connect(function()
+            local t = math.min(1, (os.clock() - start) / SPIN_TIME)
+            local eased = 1 - (1 - t) ^ 3
+            local c = math.cos(eased * TURNS * 2 * math.pi)
+            local k = math.max(0.02, math.abs(c))
+            local shade = c < 0 and Color3.fromRGB(200, 215, 235) or Color3.new(1, 1, 1)
+            if heart then heart.Size = UDim2.fromOffset(HEART_W * k, HEART_W); heart.ImageColor3 = shade end
+            if title then title.Size = UDim2.fromOffset(TITLE_W * k, TITLE_H); title.ImageColor3 = shade end
+            if t >= 1 or not g.Parent then spin:Disconnect() end
+        end)
+        table.insert(conns, spin)
+    end
 
     task.delay(5, function()
         if not g.Parent then return end
-        for _, lbl in ipairs({ glowOuter, glowInner, main, sub }) do
-            TweenService:Create(lbl, fadeOut, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
-        end
+        TweenService:Create(sub, fadeOut, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+        if textTitle then TweenService:Create(textTitle, fadeOut, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play() end
         if heart then TweenService:Create(heart, fadeOut, { ImageTransparency = 1 }):Play() end
+        if title then TweenService:Create(title, fadeOut, { ImageTransparency = 1 }):Play() end
         task.delay(1.3, function() if g.Parent then g:Destroy() end end)
     end)
 end
