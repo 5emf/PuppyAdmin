@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-28" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-29" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -4484,14 +4484,14 @@ local cmds = {
     "hide", "unhide", "mute", "unmute",
     "tp",
     "aura", "unaura", "auras",
-    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "games", "gameboy", "doom", "owner", "kick", "ban", "unban", "bans", "blacklist", "antikick", "unantikick", "antivcban",
+    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "games", "gameboy", "doom", "finder", "shmost", "shlowest", "owner", "kick", "ban", "unban", "bans", "blacklist", "antikick", "unantikick", "antivcban",
     "reanim",
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
 
 -- Movement aliases come from the engine's own registrations (PUP_MOVE).
 local ALIASES = {
-    anim = "reanim", reanimui = "reanim", boost = "performance", fpsboost = "performance", minigames = "games", arcade = "games", gb = "gameboy", emulator = "gameboy", bl = "blacklist", banlist = "blacklist",
+    anim = "reanim", reanimui = "reanim", boost = "performance", fpsboost = "performance", minigames = "games", arcade = "games", gb = "gameboy", emulator = "gameboy", servers = "finder", serverbrowser = "finder", puppyfinder = "finder", bl = "blacklist", banlist = "blacklist",
     wh = "esp", wallhack = "esp", unwh = "unesp", noesp = "unesp", ibp = "infbaseplate",
 }
 
@@ -4515,6 +4515,10 @@ local cmdDocs = {
     bans = "bans - List players banned from the script (owners only)",
     blacklist = "blacklist - Owners: blacklist menu (everyone banned from the script, unban, add) (also: bl, banlist)",
     doom = "doom - Doom (1993): plays your WAD from the PuppyAdmin/doom folder",
+    finder = "finder - Puppy Finder: browse this game's servers and join one (also: servers, serverbrowser)",
+    serverhop = "serverhop - Join another server, picked at random (Puppy Finder; also: shop, sh)",
+    shmost = "shmost - Join the fullest server (Puppy Finder)",
+    shlowest = "shlowest - Join the emptiest server (Puppy Finder)",
     gameboy = "gameboy - Game Boy emulator: plays .gb / .zip games from your PuppyAdmin/roms folder (also: gb, emulator)",
     games = "games - Mini games: Snake, Stack Drop, Treat Chase, Star Pup, plus Game Boy and Doom (also: minigames, arcade)",
     performance = "performance - Performance panel: FPS unlock, anti-lag, low graphics, no fog / shadows / effects (also: boost)",
@@ -4820,6 +4824,12 @@ function H.owner()
     if not ownerOnly() then return end
     UIAPI.togglePanel("owner")
 end
+-- Puppy Finder (server browser) and its quick commands
+function H.finder() UIAPI.togglePanel("finder") end
+function H.serverhop() UIAPI.finder.start("random"); note("Puppy Finder", "Looking for another server...", LIGHT) end
+function H.shmost() UIAPI.finder.start("most"); note("Puppy Finder", "Looking for the fullest server...", LIGHT) end
+function H.shlowest() UIAPI.finder.start("lowest"); note("Puppy Finder", "Looking for the emptiest server...", LIGHT) end
+
 function H.blacklist()
     if not ownerOnly() then return end
     UIAPI.togglePanel("blacklist")
@@ -5198,7 +5208,7 @@ do
             H[name] = function(a) Pup.run(name, a) end
         end
         if not table.find(cmds, name) then table.insert(cmds, name) end
-        cmdDocs[name] = name .. (c.args ~= "" and (" " .. c.args) or "") .. " - " .. c.desc
+        if not cmdDocs[name] then cmdDocs[name] = name .. (c.args ~= "" and (" " .. c.args) or "") .. " - " .. c.desc end
         if c.args:find("<p>", 1, true) then PLAYER_ARG[name] = 1 end
         for _, al in ipairs(c.aliases) do
             if not ALIASES[al] and not table.find(cmds, al) and not docsTaken[al] then
@@ -10139,6 +10149,332 @@ function UIAPI.buildDoomPanel(screenGui)
     table.insert(cleanups, function() bind(false); stopLoop() end)
 end
 
+------------------------------------------------------------------------
+-- Puppy Finder (`finder`): browse this game's public servers and join one,
+-- or let it pick (most players / random / fewest players). The picking
+-- follows the engine's serverhop: up to 8 pages scanned, servers visited in
+-- the last hour avoided, up to 15 retries when a teleport fails. Visited
+-- servers are kept in PuppyAdmin/ServerHistory/<PlaceId>.json.
+------------------------------------------------------------------------
+
+UIAPI.finder = { mode = "most", running = false, servers = {}, status = "Ready" }
+do
+    local F = UIAPI.finder
+    local TeleportService = game:GetService("TeleportService")
+    local SCAN_PAGES, MAX_RETRIES, MIN_MOST, MIN_LOW = 8, 15, 8, 2
+    local HIST_DIR = "PuppyAdmin/ServerHistory"
+    local HIST_FILE = HIST_DIR .. "/" .. tostring(game.PlaceId) .. ".json"
+    local OLD_HIST = "ServerHistory/VisitedServers_" .. tostring(game.PlaceId) .. ".json" -- the engine's old place
+    F.MODES = { { "most", "Most players" }, { "random", "Random" }, { "lowest", "Fewest players" } }
+
+    local function say(text, progress)
+        F.status = text
+        if F.onStatus then pcall(F.onStatus, text, progress) end
+    end
+
+    function F.loadHistory()
+        local data
+        pcall(function()
+            local path = (isfile(HIST_FILE) and HIST_FILE) or (isfile(OLD_HIST) and OLD_HIST) or nil
+            if path then data = HttpService:JSONDecode(readfile(path)) end
+        end)
+        return type(data) == "table" and data or {}
+    end
+    function F.saveHistory(h)
+        pcall(function()
+            if makefolder and isfolder and not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
+            if makefolder and isfolder and not isfolder(HIST_DIR) then makefolder(HIST_DIR) end
+            writefile(HIST_FILE, HttpService:JSONEncode(h))
+        end)
+    end
+    function F.markCurrent()
+        if game.JobId == "" then return end
+        local h = F.loadHistory()
+        h[game.JobId] = { timestamp = os.time(), playerCount = #Players:GetPlayers() }
+        -- keep the file small: forget visits older than a day
+        for id, v in pairs(h) do
+            if type(v) ~= "table" or os.time() - (tonumber(v.timestamp) or 0) > 86400 then h[id] = nil end
+        end
+        F.saveHistory(h)
+    end
+
+    local function getJson(url)
+        local body
+        local req = (type(request) == "function" and request) or (type(http_request) == "function" and http_request)
+            or (type(syn) == "table" and syn.request)
+        if req then
+            local ok, res = pcall(req, { Url = url, Method = "GET" })
+            if ok and type(res) == "table" then
+                if tonumber(res.StatusCode) == 429 then return nil, "rate limited" end
+                body = res.Body
+            end
+        end
+        if not body then
+            local ok, res = pcall(function() return game:HttpGet(url) end)
+            if ok then body = res end
+        end
+        if type(body) ~= "string" then return nil, "no answer" end
+        local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
+        if not ok or type(data) ~= "table" then return nil, "bad answer" end
+        return data
+    end
+
+    -- all public servers of this place (up to SCAN_PAGES pages of 100). Yields.
+    function F.scan()
+        local all, cursor, page = {}, "", 0
+        repeat
+            local url = "https://games.roblox.com/v1/games/" .. tostring(game.PlaceId) .. "/servers/Public?sortOrder=Desc&limit=100"
+            if cursor ~= "" then url = url .. "&cursor=" .. cursor end
+            local data, err
+            for try = 1, 3 do
+                data, err = getJson(url)
+                if data then break end
+                task.wait(try * 0.6)
+            end
+            if not data then
+                if #all == 0 then return nil, err end
+                break
+            end
+            for _, sv in ipairs(type(data.data) == "table" and data.data or {}) do
+                if type(sv) == "table" and sv.id and tonumber(sv.playing) and tonumber(sv.maxPlayers) then
+                    all[#all + 1] = { id = sv.id, playing = tonumber(sv.playing), maxPlayers = tonumber(sv.maxPlayers),
+                        ping = tonumber(sv.ping), fps = tonumber(sv.fps) }
+                end
+            end
+            cursor = data.nextPageCursor or ""
+            page = page + 1
+            say("Scanning... page " .. page .. " (" .. #all .. " servers)", 0.1 + page / SCAN_PAGES * 0.5)
+            task.wait(0.1)
+        until cursor == "" or page >= SCAN_PAGES
+        F.servers = all
+        return all
+    end
+
+    -- the engine's choice: score by mode, avoid servers visited in the last hour
+    function F.pick(servers, visited, excluded, mode)
+        local minPc = mode == "most" and MIN_MOST or MIN_LOW
+        local maxPc = math.floor(Players.MaxPlayers * 0.95)
+        local best, bestScore
+        for _, sv in ipairs(servers) do
+            local pc, mp = sv.playing or 0, sv.maxPlayers or Players.MaxPlayers
+            if not excluded[sv.id] and sv.id ~= game.JobId and pc >= minPc and mp - pc >= 1 and pc <= maxPc then
+                local score = mode == "most" and pc or (mode == "random" and math.random(0, 60) or -pc)
+                local v = visited[sv.id]
+                if type(v) == "table" then
+                    local age = os.time() - (tonumber(v.timestamp) or 0)
+                    if age < 1800 then score = score - 500 elseif age < 3600 then score = score - 200 end
+                else
+                    score = score + 100
+                end
+                if not bestScore or score > bestScore then best, bestScore = sv, score end
+            end
+        end
+        return best
+    end
+
+    local excluded, retries, target = {}, 0, nil
+    function F.teleport(id)
+        F.markCurrent()
+        AntiKick.allowUntil = os.clock() + 10
+        target = id
+        local ok, err = pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, id, plr) end)
+        return ok, err
+    end
+
+    -- find a server by mode and join it; retries on a failed teleport. Yields.
+    function F.hop(mode)
+        if F.running then return end
+        F.running = true
+        F.mode = mode or F.mode
+        say("Loading server list...", 0.05)
+        local servers, err = F.scan()
+        if not servers or #servers == 0 then
+            say(servers and "No servers found" or ("Could not load servers: " .. tostring(err)), 1)
+            F.running = false
+            return
+        end
+        say("Choosing from " .. #servers .. " servers...", 0.7)
+        local visited = F.loadHistory()
+        local pick = F.pick(servers, visited, excluded, F.mode)
+        if not pick then pick = F.pick(servers, {}, excluded, F.mode) end -- widen: ignore history
+        if not pick then
+            say("No suitable server found", 1)
+            F.running = false
+            return
+        end
+        say("Joining a server with " .. pick.playing .. " players (attempt " .. (retries + 1) .. ")", 0.95)
+        local ok = F.teleport(pick.id)
+        if not ok then
+            excluded[pick.id] = true
+            retries = retries + 1
+            F.running = false
+            if retries < MAX_RETRIES then task.delay(1, function() F.hop(F.mode) end)
+            else say("Gave up after " .. MAX_RETRIES .. " attempts", 1) end
+        end
+    end
+
+    function F.start(mode)
+        excluded, retries, target = {}, 0, nil
+        task.spawn(F.hop, mode)
+    end
+
+    -- full, closed or refused servers: try another one
+    table.insert(conns, TeleportService.TeleportInitFailed:Connect(function(who, result)
+        if who ~= plr then return end
+        local reason = typeof(result) == "EnumItem" and result.Name or tostring(result)
+        if target then excluded[target] = true end
+        if F.running or retries > 0 then
+            F.running = false
+            if (reason == "GameEnded" or reason == "GameFull" or reason == "Unauthorized") and retries < MAX_RETRIES then
+                retries = retries + 1
+                say("That server refused (" .. reason .. "), trying another (" .. retries .. "/" .. MAX_RETRIES .. ")", 0.4)
+                task.delay(1, function() F.hop(F.mode) end)
+            else
+                say("Teleport failed: " .. reason, 1)
+            end
+        else
+            say("Teleport failed: " .. reason, 1)
+        end
+    end))
+
+    function F.rejoin()
+        F.markCurrent()
+        AntiKick.allowUntil = os.clock() + 10
+        pcall(function()
+            if #Players:GetPlayers() <= 1 then
+                TeleportService:Teleport(game.PlaceId, plr)
+            else
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, plr)
+            end
+        end)
+    end
+end
+
+function UIAPI.buildFinderPanel(screenGui)
+    local F = UIAPI.finder
+    local W, HGT = 380, 470
+    local f = uiWindow(screenGui, "finder", "Puppy Finder", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2, 0.5, -HGT / 2))
+    local IW = W - 32
+
+    local modeLabels = {}
+    for i, m in ipairs(F.MODES) do modeLabels[i] = m[2] end
+    local modeIdx = 1
+    for i, m in ipairs(F.MODES) do if m[1] == F.mode then modeIdx = i end end
+    uiDropdown(f, "", UDim2.fromOffset(140, 28), UDim2.fromOffset(16, 42), modeLabels, modeIdx, function(i) F.mode = F.MODES[i][1] end)
+        .button.TextSize = 11
+
+    local refresh -- set below
+    uiButton(f, "Find & join", UDim2.fromOffset(110, 28), UDim2.fromOffset(160, 42), function() F.start(F.mode) end)
+    uiButton(f, "Refresh", UDim2.fromOffset(74, 28), UDim2.fromOffset(16 + IW - 74, 42), function() refresh() end)
+
+    local status = label(f, { Position = UDim2.fromOffset(16, 78), Size = UDim2.fromOffset(IW, 16), TextSize = 12,
+        TextTruncate = Enum.TextTruncate.AtEnd, Text = F.status })
+    local track = make("Frame", { Position = UDim2.fromOffset(16, 98), Size = UDim2.fromOffset(IW, 4), BackgroundColor3 = PAL.ELEVATED,
+        BorderSizePixel = 0 }, f)
+    corner(track, 2)
+    local fill = make("Frame", { Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = PAL.ACCENT, BorderSizePixel = 0 }, track)
+    corner(fill, 2)
+    F.onStatus = function(text, progress)
+        status.Text = text
+        if progress then TweenService:Create(fill, TweenInfo.new(0.3), { Size = UDim2.new(math.clamp(progress, 0, 1), 0, 1, 0) }):Play() end
+    end
+
+    local countLbl = label(f, { Position = UDim2.fromOffset(16, 110), Size = UDim2.fromOffset(150, 18), TextSize = 11, TextColor3 = PAL.DIM,
+        Text = "Servers" })
+    local SORTS = { "Most players", "Fewest players", "Lowest ping" }
+    local sortIdx = 1
+    local render -- set below
+    uiDropdown(f, "Sort: ", UDim2.fromOffset(150, 22), UDim2.fromOffset(16 + IW - 150, 108), SORTS, 1, function(i)
+        sortIdx = i
+        render()
+    end).button.TextSize = 11
+
+    local list = make("ScrollingFrame", {
+        Position = UDim2.fromOffset(16, 136), Size = UDim2.fromOffset(IW, 262), BackgroundColor3 = PAL.CARD, BackgroundTransparency = 0.4,
+        BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = PAL.DIM, CanvasSize = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    }, f)
+    corner(list, 8)
+    make("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+    make("UIPadding", { PaddingTop = UDim.new(0, 3), PaddingLeft = UDim.new(0, 3), PaddingRight = UDim.new(0, 6) }, list)
+
+    local function ago(t)
+        local s = os.time() - (tonumber(t) or 0)
+        if s < 60 then return "just now" end
+        if s < 3600 then return math.floor(s / 60) .. " min ago" end
+        return math.floor(s / 3600) .. " h ago"
+    end
+
+    local rows = {}
+    render = function()
+        for _, r in ipairs(rows) do r:Destroy() end
+        rows = {}
+        local servers = {}
+        for _, sv in ipairs(F.servers) do servers[#servers + 1] = sv end
+        if sortIdx == 1 then table.sort(servers, function(a, b) return a.playing > b.playing end)
+        elseif sortIdx == 2 then table.sort(servers, function(a, b) return a.playing < b.playing end)
+        else table.sort(servers, function(a, b) return (a.ping or 1e9) < (b.ping or 1e9) end) end
+        local visited = F.loadHistory()
+        countLbl.Text = #servers .. " servers"
+        for i = 1, math.min(#servers, 150) do
+            local sv = servers[i]
+            local here = sv.id == game.JobId
+            local full = sv.playing >= sv.maxPlayers
+            local row = make("Frame", { Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = here and PAL.ELEVATED or PAL.CARD,
+                BackgroundTransparency = 0.15, BorderSizePixel = 0, LayoutOrder = i }, list)
+            corner(row, 6)
+            label(row, { Position = UDim2.fromOffset(10, 3), Size = UDim2.new(1, -96, 0, 18), TextSize = 13, Font = Enum.Font.GothamBold,
+                Text = sv.playing .. " / " .. sv.maxPlayers .. " players" .. (here and "  (you are here)" or "") })
+            local bits = {}
+            if sv.ping then bits[#bits + 1] = math.floor(sv.ping) .. " ms" end
+            if sv.fps then bits[#bits + 1] = math.floor(sv.fps) .. " fps" end
+            local v = visited[sv.id]
+            if type(v) == "table" then bits[#bits + 1] = "visited " .. ago(v.timestamp) end
+            label(row, { Position = UDim2.fromOffset(10, 20), Size = UDim2.new(1, -96, 0, 14), TextSize = 11, TextColor3 = PAL.DIM,
+                Text = table.concat(bits, "  -  ") })
+            if not here then
+                local id = sv.id
+                uiButton(row, full and "Full" or "Join", UDim2.fromOffset(70, 26), UDim2.new(1, -76, 0, 6), function()
+                    if full then return end
+                    F.onStatus("Joining...", 1)
+                    local ok, err = F.teleport(id)
+                    if not ok then F.onStatus("Could not join: " .. tostring(err), 1) end
+                end)
+            end
+            rows[#rows + 1] = row
+        end
+    end
+
+    local loading = false
+    refresh = function()
+        if loading then return end
+        loading = true
+        task.spawn(function()
+            F.onStatus("Loading server list...", 0.05)
+            local servers, err = F.scan()
+            loading = false
+            if not servers then F.onStatus("Could not load servers: " .. tostring(err), 1); return end
+            F.onStatus("Ready - " .. #servers .. " servers", 1)
+            task.delay(0.6, function() TweenService:Create(fill, TweenInfo.new(0.4), { Size = UDim2.new(0, 0, 1, 0) }):Play() end)
+            render()
+        end)
+    end
+
+    local bw = (IW - 8) / 2
+    uiButton(f, "Rejoin this server", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16, 406), function() F.rejoin() end)
+    uiButton(f, "Copy join script", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16 + bw + 8, 406), function()
+        local text = string.format('game:GetService("TeleportService"):TeleportToPlaceInstance(%d, "%s")', game.PlaceId, game.JobId)
+        local ok = pcall(function() (setclipboard or toclipboard)(text) end)
+        note("Puppy Finder", ok and "Join script for this server copied - friends can run it to join you" or "This executor cannot copy to the clipboard", ok and LIGHT or RED)
+    end)
+    label(f, { Position = UDim2.fromOffset(16, 442), Size = UDim2.fromOffset(IW, 22), TextSize = 10, TextWrapped = true, TextColor3 = PAL.DIM,
+        Text = "Find & join skips servers you visited in the last hour. Also: serverhop, shmost, shlowest, rejoin." })
+
+    f:GetPropertyChangedSignal("Visible"):Connect(function()
+        if f.Visible and #F.servers == 0 then refresh() end
+    end)
+end
+
 local function buildPanels(screenGui)
     local B = UIAPI.builders
     B.tools = function() buildToolsPanel(screenGui) end
@@ -10155,6 +10491,7 @@ local function buildPanels(screenGui)
     B.games = function() buildGamesPanel(screenGui) end
     B.gameboy = function() UIAPI.buildGameBoyPanel(screenGui) end
     B.doom = function() UIAPI.buildDoomPanel(screenGui) end
+    B.finder = function() UIAPI.buildFinderPanel(screenGui) end
 end
 
 ------------------------------------------------------------------------
@@ -10443,7 +10780,7 @@ local function createUI()
         return b
     end
 
-    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 816), "SETTINGS  -  build " .. tostring(genv.PuppyAdminBuild))
+    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 876), "SETTINGS  -  build " .. tostring(genv.PuppyAdminBuild))
 
     fieldLabel(settingsFrame, "Chat command prefixes (comma separated, 1-3 symbols)", 45)
     local prefixBox = fieldBox(settingsFrame, 65, table.concat(Cfg.prefixes, ", "))
@@ -10493,20 +10830,28 @@ local function createUI()
         note("Intro", Cfg.skipIntro and "Skipped from the next start" or "Shown at the next start", LIGHT)
     end)
 
+    -- third row: more windows
+    for i, p in ipairs({ { "Finder", "finder" }, { "Game Boy", "gameboy" }, { "Doom", "doom" } }) do
+        actionButton(settingsFrame, p[1], UDim2.new(0, 15 + (i - 1) * 66, 0, 234), UDim2.new(0, 62, 0, 28)).MouseButton1Click:Connect(function()
+            local fn = H[p[2]]
+            if type(fn) == "function" then fn({}) end
+        end)
+    end
+
     -- Theme: presets, then one row per colour role (hex, r,g,b or a colour name)
-    fieldLabel(settingsFrame, "UI theme", 236)
+    fieldLabel(settingsFrame, "UI theme", 272)
     for i, p in ipairs(Theme.presets) do
-        local b = actionButton(settingsFrame, p.name, UDim2.new(0, 15 + (i - 1) * 56, 0, 256), UDim2.new(0, 52, 0, 26))
+        local b = actionButton(settingsFrame, p.name, UDim2.new(0, 15 + (i - 1) * 56, 0, 292), UDim2.new(0, 52, 0, 26))
         b.TextSize = 11
         b.MouseButton1Click:Connect(function()
             Theme.usePreset(p.name)
             note("Theme", p.name, LIGHT)
         end)
     end
-    fieldLabel(settingsFrame, "Colors: #hex, r,g,b or a name (press Enter to apply)", 292)
+    fieldLabel(settingsFrame, "Colors: #hex, r,g,b or a name (press Enter to apply)", 328)
     local themeRows = {}
     for i, role in ipairs(Theme.roles) do
-        local y = 312 + (i - 1) * 32
+        local y = 348 + (i - 1) * 32
         make("TextLabel", {
             Size = UDim2.new(0, 110, 0, 26), Position = UDim2.new(0, 15, 0, y), BackgroundTransparency = 1,
             Text = Theme.labels[role], TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.Code, TextSize = 12,
@@ -10547,10 +10892,10 @@ local function createUI()
         end
     end)
 
-    fieldLabel(settingsFrame, "Background image: id, rbxassetid, image URL or off [visibility 0-100]", 536)
-    local imageBox = fieldBox(settingsFrame, 556, Theme.image and Theme.image.src or ((type(Cfg.theme) == "table" and type(Cfg.theme.image) == "table" and Cfg.theme.image.src) or ""))
+    fieldLabel(settingsFrame, "Background image: id, rbxassetid, image URL or off [visibility 0-100]", 572)
+    local imageBox = fieldBox(settingsFrame, 592, Theme.image and Theme.image.src or ((type(Cfg.theme) == "table" and type(Cfg.theme.image) == "table" and Cfg.theme.image.src) or ""))
     imageBox.PlaceholderText = "e.g. 1234567890 60"
-    local imageApply = actionButton(settingsFrame, "Apply", UDim2.new(1, -85, 0, 556), UDim2.new(0, 70, 0, 28))
+    local imageApply = actionButton(settingsFrame, "Apply", UDim2.new(1, -85, 0, 592), UDim2.new(0, 70, 0, 28))
     imageApply.MouseButton1Click:Connect(function()
         local args = splitArgs(imageBox.Text)
         task.spawn(function()
@@ -10561,10 +10906,10 @@ local function createUI()
     end)
 
     -- The token only ever goes into a local file; it is never shown again or put in the config.
-    fieldLabel(settingsFrame, "Tag sync: GitHub token (saved only in " .. SETTINGS.TagSync.tokenFile .. ")", 596)
-    local tokenBox = fieldBox(settingsFrame, 616, "")
+    fieldLabel(settingsFrame, "Tag sync: GitHub token (saved only in " .. SETTINGS.TagSync.tokenFile .. ")", 632)
+    local tokenBox = fieldBox(settingsFrame, 652, "")
     tokenBox.PlaceholderText = TagSync.token() and "token saved - paste a new one, or 'remove'" or "github_pat_... (never type this in chat)"
-    local tokenApply = actionButton(settingsFrame, "Save", UDim2.new(1, -85, 0, 616), UDim2.new(0, 70, 0, 28))
+    local tokenApply = actionButton(settingsFrame, "Save", UDim2.new(1, -85, 0, 652), UDim2.new(0, 70, 0, 28))
     tokenApply.MouseButton1Click:Connect(function()
         local t = tokenBox.Text
         tokenBox.Text = ""
@@ -10579,9 +10924,9 @@ local function createUI()
         end
     end)
 
-    fieldLabel(settingsFrame, "Script font (every window; Default = original fonts)", 656)
+    fieldLabel(settingsFrame, "Script font (every window; Default = original fonts)", 692)
     local fontChoices = UIFont.choices()
-    uiDropdown(settingsFrame, "Font: ", UDim2.new(1, -30, 0, 28), UDim2.new(0, 15, 0, 676), fontChoices,
+    uiDropdown(settingsFrame, "Font: ", UDim2.new(1, -30, 0, 28), UDim2.new(0, 15, 0, 712), fontChoices,
         table.find(fontChoices, Cfg.uiFont) or 1, function(_, name)
             task.spawn(function()
                 local ok, msg = UIFont.set(name)
@@ -10591,7 +10936,7 @@ local function createUI()
 
     -- applied a moment after the slider stops, not on every step of a drag
     local scaleToken = 0
-    local scaleSlider = uiSlider(settingsFrame, "Text size (every window)", UDim2.new(0, 15, 0, 712), 330, {
+    local scaleSlider = uiSlider(settingsFrame, "Text size (every window)", UDim2.new(0, 15, 0, 748), 330, {
         min = 0.5, max = 2, step = 0.05, value = UIFont.scale,
         format = function(v) return math.floor(v * 100 + 0.5) .. "%" end,
         onChange = function(v)
@@ -10602,7 +10947,7 @@ local function createUI()
             end)
         end,
     })
-    actionButton(settingsFrame, "Reset text size", UDim2.new(0, 15, 0, 760), UDim2.new(1, -30, 0, 26)).MouseButton1Click:Connect(function()
+    actionButton(settingsFrame, "Reset text size", UDim2.new(0, 15, 0, 796), UDim2.new(1, -30, 0, 26)).MouseButton1Click:Connect(function()
         scaleSlider.set(1)
         local ok, msg = UIFont.setScale(1)
         note("Text size", msg, ok and LIGHT or RED)
