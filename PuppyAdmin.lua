@@ -1538,7 +1538,8 @@ function Tags.build(player, char)
     local g = make("BillboardGui", {
         Name = "PuppyAdminTag", Adornee = head, AlwaysOnTop = true, Active = true,
         Size = UDim2.fromOffset(cardW, cardH), StudsOffset = Vector3.new(0, tonumber(def.offset) or 3, 0),
-        MaxDistance = 250, LightInfluence = 0, ResetOnSpawn = false,
+        -- no distance cut-off: the whole tag (text, picture, backdrop) shows at any range
+        MaxDistance = math.huge, LightInfluence = 0, ResetOnSpawn = false,
     }, nil)
     pcall(function() g.ClipsDescendants = false end)
 
@@ -1566,20 +1567,29 @@ function Tags.build(player, char)
         make("UICorner", { CornerRadius = pf.round and UDim.new(1, 0) or UDim.new(0, 6) }, picture)
     end
 
-    local textX = padX + pic + gap
-    local textY = math.floor((cardH - textH) / 2)
+    -- Text the way the original tags did it: a scale-sized area filling the
+    -- space right of the picture, labels filling it by scale, and TextScaled
+    -- (capped at the chosen size) so the engine fits the text to its box
+    -- instead of dropping it when the billboard is far away.
     local align = pfpTex and Enum.TextXAlignment.Left or Enum.TextXAlignment.Center
+    local area = make("Frame", {
+        Name = "TextArea", BackgroundTransparency = 1, ClipsDescendants = false, ZIndex = 2,
+        Position = UDim2.fromOffset(padX + pic + gap, padY), Size = UDim2.new(1, -(padX * 2 + pic + gap), 1, -padY * 2),
+    }, card)
+    local split = subText ~= "" and (lineMain / textH) or 1
     local main = make("TextLabel", {
-        Position = UDim2.fromOffset(textX, textY), Size = UDim2.fromOffset(textW, lineMain), BackgroundTransparency = 1,
-        Text = text, Font = font, TextSize = size, TextColor3 = color, TextStrokeTransparency = 0.3,
+        Size = UDim2.fromScale(1, split), BackgroundTransparency = 1,
+        Text = text, Font = font, TextSize = size, TextScaled = true, TextColor3 = color, TextStrokeTransparency = 0.3,
         TextXAlignment = align, TextYAlignment = Enum.TextYAlignment.Center, ZIndex = 2,
-    }, card)
+    }, area)
+    make("UITextSizeConstraint", { MaxTextSize = size, MinTextSize = 1 }, main)
     local sub = make("TextLabel", {
-        Position = UDim2.fromOffset(textX, textY + lineMain), Size = UDim2.fromOffset(textW, math.max(lineSub, 1)), BackgroundTransparency = 1,
-        TextYAlignment = Enum.TextYAlignment.Center,
-        Text = subText, Font = font, TextSize = subSize, TextColor3 = color:Lerp(Color3.new(1, 1, 1), 0.4),
-        TextStrokeTransparency = 0.4, TextXAlignment = align, Visible = subText ~= "", ZIndex = 2,
-    }, card)
+        Position = UDim2.fromScale(0, split), Size = UDim2.fromScale(1, 1 - split), BackgroundTransparency = 1,
+        Text = subText, Font = font, TextSize = subSize, TextScaled = true, TextColor3 = color:Lerp(Color3.new(1, 1, 1), 0.4),
+        TextStrokeTransparency = 0.4, TextXAlignment = align, TextYAlignment = Enum.TextYAlignment.Center,
+        Visible = subText ~= "", ZIndex = 2,
+    }, area)
+    make("UITextSizeConstraint", { MaxTextSize = subSize, MinTextSize = 1 }, sub)
 
     -- your own tag never teleports; clicks on it pass through to the world
     if player ~= plr and Cfg.tagClickTp then
