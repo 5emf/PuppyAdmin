@@ -1501,13 +1501,16 @@ end
 table.insert(cleanups, function() AntiKick.on = false end)
 
 ------------------------------------------------------------------------
--- Reanimation: novoline.lua's engine and Reanimate panel, embedded as-is
+-- Novoline: reanimation and movement, embedded from novoline.lua as-is
 --
--- NovoReanim.boot runs a trimmed copy of novoline's darklua bundle: the
+-- Novo.load runs a trimmed copy of novoline's darklua bundle: the
 -- reanimation API (clone, real body following it, keyframe playback, tricks,
 -- pair, mimic, blend), the Reanimate panel (library, states, record, copy,
--- live, tricks, keys, transitions) and the novoline UI kit those two use.
--- Nothing else from novoline is included. The block is generated from
+-- live, tricks, keys, transitions), novoline's movement engines and commands
+-- (fly, superfly + Fly panel, hatfly, helicopter, noclip, airwalk, swim,
+-- teleports, waypoints, follow / orbit / spectate, the movement library) and
+-- the novoline UI kit those use. Command modules are cut down to their
+-- movement handlers and the helpers those reference; nothing else is included. The block is generated from
 -- novoline.lua, not hand-written; the one change is marked in the panel
 -- module (`_G._nv_reanimState=_RS`) so the `reanim` command can use the
 -- panel's own power toggle.
@@ -1534,7 +1537,7 @@ local function resolveKeyCode(name)
     return nil
 end
 
-local NovoReanim = { booted = false, failed = nil, gui = nil }
+local Novo = { booted = false, failed = nil, gui = nil, cmds = nil, nvL = nil, panelFailed = nil }
 
 local function novoApi()
     local api = _G._reanimLoaded and _G._reanimAPI
@@ -1563,8 +1566,8 @@ function Reanim.isClone(model)
     return model ~= nil and novoModel("get_clone") == model
 end
 
-function NovoReanim.boot(host)
-local _initReanimPanel
+function Novo.load(host)
+local _initReanimPanel, _initFlyPanel
 local __DARKLUA_BUNDLE_MODULES = { cache = {} }
 do local function __modImpl()
 return function(env)local _nvL=env._nvL local createInstance=env.createInstance
@@ -5177,6 +5180,319 @@ closing then return end tween(closeIcon,TweenInfo.new(0.2,Enum.EasingStyle.Quint
 ),{ImageTransparency=0.45})end)return bar end end function
 __DARKLUA_BUNDLE_MODULES.O():typeof(__modImpl())local v=__DARKLUA_BUNDLE_MODULES
 .cache.O if not v then v={c=__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.O=v end
+return v.c end end
+do
+local function __modImpl()return function(env)local _isMobile=env._isMobile
+local _mv=env._mv local _nvL=env._nvL local createInstance=env.createInstance
+local getRootPart=env.getRootPart local runService=env.runService local
+userInputService=env.userInputService local function restoreFlyHumanoid(h,root)
+if h then pcall(function()h.PlatformStand=false h.Sit=false h.AutoRotate=true h:
+SetStateEnabled(Enum.HumanoidStateType.Jumping,true)h:SetStateEnabled(Enum.
+HumanoidStateType.GettingUp,true)h:SetStateEnabled(Enum.HumanoidStateType.
+Running,true)h:SetStateEnabled(Enum.HumanoidStateType.Freefall,true)h:
+ChangeState(Enum.HumanoidStateType.GettingUp)end)task.defer(function()if not h
+or not h.Parent then return end pcall(function()if h.PlatformStand then h.
+PlatformStand=false end local st=h:GetState()if st==Enum.HumanoidStateType.
+Physics or st==Enum.HumanoidStateType.Ragdoll then h:ChangeState(Enum.
+HumanoidStateType.GettingUp)end end)end)end if root then pcall(function()root.
+AssemblyLinearVelocity=Vector3.new(0,0,0)root.AssemblyAngularVelocity=Vector3.
+new(0,0,0)end)end pcall(function()local cam=workspace.CurrentCamera if cam then
+cam.CameraType=Enum.CameraType.Custom end end)end local function
+destroyNamedFlyMovers(root)if not root then return end pcall(function()local vel
+=root:FindFirstChild('_nvFlyVel')local gyro=root:FindFirstChild('_nvFlyGyro')if
+vel then vel:Destroy()end if gyro then gyro:Destroy()end end)end _nvL.
+setFlySpeed=function(v)_mv.iyflyspeed=v if _G._flySlider and _G._flySlider.
+setValue then _G._flySlider.setValue(v)end if _mv._flyControl then if _mv.
+_flyControl.F~=0 then _mv._flyControl.F=v end if _mv._flyControl.B~=0 then _mv.
+_flyControl.B=-v end if _mv._flyControl.L~=0 then _mv._flyControl.L=-v end if
+_mv._flyControl.R~=0 then _mv._flyControl.R=v end if _mv._flyControl.Q~=0 then
+_mv._flyControl.Q=v*2 end if _mv._flyControl.E~=0 then _mv._flyControl.E=-v*2
+end end end _nvL.sFLY=function(vfly)if _isMobile then _nvL.mobilefly(vfly)return
+end local char=_nvL.lp.Character or _nvL.lp.CharacterAdded:Wait()local humanoid=
+char:FindFirstChildOfClass('Humanoid')if not humanoid then repeat task.wait()
+until char:FindFirstChildOfClass('Humanoid')humanoid=char:FindFirstChildOfClass(
+'Humanoid')end if _mv.flyKeyDown or _mv.flyKeyUp then _mv.flyKeyDown:Disconnect(
+)_mv.flyKeyUp:Disconnect()end local T=getRootPart(char)destroyNamedFlyMovers(T)
+local CONTROL={F=0,B=0,L=0,R=0,Q=0,E=0}_mv._flyControl=CONTROL local SPEED=0
+local function FLY()_mv.FLYING=true local BG=createInstance('BodyGyro')local BV=
+createInstance('BodyVelocity')BG.Name='_nvFlyGyro'BV.Name='_nvFlyVel'BG.P=9e4 BG
+.Parent=T BV.Parent=T BG.MaxTorque=Vector3.new(9e9,9e9,9e9)BG.CFrame=T.CFrame BV
+.Velocity=Vector3.new(0,0,0)BV.MaxForce=Vector3.new(9e9,9e9,9e9)local smoothVel=
+Vector3.new(0,0,0)pcall(function()humanoid.Sit=false humanoid.AutoRotate=false
+humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping,false)humanoid.
+PlatformStand=true end)pcall(function()local cam=workspace.CurrentCamera if cam
+then cam.CameraType=Enum.CameraType.Custom end end)task.spawn(function()repeat
+local dt=task.wait()if not _mv.FLYING then break end local camera=workspace.
+CurrentCamera if not camera or not BV.Parent then break end if not T or not T.
+Parent then T=getRootPart(_nvL.lp.Character)if T then BG.Parent=T BV.Parent=T
+end end if not humanoid or not humanoid.Parent then humanoid=_nvL.lp.Character
+and _nvL.lp.Character:FindFirstChildOfClass('Humanoid')end if not vfly and
+humanoid and humanoid.PlatformStand~=true then humanoid.PlatformStand=true end
+local baseSpeed=(vfly and _mv.vehicleflyspeed or _mv.iyflyspeed)local fB=0 local
+lR=0 local qE=0 if not userInputService:GetFocusedTextBox()then if
+userInputService:IsKeyDown(Enum.KeyCode.W)then fB=fB+1 end if userInputService:
+IsKeyDown(Enum.KeyCode.S)then fB=fB-1 end if userInputService:IsKeyDown(Enum.
+KeyCode.D)then lR=lR+1 end if userInputService:IsKeyDown(Enum.KeyCode.A)then lR=
+lR-1 end if _mv.QEfly then if userInputService:IsKeyDown(Enum.KeyCode.E)then qE=
+qE+1 end if userInputService:IsKeyDown(Enum.KeyCode.Q)then qE=qE-1 end end if
+userInputService:IsKeyDown(Enum.KeyCode.Space)then qE=qE+1 end if
+userInputService:IsKeyDown(Enum.KeyCode.LeftControl)or userInputService:
+IsKeyDown(Enum.KeyCode.RightControl)then qE=qE-1 end end local superMode=_G.
+_nvSuperfly and _G._nvSuperfly.enabled local superMouse=superMode and _mv.
+_flyMouseHeld local camCF=camera.CFrame local look=camCF.LookVector local right=
+camCF.RightVector local dir=Vector3.new(0,0,0)if superMouse then dir=dir+look
+end if fB~=0 then dir=dir+look*fB end if lR~=0 then dir=dir+right*lR end if qE~=
+0 then dir=dir+Vector3.new(0,1,0)*qE end local hasInput=dir.Magnitude>0.05 SPEED
+=hasInput and(baseSpeed*50)or 0 local target=hasInput and(dir.Unit*SPEED)or
+Vector3.new(0,0,0)local resp=hasInput and 9 or 3.5 smoothVel=smoothVel:Lerp(
+target,1-math.exp(-dt*resp))if not hasInput then smoothVel=Vector3.new(0,0,0)end
+BV.Velocity=smoothVel if not hasInput and T then local av=T.
+AssemblyLinearVelocity if av.Magnitude>0 then T.AssemblyLinearVelocity=Vector3.
+new(0,0,0)end end BG.CFrame=BG.CFrame:Lerp(camCF,1-math.exp(-dt*14))until not
+_mv.FLYING local settleUntil=os.clock()+0.08 while os.clock()<settleUntil and BV
+.Parent and smoothVel.Magnitude>4 do local dt=task.wait()smoothVel=smoothVel:
+Lerp(Vector3.new(0,0,0),1-math.exp(-dt*16))BV.Velocity=smoothVel end CONTROL={F=
+0,B=0,L=0,R=0,Q=0,E=0}SPEED=0 pcall(function()BG:Destroy()end)pcall(function()BV
+:Destroy()end)restoreFlyHumanoid(humanoid,T)end)end _mv.flyKeyDown=
+userInputService.InputBegan:Connect(function(input,processed)if processed or
+userInputService:GetFocusedTextBox()then return end if input.KeyCode==Enum.
+KeyCode.W then CONTROL.F=(vfly and _mv.vehicleflyspeed or _mv.iyflyspeed)elseif
+input.KeyCode==Enum.KeyCode.S then CONTROL.B=-(vfly and _mv.vehicleflyspeed or
+_mv.iyflyspeed)elseif input.KeyCode==Enum.KeyCode.A then CONTROL.L=-(vfly and
+_mv.vehicleflyspeed or _mv.iyflyspeed)elseif input.KeyCode==Enum.KeyCode.D then
+CONTROL.R=(vfly and _mv.vehicleflyspeed or _mv.iyflyspeed)elseif input.KeyCode==
+Enum.KeyCode.E and _mv.QEfly then CONTROL.Q=(vfly and _mv.vehicleflyspeed or _mv
+.iyflyspeed)*2 elseif input.KeyCode==Enum.KeyCode.Q and _mv.QEfly then CONTROL.E
+=-(vfly and _mv.vehicleflyspeed or _mv.iyflyspeed)*2 end end)_mv.flyKeyUp=
+userInputService.InputEnded:Connect(function(input)if input.KeyCode==Enum.
+KeyCode.W then CONTROL.F=0 elseif input.KeyCode==Enum.KeyCode.S then CONTROL.B=0
+elseif input.KeyCode==Enum.KeyCode.A then CONTROL.L=0 elseif input.KeyCode==Enum
+.KeyCode.D then CONTROL.R=0 elseif input.KeyCode==Enum.KeyCode.E then CONTROL.Q=
+0 elseif input.KeyCode==Enum.KeyCode.Q then CONTROL.E=0 end end)_mv.
+_flyMouseHeld=false _mv.flyMouseDown=userInputService.InputBegan:Connect(
+function(input,processed)if processed then return end if input.UserInputType==
+Enum.UserInputType.MouseButton1 then _mv._flyMouseHeld=true end end)_mv.
+flyMouseUp=userInputService.InputEnded:Connect(function(input)if input.
+UserInputType==Enum.UserInputType.MouseButton1 then _mv._flyMouseHeld=false end
+end)FLY()end _nvL.NOFLY=function()if _G._nvSuperfly and _G._nvSuperfly.enabled
+then _G._nvSuperfly.enabled=false if _G._nvSuperfly.conn then _G._nvSuperfly.
+conn:Disconnect()_G._nvSuperfly.conn=nil end if _G._nvSuperfly.stopTracks then
+pcall(_G._nvSuperfly.stopTracks)end if _G._flyToggleSet then _G._flyToggleSet(
+false)end end if _isMobile then _nvL.unmobilefly()return end _mv.FLYING=false
+_mv._flyControl=nil if _mv.flyKeyDown then pcall(function()_mv.flyKeyDown:
+Disconnect()end)_mv.flyKeyDown=nil end if _mv.flyKeyUp then pcall(function()_mv.
+flyKeyUp:Disconnect()end)_mv.flyKeyUp=nil end if _mv.flyMouseDown then _mv.
+flyMouseDown:Disconnect()_mv.flyMouseDown=nil end if _mv.flyMouseUp then _mv.
+flyMouseUp:Disconnect()_mv.flyMouseUp=nil end _mv._flyMouseHeld=false local char
+=_nvL.lp.Character local h=char and char:FindFirstChildOfClass('Humanoid')local
+root=char and getRootPart(char)destroyNamedFlyMovers(root)restoreFlyHumanoid(h,
+root)end do local _mflyVelName=tostring(math.random(100000000,999999999))local
+_mflyGyroName=tostring(math.random(100000000,999999999))local _mfly1,_mfly2,
+_mflyTouch1,_mflyTouch2 _nvL.unmobilefly=function()pcall(function()_mv.FLYING=
+false local root=getRootPart(_nvL.lp.Character)if root and root:FindFirstChild(
+_mflyVelName)then root:FindFirstChild(_mflyVelName):Destroy()end if root and
+root:FindFirstChild(_mflyGyroName)then root:FindFirstChild(_mflyGyroName):
+Destroy()end local h=_nvL.lp.Character and _nvL.lp.Character:
+FindFirstChildOfClass('Humanoid')restoreFlyHumanoid(h,root)if _mfly1 then _mfly1
+:Disconnect()end if _mfly2 then _mfly2:Disconnect()end if _mflyTouch1 then
+_mflyTouch1:Disconnect()_mflyTouch1=nil end if _mflyTouch2 then _mflyTouch2:
+Disconnect()_mflyTouch2=nil end _mv._flyMouseHeld=false end)end _nvL.mobilefly=
+function(vfly)_nvL.unmobilefly()_mv.FLYING=true local root=getRootPart(_nvL.lp.
+Character)local camera=workspace.CurrentCamera local v3inf=Vector3.new(9e9,9e9,
+9e9)local v3zero=Vector3.new(0,0,0)local _v3none=Vector3.new()local bv=
+createInstance('BodyVelocity',{Name=_mflyVelName,Parent=root,MaxForce=v3zero,
+Velocity=v3zero})local bg=createInstance('BodyGyro',{Name=_mflyGyroName,Parent=
+root,MaxTorque=v3inf,P=1000,D=50})local ok,controlModule=pcall(require,_nvL.lp.
+PlayerScripts:WaitForChild('PlayerModule',5):WaitForChild('ControlModule',5))if
+not ok or not controlModule then return end _mv._flyMouseHeld=false _mflyTouch1=
+userInputService.InputBegan:Connect(function(input,processed)if processed then
+return end if input.UserInputType==Enum.UserInputType.Touch then _mv.
+_flyMouseHeld=true end end)_mflyTouch2=userInputService.InputEnded:Connect(
+function(input)if input.UserInputType==Enum.UserInputType.Touch then _mv.
+_flyMouseHeld=false end end)_mfly1=_nvL.lp.CharacterAdded:Connect(function()
+local newRoot=getRootPart(_nvL.lp.Character)local bv2=createInstance(
+'BodyVelocity',{Name=_mflyVelName,Parent=newRoot,MaxForce=v3zero,Velocity=v3zero
+})local bg2=createInstance('BodyGyro',{Name=_mflyGyroName,Parent=newRoot,
+MaxTorque=v3inf,P=1000,D=50})if not vfly then local h=_nvL.lp.Character and _nvL
+.lp.Character:FindFirstChildOfClass('Humanoid')if h then pcall(function()h.Sit=
+false h.AutoRotate=false h:SetStateEnabled(Enum.HumanoidStateType.Jumping,false)
+h.PlatformStand=true end)end end end)if not vfly then local h=_nvL.lp.Character
+and _nvL.lp.Character:FindFirstChildOfClass('Humanoid')if h then pcall(function(
+)h.Sit=false h.AutoRotate=false h:SetStateEnabled(Enum.HumanoidStateType.Jumping
+,false)h.PlatformStand=true end)end end local mSmooth=Vector3.new(0,0,0)_mfly2=
+runService.RenderStepped:Connect(function(dt)root=getRootPart(_nvL.lp.Character)
+camera=workspace.CurrentCamera if not root then return end local VH=root:
+FindFirstChild(_mflyVelName)local GH=root:FindFirstChild(_mflyGyroName)local
+humanoid=_nvL.lp.Character:FindFirstChildOfClass('Humanoid')if not(humanoid and
+VH and GH)then return end VH.MaxForce=v3inf GH.MaxTorque=v3inf if not vfly and
+humanoid.PlatformStand~=true then humanoid.PlatformStand=true end local spd=(
+vfly and _mv.vehicleflyspeed or _mv.iyflyspeed)*50 local superMode=_G.
+_nvSuperfly and _G._nvSuperfly.enabled local target,moving if superMode then
+moving=_mv._flyMouseHeld==true target=moving and(camera.CFrame.LookVector*spd)or
+Vector3.new(0,0,0)else local dir=controlModule:GetMoveVector()target=(camera.
+CFrame.RightVector*(dir.X*spd))-(camera.CFrame.LookVector*(dir.Z*spd))moving=dir
+.Magnitude>0.05 end local resp=moving and 9 or 3.5 mSmooth=mSmooth:Lerp(target,1
+-math.exp(-dt*resp))if not moving then mSmooth=Vector3.new(mSmooth.X,0,mSmooth.Z
+)target=Vector3.new(0,0,0)end VH.Velocity=mSmooth if not moving then local av=
+root.AssemblyLinearVelocity if av.Y~=0 then root.AssemblyLinearVelocity=Vector3.
+new(av.X,0,av.Z)end end GH.CFrame=GH.CFrame:Lerp(camera.CoordinateFrame,1-math.
+exp(-dt*14))end)end end end end function __DARKLUA_BUNDLE_MODULES.Q():typeof(
+__modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.Q if not v then v={c=
+__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.Q=v end return v.c end end
+do
+local function __modImpl()return function(env)local _nvL=env._nvL local
+createInstance=env.createInstance local getRootPart=env.getRootPart local
+runService=env.runService local sf=_G._nvSuperfly or{enabled=false,conn=nil,
+state='',hum=nil,animator=nil,anims={},tracks={},currentTrack=nil,sF=0,sS=0,sV=0
+,lastMoveAt=0,pendingState='idle',pendingAt=0,ids={idle=98353973763565,forward=
+123269449592573,backward=101457848070067,left=123269449592573,right=
+123269449592573,up=102256275785620,down=616108001}}_G._nvSuperfly=sf sf.
+stopTracks=function()if sf.conn then sf.conn:Disconnect()sf.conn=nil end for _,
+tr in sf.tracks do pcall(function()tr:Stop(0.15)end)end sf.tracks={}sf.anims={}
+sf.currentTrack=nil sf.hum=nil sf.animator=nil sf.state=''sf.sF,sf.sS,sf.sV=0,0,
+0 sf.lastMoveAt=0 sf.pendingState='idle'sf.pendingAt=0 end sf.resolveAnim=
+function(id)local ok,objs=pcall(function()return game:GetObjects('rbxassetid://'
+..tostring(id))end)if ok and objs and#objs>0 then local obj=objs[1]if obj:IsA(
+'Animation')then return obj end local found=obj:FindFirstChildWhichIsA(
+'Animation',true)if found then return found end local kfs=nil if obj:IsA(
+'KeyframeSequence')then kfs=obj else kfs=obj:FindFirstChildWhichIsA(
+'KeyframeSequence',true)end if kfs then local okReg,contentId=pcall(function()
+return game:GetService('KeyframeSequenceProvider'):RegisterKeyframeSequence(kfs)
+end)if okReg and contentId then local animFromKfs=createInstance('Animation',{
+AnimationId=contentId})return animFromKfs end end end local anim=createInstance(
+'Animation',{AnimationId='rbxassetid://'..tostring(id)})return anim end
+local function isTrack(tr)return typeof(tr)=='Instance'and tr:IsA(
+'AnimationTrack')end local function ensureAnimator(hum)if sf.hum==hum and sf.
+animator then return sf.animator end sf.hum=hum sf.animator=hum:
+FindFirstChildOfClass('Animator')if not sf.animator then sf.animator=
+createInstance('Animator',{Parent=hum})end sf.tracks={}sf.currentTrack=nil sf.
+state=''return sf.animator end local function loadTrackForId(hum,id)local
+animator=ensureAnimator(hum)local emoteTrack=nil local okEmote,emoteOk,tr=pcall(
+function()if hum.PlayEmoteAndGetAnimTrackById then return hum:
+PlayEmoteAndGetAnimTrackById(tonumber(id))end return nil end)if okEmote and
+emoteOk and isTrack(tr)then emoteTrack=tr pcall(function()emoteTrack:Stop(0)end)
+end if emoteTrack then pcall(function()emoteTrack.Priority=Enum.
+AnimationPriority.Action4 end)pcall(function()emoteTrack.Looped=true end)return
+emoteTrack end local anim=sf.resolveAnim(id)local ok,loaded=pcall(function()
+return animator:LoadAnimation(anim)end)if ok and isTrack(loaded)then loaded.
+Priority=Enum.AnimationPriority.Action4 loaded.Looped=true return loaded end
+return nil end local function getStateTrack(hum,state)local cached=sf.tracks[
+state]if isTrack(cached)then return cached end local id=sf.ids[state]or sf.ids.
+idle local tr=id and loadTrackForId(hum,id)or nil if(not tr)and state~='idle'
+then tr=sf.tracks.idle if not isTrack(tr)then tr=sf.ids.idle and loadTrackForId(
+hum,sf.ids.idle)or nil end end if isTrack(tr)then sf.tracks[state]=tr end return
+isTrack(tr)and tr or nil end _G._nvSuperflyStart=function()sf.enabled=true if sf
+.conn then sf.conn:Disconnect()sf.conn=nil end sf.conn=runService.RenderStepped:
+Connect(function()if not sf.enabled or not _G._nvMove.FLYING then return end
+local char=_nvL.lp.Character local hum=char and char:FindFirstChildOfClass(
+'Humanoid')local root=getRootPart(char)if not hum or not root then return end
+local lv=root.CFrame:VectorToObjectSpace(root.AssemblyLinearVelocity)local vx,vy
+,vz=lv.X,lv.Y,lv.Z local hspd=math.sqrt(vx*vx+vz*vz)local _tspd=math.sqrt(vx*vx+
+vy*vy+vz*vz)local now=os.clock()local flySpeed=(_G._nvMove and _G._nvMove.
+iyflyspeed)or 1 local moveThresh=math.max(10,flySpeed*50*0.4)local state='idle'
+if math.abs(vy)>moveThresh and math.abs(vy)>=(hspd*0.9)then state=(vy>0)and'up'
+or'down'elseif hspd>moveThresh then state=(vz>0)and'backward'or'forward'end if
+sf.pendingState~=state then sf.pendingState=state sf.pendingAt=now end local
+holdFor=(state=='idle')and 0.05 or 0.12 if state~=sf.state and(now-(sf.pendingAt
+or now))<holdFor then state=sf.state end local desired=getStateTrack(hum,state)
+if isTrack(desired)then local fade=(state=='idle')and 0.14 or 0.3 if sf.
+currentTrack~=desired then if isTrack(sf.currentTrack)and sf.currentTrack.
+IsPlaying then pcall(function()sf.currentTrack:Stop(fade)end)end pcall(function(
+)desired:Play(fade,1,1)end)sf.currentTrack=desired sf.state=state elseif not
+desired.IsPlaying then pcall(function()desired:Play(fade,1,1)end)end end end)end
+end end function __DARKLUA_BUNDLE_MODULES.R():typeof(__modImpl())local v=
+__DARKLUA_BUNDLE_MODULES.cache.R if not v then v={c=__modImpl()}
+__DARKLUA_BUNDLE_MODULES.cache.R=v end return v.c end end
+do local function
+__modImpl()return function(env)local _nvL=env._nvL local createInstance=env.
+createInstance local getRootPart=env.getRootPart local runService=env.runService
+local userInputService=env.userInputService local hf=_G._nvHatFly or{active=
+false,ctrl={F=0,B=0,L=0,R=0,Q=0,E=0},conns={},vel=Vector3.zero,hatPos=nil,
+srcHats={},flyParts={}}_G._nvHatFly=hf local function _disconnectAll()for i=#hf.
+conns,1,-1 do local c=hf.conns[i]pcall(function()c:Disconnect()end)hf.conns[i]=
+nil end end local function _hatHandles(char)local out={}if not char then return
+out end for _,v in char:GetChildren()do if v:IsA('Accessory')then local h=v:
+FindFirstChild('Handle')if h and h:IsA('BasePart')then out[#out+1]=h end end end
+return out end _nvL.StopHatFly=function()if not hf.active and not hf.baseplate
+and not hf.flyHat then return end hf.active=false _disconnectAll()for _,fp in hf
+.flyParts or{}do if fp and fp.part and fp.part.Parent then pcall(function()fp.
+part:Destroy()end)end end if hf.baseplate and hf.baseplate.Parent then pcall(
+function()hf.baseplate:Destroy()end)end for _,sh in hf.srcHats or{}do if sh and
+sh.Parent then pcall(function()sh.LocalTransparencyModifier=0 end)end end if hf.
+root and hf.root.Parent then pcall(function()hf.root.AssemblyLinearVelocity=
+Vector3.zero hf.root.AssemblyAngularVelocity=Vector3.zero if hf.savedCF then hf.
+root.CFrame=hf.savedCF end end)end if hf.hum and hf.hum.Parent then pcall(
+function()hf.hum.PlatformStand=false end)end pcall(function()local cam=workspace
+.CurrentCamera if cam and hf.savedCamType then cam.CameraType=hf.savedCamType
+end if cam and hf.savedCamSubject then cam.CameraSubject=hf.savedCamSubject end
+end)hf.ctrl={F=0,B=0,L=0,R=0,Q=0,E=0}hf.vel=Vector3.zero hf.hatPos=nil hf.
+srcHats={}hf.flyParts={}hf.root,hf.hum,hf.flyHat,hf.baseplate,hf.savedCF,hf.
+savedCamType,hf.savedCamSubject=nil,nil,nil,nil,nil,nil,nil end _nvL.StartHatFly
+=function()_nvL.StopHatFly()local char=_nvL.lp.Character or _nvL.lp.
+CharacterAdded:Wait()local hum=char and char:FindFirstChildOfClass('Humanoid')
+local root=getRootPart(char)local srcHats=_hatHandles(char)if not hum or not
+root then return false,'Character not ready'end if#srcHats==0 then return false,
+'No accessory handle found'end local origRootCF=root.CFrame local primarySrc=
+srcHats[1]local primaryWorldCF=primarySrc.CFrame local plate=createInstance(
+'Part',{Name='NV_HatFlyBaseplate',Anchored=true,CanCollide=true,CanTouch=false,
+CanQuery=false,CastShadow=false,Material=Enum.Material.SmoothPlastic,Color=
+Color3.fromRGB(30,30,34),Transparency=0.45,Size=Vector3.new(220,1,220),CFrame=
+CFrame.new(root.Position.X,-4500,root.Position.Z),Parent=workspace})
+local function cleanClone(src)local clone=src:Clone()clone.Anchored=true clone.
+CanCollide=false clone.CanTouch=false clone.CanQuery=false clone.Massless=true
+for _,w in clone:GetDescendants()do if w:IsA('JointInstance')or w:IsA(
+'WeldConstraint')then w:Destroy()end end return clone end local flyHat=
+cleanClone(primarySrc)flyHat.Name='NV_HatFlyHandle'flyHat.CFrame=primaryWorldCF
+flyHat.Parent=workspace local flyParts={}for _,sh in srcHats do local clone if
+sh==primarySrc then clone=flyHat else clone=cleanClone(sh)clone.Name=
+'NV_HatFlyHandle'clone.CFrame=sh.CFrame clone.Parent=workspace end flyParts[#
+flyParts+1]={part=clone,offset=primaryWorldCF:ToObjectSpace(sh.CFrame)}end hf.
+active=true hf.root=root hf.hum=hum hf.srcHats=srcHats hf.flyHat=flyHat hf.
+flyParts=flyParts hf.baseplate=plate hf.savedCF=origRootCF hf.hatPos=
+primaryWorldCF.Position hf.vel=Vector3.zero pcall(function()local cam=workspace.
+CurrentCamera hf.savedCamType=cam and cam.CameraType or nil hf.savedCamSubject=
+cam and cam.CameraSubject or nil if cam then cam.CameraType=Enum.CameraType.
+Custom cam.CameraSubject=flyHat end end)for _,sh in srcHats do pcall(function()
+sh.LocalTransparencyModifier=1 end)end pcall(function()if hum.SeatPart then hum.
+Sit=false end hum.PlatformStand=true root.CFrame=plate.CFrame+Vector3.new(0,6,0)
+root.AssemblyLinearVelocity=Vector3.zero root.AssemblyAngularVelocity=Vector3.
+zero end)hf.conns[#hf.conns+1]=userInputService.InputBegan:Connect(function(
+input,gp)if gp or userInputService:GetFocusedTextBox()then return end local kc=
+input.KeyCode if kc==Enum.KeyCode.W then hf.ctrl.F=1 elseif kc==Enum.KeyCode.S
+then hf.ctrl.B=-1 elseif kc==Enum.KeyCode.A then hf.ctrl.L=-1 elseif kc==Enum.
+KeyCode.D then hf.ctrl.R=1 elseif kc==Enum.KeyCode.E then hf.ctrl.Q=1 elseif kc
+==Enum.KeyCode.Q then hf.ctrl.E=-1 end end)hf.conns[#hf.conns+1]=
+userInputService.InputEnded:Connect(function(input)local kc=input.KeyCode if kc
+==Enum.KeyCode.W then hf.ctrl.F=0 elseif kc==Enum.KeyCode.S then hf.ctrl.B=0
+elseif kc==Enum.KeyCode.A then hf.ctrl.L=0 elseif kc==Enum.KeyCode.D then hf.
+ctrl.R=0 elseif kc==Enum.KeyCode.E then hf.ctrl.Q=0 elseif kc==Enum.KeyCode.Q
+then hf.ctrl.E=0 end end)hf.conns[#hf.conns+1]=_nvL.lp.CharacterAdded:Connect(
+function()_nvL.StopHatFly()end)hf.conns[#hf.conns+1]=runService.Heartbeat:
+Connect(function(dt)if not hf.active or not hf.flyHat or not hf.flyHat.Parent
+then return end local cam=workspace.CurrentCamera if cam and cam.CameraSubject~=
+hf.flyHat then pcall(function()cam.CameraType=Enum.CameraType.Custom cam.
+CameraSubject=hf.flyHat end)end local f,s,v=0,0,0 if not userInputService:
+GetFocusedTextBox()then local mv=hf.ctrl f=(mv.F+mv.B)s=(mv.R+mv.L)v=(mv.Q+mv.E)
+if userInputService:IsKeyDown(Enum.KeyCode.Space)then v=v+1 end if
+userInputService:IsKeyDown(Enum.KeyCode.LeftControl)or userInputService:
+IsKeyDown(Enum.KeyCode.RightControl)then v=v-1 end end local look=cam.CFrame.
+LookVector local right=cam.CFrame.RightVector local lookH=Vector3.new(look.X,0,
+look.Z)if lookH.Magnitude>0.001 then lookH=lookH.Unit else lookH=Vector3.new(0,0
+,-1)end local rightH=Vector3.new(right.X,0,right.Z)if rightH.Magnitude>0.001
+then rightH=rightH.Unit else rightH=Vector3.new(1,0,0)end local desired=(lookH*f
+)+(rightH*s)+Vector3.new(0,v,0)if desired.Magnitude>0 then desired=desired.Unit*
+(math.max(_G._nvMove.iyflyspeed,0.5)*85)else desired=Vector3.zero end if v==0
+then desired=Vector3.new(desired.X,0,desired.Z)end local alpha=desired.Magnitude
+>0 and 0.26 or 0.08 hf.vel=hf.vel+(desired-hf.vel)*alpha if v==0 then hf.vel=
+Vector3.new(hf.vel.X,0,hf.vel.Z)end hf.hatPos=hf.hatPos+hf.vel*math.max(dt or
+0.016,0.016)local primaryCF=CFrame.new(hf.hatPos,hf.hatPos+cam.CFrame.LookVector
+)for _,fp in hf.flyParts do if fp and fp.part and fp.part.Parent then fp.part.
+CFrame=primaryCF*fp.offset end end if hf.root and hf.root.Parent and hf.
+baseplate and hf.baseplate.Parent then hf.root.CFrame=hf.baseplate.CFrame+
+Vector3.new(0,6,0)hf.root.AssemblyLinearVelocity=Vector3.zero hf.root.
+AssemblyAngularVelocity=Vector3.zero end end)return true end end end function
+__DARKLUA_BUNDLE_MODULES.S():typeof(__modImpl())local v=__DARKLUA_BUNDLE_MODULES
+.cache.S if not v then v={c=__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.S=v end
 return v.c end end
 do local function
 __modImpl()return function(env,pnl,bar,onMove,onDragStart,onDragEnd)local _cs=
@@ -8824,6 +9140,1308 @@ then _nvL.applyThemeTo(_G._reanimSpeedPanel)end end)end end function
 __DARKLUA_BUNDLE_MODULES.aj():typeof(__modImpl())local v=
 __DARKLUA_BUNDLE_MODULES.cache.aj if not v then v={c=__modImpl()}
 __DARKLUA_BUNDLE_MODULES.cache.aj=v end return v.c end end
+do local function
+__modImpl()return function(env)local _cs=env._cs local _isMobile=env._isMobile
+local _mv=env._mv local _nvL=env._nvL local makeFloatingPanel=env.
+makeFloatingPanel local makePanelTitleBar=env.makePanelTitleBar local function
+_setup()_G._flyPanel=makeFloatingPanel(260,206,0.5,0.45)_G._flyPanel.Name=
+'SuperflyPanel'_G._flyPanel.BackgroundTransparency=0 local fpBar=
+makePanelTitleBar(_G._flyPanel,'Superfly',function()_G._flyPanel.Visible=false
+end)_cs.makePanelDraggable(_G._flyPanel,fpBar)local K=_G._nv_popKit local fpBody
+=K.body(_G._flyPanel)local setFlyToggle setFlyToggle=K.featureTile(fpBody,18,8,
+224,84,{tint='blue',icon='flash',label='Superfly',note=_isMobile and
+'Hold the screen to fly'or'Hold the mouse to fly',callback=function(v)if v then
+_nvL.NOFLY()task.wait()_nvL.sFLY()if _G._nvSuperflyStart then _G.
+_nvSuperflyStart()end _nvL.notify('Superfly','Enabled')else _nvL.NOFLY()_nvL.
+notify('Superfly','Disabled')end if _G._nvMarkCmdToggle then _G.
+_nvMarkCmdToggle('superfly',v)end end})_G._flyToggleSet=function(on,fire)
+setFlyToggle(on,fire~=false)end local fpGroup=K.group(fpBody,18,102,224,52)_G.
+_flySlider=K.slider(fpGroup,0,0,224,'Speed',1,20,math.clamp(math.round(_mv.
+iyflyspeed),1,20),function(v)_mv.iyflyspeed=v local c=_mv._flyControl if c then
+if c.F~=0 then c.F=v end if c.B~=0 then c.B=-v end if c.L~=0 then c.L=-v end if
+c.R~=0 then c.R=v end if c.Q~=0 then c.Q=v*2 end if c.E~=0 then c.E=-v*2 end end
+end)end _setup()pcall(function()_nvL.applyThemeTo(_G._flyPanel)end)_G.
+_nvPanelEnable=_G._nvPanelEnable or{}_G._nvPanelEnable.superfly={ensure=function
+()_G._nvEnsurePanel('_flyPanel',_G._initFlyPanel or _initFlyPanel)if _G.
+_flyPanel then _G._flyPanel.Visible=true end end,setOn=function(on,fire)if _G.
+_flyToggleSet then _G._flyToggleSet(on,fire~=false)end end}end end function
+__DARKLUA_BUNDLE_MODULES.ar():typeof(__modImpl())local v=
+__DARKLUA_BUNDLE_MODULES.cache.ar if not v then v={c=__modImpl()}
+__DARKLUA_BUNDLE_MODULES.cache.ar=v end return v.c end end
+do local function
+__modImpl()return function(env)local C=env.C local _cs=env._cs local
+createInstance=env.createInstance local makeFloatingPanel=env.makeFloatingPanel
+local makePanelTitleBar=env.makePanelTitleBar local BOLD,MEDIUM=Enum.Font.
+GothamBold,Enum.Font.GothamMedium local WHITE=Color3.new(1,1,1)local BLACK=
+Color3.new(0,0,0)local SUBTLE=Color3.fromRGB(150,150,156)local textService=game:
+GetService('TextService')local function text(parent,value,font,size,color,props)
+local l=createInstance('TextLabel',{Parent=parent,BackgroundTransparency=1,
+BorderSizePixel=0,Font=font,TextSize=size,TextColor3=color,TextXAlignment=Enum.
+TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,TextTruncate=Enum.
+TextTruncate.AtEnd,Text=value,ZIndex=160})for k,v in props or{}do l[k]=v end
+return l end local function frame(parent,props)local f=createInstance('Frame',{
+Parent=parent,BackgroundTransparency=1,BorderSizePixel=0,ZIndex=158})for k,v in
+props or{}do f[k]=v end return f end local function corner(parent,r)
+createInstance('UICorner',{Parent=parent,CornerRadius=r and UDim.new(0,r)or UDim
+.new(1,0)})end local function lift(obj,z)if obj:IsA('GuiObject')then obj.ZIndex=
+z end for _,d in obj:GetDescendants()do if d:IsA('GuiObject')then d.ZIndex=z+1
+end end end local function button(parent,order,b,small)local kit=_G._nv_kit
+local size=small and 30 or 32 local width=small and size or math.ceil(
+textService:GetTextSize(b.label,12,BOLD,Vector2.new(400,40)).X)+(b.icon and 46
+or 28)local btn if kit and kit.softButton then btn=kit.softButton(parent,0,0,
+width,size,function()task.spawn(b.run)end)if small then kit.icon(btn,b.icon,14,8
+,8,C.TEXT)else if b.icon then kit.icon(btn,b.icon,14,14,9,C.TEXT)end kit.text(
+btn,b.label,BOLD,12,C.TEXT,b.icon and 34 or 14,0,width-(b.icon and 40 or 20),32)
+end else btn=createInstance('TextButton',{Parent=parent,AutoButtonColor=false,
+BackgroundColor3=Color3.fromRGB(40,40,43),Size=UDim2.fromOffset(width,32),Font=
+BOLD,TextSize=12,TextColor3=C.TEXT,Text=b.label})corner(btn,16)btn.Activated:
+Connect(function()task.spawn(b.run)end)end btn.LayoutOrder=order lift(btn,161)
+return btn end local function flag(parent,color)local tile=createInstance(
+'CanvasGroup',{Parent=parent,BackgroundColor3=color,BorderSizePixel=0,Position=
+UDim2.fromOffset(0,0),Size=UDim2.fromOffset(42,42),ZIndex=159})corner(tile,11)
+local dark=color:Lerp(BLACK,0.45)local cells=4 local step=42/cells for r=0,cells
+-1 do for c=0,cells-1 do if(r+c)%2==1 then frame(tile,{BackgroundTransparency=0,
+BackgroundColor3=dark,Position=UDim2.fromOffset(c*step,r*step),Size=UDim2.
+fromOffset(math.ceil(step),math.ceil(step)),ZIndex=160})end end end
+createInstance('UIStroke',{Parent=tile,Color=color:Lerp(WHITE,0.35),Thickness=1,
+Transparency=0.3})return tile end local function faces(parent,ids)local row=
+frame(parent,{LayoutOrder=2,Size=UDim2.new(1,0,0,26)})local shown=math.min(#ids,
+8)for i=1,shown do local img=createInstance('ImageLabel',{Parent=row,
+BackgroundColor3=Color3.fromRGB(40,40,44),BorderSizePixel=0,Position=UDim2.
+fromOffset((i-1)*19,0),Size=UDim2.fromOffset(26,26),Image=
+'rbxthumb://type=AvatarHeadShot&id='..ids[i]..'&w=48&h=48',ZIndex=160+i})corner(
+img)createInstance('UIStroke',{Parent=img,Color=Color3.fromRGB(18,18,20),
+Thickness=2})end if#ids>shown then text(row,'+'..(#ids-shown),BOLD,12,SUBTLE,{
+Position=UDim2.fromOffset(shown*19+14,0),Size=UDim2.fromOffset(60,26),ZIndex=170
+})end return row end local function inlineRow(parent,i,r,boxed)local row=frame(
+parent,{LayoutOrder=i,BackgroundTransparency=boxed and 0.955 or 1,
+BackgroundColor3=WHITE,Size=UDim2.new(1,0,0,r.sub and 56 or 42),ZIndex=157})if
+boxed then corner(row,14)end local pad=boxed and 14 or 4 local buttons=frame(row
+,{AnchorPoint=Vector2.new(1,0.5),Position=UDim2.new(1,-pad+2,0.5,0),
+AutomaticSize=Enum.AutomaticSize.X,Size=UDim2.fromOffset(0,30)})createInstance(
+'UIListLayout',{Parent=buttons,FillDirection=Enum.FillDirection.Horizontal,
+HorizontalAlignment=Enum.HorizontalAlignment.Right,SortOrder=Enum.SortOrder.
+LayoutOrder,Padding=UDim.new(0,6)})for n,b in r.buttons or{}do button(buttons,n,
+b,true)end local room=-(pad+8+#(r.buttons or{})*36)if r.right then text(row,r.
+right,MEDIUM,11,SUBTLE,{AnchorPoint=Vector2.new(1,0.5),Position=UDim2.new(1,room
+,0.5,0),Size=UDim2.fromOffset(70,16),TextXAlignment=Enum.TextXAlignment.Right})
+room-=76 end if r.sub then text(row,r.title,BOLD,13,C.TEXT,{Position=UDim2.
+fromOffset(pad,10),Size=UDim2.new(1,room-pad,0,18)})text(row,r.sub,MEDIUM,11,
+SUBTLE,{Position=UDim2.fromOffset(pad,29),Size=UDim2.new(1,room-pad,0,15)})else
+text(row,r.title,r.mono and MEDIUM or BOLD,13,C.TEXT,{Position=UDim2.fromOffset(
+pad,0),Size=UDim2.new(1,room-pad,1,0)})end return row end local function bright(
+c)local h,s,v=c:ToHSV()return Color3.fromHSV(h,s,math.max(v,0.55))end
+local function card(parent,i,r)local tint=r.flag local c=frame(parent,{
+LayoutOrder=i,BackgroundTransparency=tint and 0 or 0.955,BackgroundColor3=WHITE,
+Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,ZIndex=157})corner(c,
+14)if r.edge and not tint then createInstance('UIStroke',{Parent=c,Color=r.edge,
+Thickness=1.5,Transparency=0.3})end if tint then createInstance('UIGradient',{
+Parent=c,Rotation=0,Color=ColorSequence.new(tint:Lerp(BLACK,0.55),Color3.
+fromRGB(22,22,25)),Transparency=NumberSequence.new(0.35,0.15)})createInstance(
+'UIStroke',{Parent=c,Color=bright(tint),Thickness=1.5,Transparency=0.25})end
+createInstance('UIPadding',{Parent=c,PaddingLeft=UDim.new(0,14),PaddingRight=
+UDim.new(0,14),PaddingTop=UDim.new(0,12),PaddingBottom=UDim.new(0,12)})
+createInstance('UIListLayout',{Parent=c,SortOrder=Enum.SortOrder.LayoutOrder,
+Padding=UDim.new(0,10)})local visual=r.flag or r.thumb local head=frame(c,{
+LayoutOrder=1,Size=UDim2.new(1,0,0,visual and 42 or(r.sub and 34 or 18))})local
+x=0 if r.flag then flag(head,r.flag)x=54 elseif r.thumb then local img=
+createInstance('ImageLabel',{Parent=head,BackgroundColor3=Color3.fromRGB(40,40,
+44),BorderSizePixel=0,Size=UDim2.fromOffset(42,42),Image=r.thumb,ZIndex=159})
+corner(img,not r.round and 11 or nil)x=54 end local top=visual and(r.sub and 4
+or 12)or 0 local titleRow=frame(head,{Position=UDim2.fromOffset(x,top),Size=
+UDim2.new(1,-x,0,18)})local t=text(titleRow,r.title,BOLD,14,C.TEXT,{Size=UDim2.
+new(1,r.badge and-70 or 0,1,0)})if r.badge then t.AutomaticSize=Enum.
+AutomaticSize.X t.Size=UDim2.new(0,0,1,0)local chip=createInstance('TextLabel',{
+Parent=titleRow,AutomaticSize=Enum.AutomaticSize.X,BackgroundColor3=r.badgeColor
+or r.flag or WHITE,BackgroundTransparency=(r.badgeColor or r.flag)and 0.55 or
+0.88,BorderSizePixel=0,Size=UDim2.fromOffset(0,18),Font=BOLD,TextSize=11,
+TextColor3=WHITE,Text=r.badge,ZIndex=161})corner(chip)createInstance('UIPadding'
+,{Parent=chip,PaddingLeft=UDim.new(0,8),PaddingRight=UDim.new(0,8)})
+createInstance('UIListLayout',{Parent=titleRow,FillDirection=Enum.FillDirection.
+Horizontal,VerticalAlignment=Enum.VerticalAlignment.Center,SortOrder=Enum.
+SortOrder.LayoutOrder,Padding=UDim.new(0,8)})t.LayoutOrder,chip.LayoutOrder=1,2
+end if r.sub then text(head,r.sub,MEDIUM,12,SUBTLE,{Position=UDim2.fromOffset(x,
+top+20),Size=UDim2.new(1,-x,0,16)})end if r.desc then text(c,r.desc,MEDIUM,12,
+Color3.fromRGB(206,206,212),{LayoutOrder=2,Size=UDim2.new(1,0,0,0),AutomaticSize
+=Enum.AutomaticSize.Y,TextWrapped=true,TextTruncate=Enum.TextTruncate.None,
+TextYAlignment=Enum.TextYAlignment.Top})end if r.faces and#r.faces>0 then faces(
+c,r.faces)end if r.buttons and#r.buttons>0 then local row=frame(c,{LayoutOrder=3
+,Size=UDim2.new(1,0,0,32)})createInstance('UIListLayout',{Parent=row,
+FillDirection=Enum.FillDirection.Horizontal,SortOrder=Enum.SortOrder.LayoutOrder
+,Padding=UDim.new(0,8)})for n,b in r.buttons do button(row,n,b)end end return c
+end return function(title,opts)opts=opts or{}local w,maxH,style=opts.w or 340,
+opts.maxH or 460,opts.style or'cards'local L={}local pnl local scroll local
+layout local function fit()if not(pnl and layout)then return end local top=
+tonumber(pnl:GetAttribute('UtilityTitleHeight'))or 34 local want=math.clamp(
+layout.AbsoluteContentSize.Y+top+26,opts.minH or 130,maxH)if math.abs(pnl.
+AbsoluteSize.Y-want)>1 then pnl.Size=UDim2.fromOffset(w,want)end end
+local function build()pnl=makeFloatingPanel(w,maxH,0.5,0.45)pnl.Name=title:gsub(
+'%s','')..'Panel'pnl.BackgroundTransparency=0 local bar=makePanelTitleBar(pnl,
+title,function()pnl.Visible=false end)_cs.makePanelDraggable(pnl,bar)local top=
+tonumber(pnl:GetAttribute('UtilityTitleHeight'))or 34 scroll=createInstance(
+'ScrollingFrame',{Parent=pnl,Name='Body',BackgroundTransparency=1,
+BorderSizePixel=0,Position=UDim2.fromOffset(0,top),Size=UDim2.new(1,0,1,-top),
+CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,
+ScrollingDirection=Enum.ScrollingDirection.Y,ScrollBarThickness=0,
+ScrollBarImageTransparency=1,ZIndex=155})createInstance('UIPadding',{Parent=
+scroll,PaddingLeft=UDim.new(0,16),PaddingRight=UDim.new(0,16),PaddingTop=UDim.
+new(0,8),PaddingBottom=UDim.new(0,16)})layout=createInstance('UIListLayout',{
+Parent=scroll,SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,style==
+'cards'and 10 or 8)})layout:GetPropertyChangedSignal('AbsoluteContentSize'):
+Connect(fit)L.panel=pnl end function L.set(rows,empty)if not pnl or not pnl.
+Parent then build()end for _,c in scroll:GetChildren()do if c:IsA('GuiObject')
+then c:Destroy()end end if#rows==0 then text(scroll,empty or'Nothing here yet',
+MEDIUM,13,SUBTLE,{LayoutOrder=1,Size=UDim2.new(1,0,0,60),TextXAlignment=Enum.
+TextXAlignment.Center,TextWrapped=true})return end if style=='list'then local
+box=frame(scroll,{LayoutOrder=1,BackgroundTransparency=0.955,BackgroundColor3=
+WHITE,Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,ZIndex=157})
+corner(box,14)createInstance('UIPadding',{Parent=box,PaddingLeft=UDim.new(0,10),
+PaddingRight=UDim.new(0,10),PaddingTop=UDim.new(0,4),PaddingBottom=UDim.new(0,4)
+})createInstance('UIListLayout',{Parent=box,SortOrder=Enum.SortOrder.LayoutOrder
+})for i,r in rows do if i>1 then frame(box,{LayoutOrder=i*2-1,
+BackgroundTransparency=0.93,BackgroundColor3=WHITE,Size=UDim2.new(1,0,0,1),
+ZIndex=158})end inlineRow(box,i*2,r,false)end elseif style=='inline'then for i,r
+in rows do inlineRow(scroll,i,r,true)end else for i,r in rows do card(scroll,i,r
+)end end task.defer(fit)end function L.show(rows,empty)L.set(rows,empty)pnl.
+Visible=true end function L.open()return pnl~=nil and pnl.Parent~=nil and pnl.
+Visible end return L end end end function __DARKLUA_BUNDLE_MODULES.aV():typeof(
+__modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.aV if not v then v={c=
+__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.aV=v end return v.c end end
+do local function
+__modImpl()return function(env)
+local _nvL=env._nvL 
+local _request=env._request 
+local players=env.players 
+local reg=env.
+reg 
+local
+teleportService=env.teleportService 
+do
+reg('rejoin','Rejoin this server','',{'rj'},function()pcall(function()
+if#players:GetPlayers()<=1 then _nvL.lp:Kick('\nRejoining...')task.wait()
+teleportService:Teleport(game.PlaceId,_nvL.lp)else teleportService:
+TeleportToPlaceInstance(game.PlaceId,game.JobId,_nvL.lp)end end)end)
+reg(
+'serverhop','Hop to a random server','',{'shop','sh'},function()if type(_G.
+_shHop)=='function'then _G._shHop('random')return end task.spawn(function()
+pcall(function()local url='https://games.roblox.com/v1/games/'..game.PlaceId..
+[[/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true]]local req=
+_request or request or http_request or(syn and syn.request)local resp if req
+then local res=req({Url=url,Method='GET'})if type(res)=='table'then resp=res.
+Body end else resp=game:HttpGet(url)end local body=game:GetService('HttpService'
+):JSONDecode(resp)local servers={}if body and body.data then for _,v in body.
+data do if type(v)=='table'and tonumber(v.playing)and tonumber(v.maxPlayers)and
+v.playing<v.maxPlayers and v.id~=game.JobId then servers[#servers+1]=v.id end
+end end if#servers>0 then teleportService:TeleportToPlaceInstance(game.PlaceId,
+servers[math.random(#servers)],_nvL.lp)end end)end)end)
+reg('clip','Disable noclip','',function()
+_G._nvMove.setNoclip('user',false)local prof=_G._nv_profileRuntime if prof and
+prof.drop then prof:drop('noclip')end end)
+reg('unfollow','Stop following player'
+,'',function()_nvL.walktoActive=false end)
+reg('join','Join server by Job ID',
+'<s>',function(a)local jobId=a[2]if not jobId or#jobId<8 then return end pcall(
+function()teleportService:TeleportToPlaceInstance(game.PlaceId,jobId,_nvL.lp)end
+)end)
+end
+end end function __DARKLUA_BUNDLE_MODULES.aL():typeof(__modImpl())local v=
+__DARKLUA_BUNDLE_MODULES.cache.aL if not v then v={c=__modImpl()}
+__DARKLUA_BUNDLE_MODULES.cache.aL=v end return v.c end end
+do local function
+__modImpl()return function(env)
+local C=env.C 
+local _cs=env._cs 
+local _nvL=env.
+_nvL 
+local _orbs=env._orbs 
+local createInstance=env.createInstance 
+local
+findPlayers=env.findPlayers 
+local getRootPart=env.getRootPart 
+local mouse=env.
+mouse 
+local reg=env.reg 
+local runService=env.runService 
+local spec=env.spec
+
+local stopOrbit=env.stopOrbit 
+local userInputService=env.userInputService 
+reg(
+'ftp','Teleport to mouse (F key)','',{'mousetp'},function()_cs.ftpOn=true if _cs
+.ftpConn then _cs.ftpConn:Disconnect()end _cs.ftpConn=userInputService.
+InputBegan:Connect(function(i,gp)if gp then return end if i.KeyCode==Enum.
+KeyCode.F then pcall(function()local hrp=_nvL.lp.Character and getRootPart(_nvL.
+lp.Character)if hrp then hrp.CFrame=CFrame.new(mouse.Hit.Position+Vector3.new(0,
+3,0))end end)end end)end)
+reg('unftp','Disable FTP','',function()_cs.ftpOn=false
+if _cs.ftpConn then _cs.ftpConn:Disconnect()_cs.ftpConn=nil end end)
+do local
+tpToolInstance=nil local tpToolConn=nil reg('tptool',
+'Equip click-to-teleport tool','',{'tpt'},function()if tpToolInstance and
+tpToolInstance.Parent then tpToolInstance:Destroy()end if tpToolConn then
+tpToolConn:Disconnect()tpToolConn=nil end local backpack=_nvL.lp:
+FindFirstChildWhichIsA('Backpack')local _char=_nvL.lp.Character if not backpack
+then return end local tool=createInstance('Tool',{Name='TP Tool',RequiresHandle=
+false,ToolTip='Click anywhere to teleport there',Parent=backpack})tpToolInstance
+=tool tpToolConn=tool.Activated:Connect(function()pcall(function()local hrp=_nvL
+.lp.Character and getRootPart(_nvL.lp.Character)if not hrp then return end local
+target=mouse.Hit.Position+Vector3.new(0,3,0)hrp.CFrame=CFrame.new(target)end)end
+)tool.AncestryChanged:Connect(function()if not tool.Parent then if tpToolConn
+then tpToolConn:Disconnect()tpToolConn=nil end if tpToolInstance==tool then
+tpToolInstance=nil end end end)_nvL.notify('TP Tool',
+'Equipped ,  click anywhere to teleport')end)reg('untptool',
+'Remove the teleport tool','',{'utpt'},function()if tpToolInstance and
+tpToolInstance.Parent then tpToolInstance:Destroy()end if tpToolConn then
+tpToolConn:Disconnect()tpToolConn=nil end tpToolInstance=nil _nvL.notify(
+'TP Tool','Removed')end)end 
+do
+local WP_FILE='Novoline/waypoints.json'
+local
+_nv_wps={}
+local _nv_wpVis={}
+local _nv_wpTool=nil 
+local _nv_wpToolConn=nil 
+local
+hs_wp=game:GetService('HttpService')
+local function wpSave()pcall(function()if
+not isfolder('Novoline')then makefolder('Novoline')end writefile(WP_FILE,hs_wp:
+JSONEncode(_nv_wps))end)end 
+local function wpDistStr(pos)local hrp=_nvL.lp.Character and getRootPart(_nvL.lp
+.Character)if not hrp then return'?m'end return tostring(math.round((hrp.
+Position-pos).Magnitude))..'m'end 
+local function wpDestroyVis(name)local vis=
+_nv_wpVis[name]if not vis then return end if vis.conn then vis.conn:Disconnect()
+end pcall(function()if vis.part and vis.part.Parent then vis.part:Destroy()end
+end)pcall(function()if vis.bb and vis.bb.Parent then vis.bb:Destroy()end end)
+_nv_wpVis[name]=nil end 
+local function wpMakeVis(name,pos)wpDestroyVis(name)
+local part=createInstance('Part',{Name='NV_WP_'..name,Anchored=true,CanCollide=
+false,CanTouch=false,Size=Vector3.new(1.2,1.2,1.2),CFrame=CFrame.new(pos),
+Material=Enum.Material.Neon,Color=C.ACCENT,Transparency=0.35,CastShadow=false,
+Parent=workspace})local hl=createInstance('SelectionBox',{Parent=part,Adornee=
+part,Color3=C.ACCENT,LineThickness=0.04,SurfaceTransparency=0.85})local bb=
+createInstance('BillboardGui',{Name='NV_WP_BB_'..name,AlwaysOnTop=true,
+LightInfluence=0,Size=UDim2.new(0,160,0,52),StudsOffsetWorldSpace=Vector3.new(0,
+2.2,0),Adornee=part,Parent=_nvL.coreGui})local frame=createInstance('Frame',{
+Parent=bb,AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0.5,0,0.5,0),Size=
+UDim2.new(1,0,1,0),BackgroundColor3=C.PANEL,BackgroundTransparency=0.18,
+BorderSizePixel=0})createInstance('UICorner',{Parent=frame,CornerRadius=UDim.
+new(0,10)})local stroke=createInstance('UIStroke',{Parent=frame,Color=C.ACCENT,
+Thickness=1.2,Transparency=0.15})local lblName=createInstance('TextLabel',{
+Parent=frame,Name='WPName',BackgroundTransparency=1,Position=UDim2.new(0,26,0,4)
+,Size=UDim2.new(1,-34,0,18),Font=Enum.Font.GothamBold,TextSize=13,TextColor3=
+Color3.fromRGB(255,255,255),TextXAlignment=Enum.TextXAlignment.Left,Text=name})
+local pinIcon=createInstance('ImageLabel',{Parent=frame,Name='WPIcon',
+BackgroundTransparency=1,Position=UDim2.new(0,8,0,6),Size=UDim2.fromOffset(14,14
+),ImageColor3=C.ACCENT,ScaleType=Enum.ScaleType.Fit})_G._nv_lazyFluent(pinIcon,
+'location')local lblDist=createInstance('TextLabel',{Parent=frame,Name='WPDist',
+BackgroundTransparency=1,Position=UDim2.new(0,8,0,25),Size=UDim2.new(1,-16,0,16)
+,Font=Enum.Font.Gotham,TextSize=12,TextColor3=C.ACCENT,TextXAlignment=Enum.
+TextXAlignment.Left,Text=wpDistStr(pos)})local conn=runService.Heartbeat:
+Connect(function()if not(part and part.Parent)then return end lblDist.Text=
+wpDistStr(pos)end)_nv_wpVis[name]={part=part,bb=bb,conn=conn}end 
+reg('setwaypoint','Save current position as a named waypoint','<n>',{'swp',
+'savepos'},function(a)local name=a[2]if not name or name==''then _nvL.notify(
+'Waypoint','Usage: setwaypoint <name>')return end local hrp=_nvL.lp.Character
+and getRootPart(_nvL.lp.Character)if not hrp then _nvL.notify('Waypoint',
+'No character found')return end local pos=hrp.Position _nv_wps[name]={pos.X,pos.
+Y,pos.Z}wpSave()wpMakeVis(name,pos)_nvL.notify('Waypoint','Saved "'..name..
+'" ,  '..math.round(pos.X)..', '..math.round(pos.Y)..', '..math.round(pos.Z))end
+)
+reg('gotowaypoint','Teleport to a saved waypoint','<n>',{'gwp','wp'},function(a
+)local name=a[2]if not name then _nvL.notify('Waypoint',
+'Usage: gotowaypoint <name>')return end local coord=_nv_wps[name]if not coord
+then _nvL.notify('Waypoint','No waypoint named "'..name..'"')return end local
+hrp=_nvL.lp.Character and getRootPart(_nvL.lp.Character)if not hrp then return
+end local pos=Vector3.new(coord[1]or coord.x or 0,coord[2]or coord.y or 0,coord[
+3]or coord.z or 0)pcall(function()local h=_nvL.lp.Character:
+FindFirstChildOfClass('Humanoid')if h and h.SeatPart then h.Sit=false task.wait(
+0.1)end end)hrp.CFrame=CFrame.new(pos+Vector3.new(0,3,0))_nvL.notify('Waypoint',
+'Teleported to "'..name..'"')end)
+reg('deletewaypoint','Delete a named waypoint',
+'<n>',{'dwp'},function(a)local name=a[2]if not name then _nvL.notify('Waypoint',
+'Usage: deletewaypoint <name>')return end if not _nv_wps[name]then _nvL.notify(
+'Waypoint','No waypoint named "'..name..'"')return end _nv_wps[name]=nil
+wpDestroyVis(name)wpSave()_nvL.notify('Waypoint','Deleted "'..name..'"')end)
+reg(
+'clearwaypoints','Delete all saved waypoints','',{'cwp'},function()local count=0
+for name in _nv_wps do wpDestroyVis(name)_nv_wps[name]=nil count=count+1 end
+wpSave()_nvL.notify('Waypoint','Cleared '..count..' waypoint'..(count==1 and''or
+'s'))end)
+reg('waypoints','List all saved waypoints','',function()local names={}
+for name in _nv_wps do names[#names+1]=name end if#names==0 then _nvL.notify(
+'Waypoint','No waypoints saved')else table.sort(names)_nvL.notify('Waypoints ('
+..#names..')',table.concat(names,', '))end end)
+reg('waypointtool',
+'Equip a tool ,  click anywhere to place a waypoint there','',function()if
+_nv_wpTool and _nv_wpTool.Parent then _nv_wpTool:Destroy()end if _nv_wpToolConn
+then _nv_wpToolConn:Disconnect()_nv_wpToolConn=nil end local backpack=_nvL.lp:
+FindFirstChildWhichIsA('Backpack')if not backpack then return end local tool=
+createInstance('Tool',{Name='WP Tool',RequiresHandle=false,ToolTip=
+'Click anywhere to place a waypoint',Parent=backpack})_nv_wpTool=tool
+_nv_wpToolConn=tool.Activated:Connect(function()pcall(function()local pos=mouse.
+Hit.Position+Vector3.new(0,0.6,0)local idx=1 while _nv_wps['wp'..idx]do idx=idx+
+1 end local name='wp'..idx _nv_wps[name]={pos.X,pos.Y,pos.Z}wpSave()wpMakeVis(
+name,pos)_nvL.notify('Waypoint','Placed "'..name..
+'" ,  click to place another, use gotowaypoint to teleport')end)end)tool.
+AncestryChanged:Connect(function()if not tool.Parent then if _nv_wpToolConn then
+_nv_wpToolConn:Disconnect()_nv_wpToolConn=nil end if _nv_wpTool==tool then
+_nv_wpTool=nil end end end)_nvL.notify('WP Tool',
+'Equipped ,  click anywhere to drop a waypoint')end)
+end
+reg('orbit',
+'Orbit around player','<p>',{'orb'},function(a)local targets=findPlayers(a[2])if
+#targets==0 then return end local p=targets[1]stopOrbit()local root=getRootPart(
+_nvL.lp.Character)local hum2=_nvL.lp.Character and _nvL.lp.Character:
+FindFirstChildOfClass('Humanoid')if not(p.Character and getRootPart(p.Character)
+and root and hum2)then return end _nvL.orbitTarget=p local rot=0 local spd=
+tonumber(a[3])or 0.2 local dist=tonumber(a[4])or 6 _orbs[1]=runService.Heartbeat
+:Connect(function()pcall(function()rot=rot+spd root.CFrame=CFrame.new(
+getRootPart(p.Character).Position)*CFrame.Angles(0,math.rad(rot),0)*CFrame.new(
+dist,0,0)end)end)_orbs[2]=runService.RenderStepped:Connect(function()pcall(
+function()root.CFrame=CFrame.new(root.Position,getRootPart(p.Character).Position
+)end)end)local function orbitEnded()stopOrbit()local prof=_G._nv_profileRuntime
+if prof and prof.drop then prof:drop('orbit')end end _orbs[3]=hum2.Died:Connect(
+orbitEnded)_orbs[4]=hum2.Seated:Connect(function(v)if v then orbitEnded()end end
+)end)
+reg('unorbit','Stop orbiting','',{'uorb'},function()stopOrbit()end)
+reg(
+'walkto','Walk toward player','<p>',{'wt'},function(a)local targets=findPlayers(
+a[2])if#targets==0 then return end local p=targets[1]_nvL.walktoActive=true task
+.spawn(function()local char=_nvL.lp.Character local hum2=char and char:
+FindFirstChildOfClass('Humanoid')if hum2 and hum2.SeatPart then hum2.Sit=false
+task.wait(0.1)end repeat task.wait()char=_nvL.lp.Character hum2=char and char:
+FindFirstChildOfClass('Humanoid')if p.Character and getRootPart(p.Character)and
+hum2 then hum2:MoveTo(getRootPart(p.Character).Position)end until not _nvL.
+walktoActive or not p.Character _nvL.walktoActive=false end)end)
+reg('unwalkto',
+'Stop walking to player','',{'uwt'},function()_nvL.walktoActive=false end)
+reg(
+'pathfind','Pathfind to xyz or CFrame','<x,y,z | CFrame.new(...)>',{'pf',
+'pathto'},function(a)local rawArg=table.concat(a,' ',2)if rawArg==''then _nvL.
+notify('Pathfind','Usage: pathfind <x,y,z> or pathfind CFrame.new(...)')return
+end local nums={}for n in rawArg:gmatch('[-+]?%d*%.?%d+[eE]?[-+]?%d*')do nums[#
+nums+1]=tonumber(n)if#nums>=3 then break end end if#nums<3 then _nvL.notify(
+'Pathfind','Could not parse coordinates')return end local char=_nvL.lp.Character
+local hum=char and char:FindFirstChildOfClass('Humanoid')local root=getRootPart(
+char)if not hum or not root then _nvL.notify('Pathfind','No character found')
+return end local st=_G._nvPathState or{token=0,active=false}_G._nvPathState=st
+st.token=(st.token or 0)+1 st.active=true local myToken=st.token local dest=
+Vector3.new(nums[1],nums[2],nums[3])pcall(function()if hum.SeatPart then hum.Sit
+=false task.wait(0.1)end end)_nvL.notify('Pathfind',(
+'Routing to %.1f, %.1f, %.1f'):format(dest.X,dest.Y,dest.Z))task.spawn(function(
+)local pfs=game:GetService('PathfindingService')local path=pfs:CreatePath({
+AgentRadius=2,AgentHeight=5,AgentCanJump=true,AgentCanClimb=true})local
+okCompute=pcall(function()path:ComputeAsync(root.Position,dest)end)if myToken~=
+st.token then return end if not okCompute or path.Status~=Enum.PathStatus.
+Success then hum:MoveTo(dest)hum.MoveToFinished:Wait(6)if myToken==st.token then
+st.active=false _nvL.notify('Pathfind','Path unavailable, moved directly')end
+return end local waypoints=path:GetWaypoints()for _,wp in waypoints do if
+myToken~=st.token then return end if wp.Action==Enum.PathWaypointAction.Jump
+then hum.Jump=true end hum:MoveTo(wp.Position)local reached=hum.MoveToFinished:
+Wait(5)if not reached then hum:MoveTo(dest)hum.MoveToFinished:Wait(3)break end
+end if myToken==st.token then st.active=false _nvL.notify('Pathfind','Arrived')
+end end)end)
+reg('unpathfind','Stop current pathfinding route','',{'upf','stoppf'
+},function()local st=_G._nvPathState if st then st.token=(st.token or 0)+1 st.
+active=false end local hum=_nvL.lp.Character and _nvL.lp.Character:
+FindFirstChildOfClass('Humanoid')local root=getRootPart(_nvL.lp.Character)if hum
+and root then hum:MoveTo(root.Position)end _nvL.notify('Pathfind','Stopped')end)
+
+reg('spectate','Spectate player camera','<p>',{'spec','view'},function(a)if not
+a[2]then _nvL.notify('Spectate','Usage: '.._nvL.commandPrefix..
+'spectate <player>')return end local t=findPlayers(a[2])if#t==0 or t[1]==_nvL.lp
+then _nvL.notify('Spectate','Player not found')return end local p=t[1]spec.stop(
+)spec.target=p spec.lock()spec.charConn=p.CharacterAdded:Connect(function()task.
+wait()spec.lock()end)spec.camConn=workspace.CurrentCamera:
+GetPropertyChangedSignal('CameraSubject'):Connect(function()if spec.target then
+spec.lock()end end)_nvL.notify('Spectate','Spectating '..p.DisplayName)end)
+reg(
+'unspectate','Stop spectating','',{'uspec','unview'},function()spec.stop()_nvL.
+notify('Spectate','Stopped spectating')end)
+do
+local Floating=false 
+local
+floatName='NV_Float_'..tostring(math.random(100000,999999))
+local FloatingFunc,
+floatDied,qUp,eUp,qDown,eDown 
+reg('float',
+'Spawn a platform beneath you (Q=down, E=up)','',{'plat','platform'},function()
+Floating=true local pchar=_nvL.lp.Character if pchar and not pchar:
+FindFirstChild(floatName)then task.spawn(function()local Float=createInstance(
+'Part',{Name=floatName,Parent=pchar,Transparency=1,Size=Vector3.new(2,0.2,1.5),
+Anchored=true,CanCollide=true,CanQuery=false})local hum=pchar:
+FindFirstChildOfClass('Humanoid')local hipOff=3.1 if hum and hum.RigType==Enum.
+HumanoidRigType.R15 then hipOff=(tonumber(hum.HipHeight)or 2)+1.15 end local
+root=getRootPart(pchar)local padY=root.Position.Y-hipOff local qHeld,eHeld=false
+,false Float.CFrame=CFrame.new(root.Position.X,padY,root.Position.Z)_nvL.notify(
+'Float','Float Enabled (Q = down & E = up)')qUp=userInputService.InputEnded:
+Connect(function(input,processed)if input.KeyCode==Enum.KeyCode.Q then qHeld=
+false end end)eUp=userInputService.InputEnded:Connect(function(input,processed)
+if input.KeyCode==Enum.KeyCode.E then eHeld=false end end)qDown=userInputService
+.InputBegan:Connect(function(input,processed)if processed or userInputService:
+GetFocusedTextBox()then return end if input.KeyCode==Enum.KeyCode.Q then qHeld=
+true end end)eDown=userInputService.InputBegan:Connect(function(input,processed)
+if processed or userInputService:GetFocusedTextBox()then return end if input.
+KeyCode==Enum.KeyCode.E then eHeld=true end end)floatDied=pchar:
+FindFirstChildOfClass('Humanoid').Died:Connect(function()FloatingFunc:
+Disconnect()Float:Destroy()qUp:Disconnect()eUp:Disconnect()qDown:Disconnect()
+eDown:Disconnect()floatDied:Disconnect()Floating=false local prof=_G.
+_nv_profileRuntime if prof and prof.drop then prof:drop('float')end end)local r=
+root FloatingFunc=runService.Heartbeat:Connect(function(dt)if not(r and r.Parent
+)then r=getRootPart(pchar)end if Float.Parent and r then if not userInputService
+:GetFocusedTextBox()then if eHeld then padY=padY+24*(dt or 0.016)end if qHeld
+then padY=padY-8*(dt or 0.016)end end Float.CFrame=CFrame.new(r.Position.X,padY,
+r.Position.Z)else FloatingFunc:Disconnect()Float:Destroy()qUp:Disconnect()eUp:
+Disconnect()qDown:Disconnect()eDown:Disconnect()floatDied:Disconnect()Floating=
+false local prof=_G._nv_profileRuntime if prof and prof.drop then prof:drop(
+'float')end end end)end)end end)
+reg('unfloat','Remove the float platform','',{
+'uplat','nofloat'},function()Floating=false local pchar=_nvL.lp.Character _nvL.
+notify('Float','Float Disabled')if pchar and pchar:FindFirstChild(floatName)then
+pchar:FindFirstChild(floatName):Destroy()end if floatDied then pcall(function()
+FloatingFunc:Disconnect()end)pcall(function()qUp:Disconnect()end)pcall(function(
+)eUp:Disconnect()end)pcall(function()qDown:Disconnect()end)pcall(function()eDown
+:Disconnect()end)pcall(function()floatDied:Disconnect()end)end end)
+end
+local _njcConn=nil 
+reg(
+'nojumpcooldown','Remove jump cooldown in games','',{'njc'},function()if
+_njcConn then _nvL.notify('NoJumpCD','Already active')return end local hum=_nvL.
+lp.Character and _nvL.lp.Character:FindFirstChildOfClass('Humanoid')if not hum
+then _nvL.notify('NoJumpCD','No humanoid')return end _njcConn=hum:
+GetPropertyChangedSignal('FloorMaterial'):Connect(function()if hum.FloorMaterial
+==Enum.Material.Air then return end task.wait()if hum then hum.Jump=false end
+end)_nvL.notify('NoJumpCD','Enabled')end)
+reg('unnojumpcooldown',
+'Disable nojumpcooldown','',function()if _njcConn then _njcConn:Disconnect()
+_njcConn=nil end _nvL.notify('NoJumpCD','Disabled')end)
+do
+local _airwalkConn=nil
+
+local _airwalkCharConn=nil 
+local _airwalkJumpConn=nil 
+local _airwalkPart=nil
+
+local _airwalkFloorY=nil 
+local _airwalkHoldUp=false 
+local function stopAirwalk()
+if _airwalkConn then _airwalkConn:Disconnect()_airwalkConn=nil end if
+_airwalkCharConn then _airwalkCharConn:Disconnect()_airwalkCharConn=nil end if
+_airwalkJumpConn then _airwalkJumpConn:Disconnect()_airwalkJumpConn=nil end
+_airwalkHoldUp=false _airwalkFloorY=nil if _airwalkPart then pcall(function()
+_airwalkPart:Destroy()end)_airwalkPart=nil end local char=_nvL.lp.Character if
+not char then return end local hum=char:FindFirstChildOfClass('Humanoid')local
+root=char:FindFirstChild('HumanoidRootPart')or char:FindFirstChild('Torso')if
+hum then pcall(function()hum:SetStateEnabled(Enum.HumanoidStateType.Freefall,
+true)end)end if root then local bv=root:FindFirstChild('_airwalkBV')if bv then
+pcall(function()bv:Destroy()end)end end end 
+local function airwalkFootOffset(hum
+,root,part)local hip=0 if hum then local ok,h=pcall(function()return hum.
+HipHeight end)if ok and type(h)=='number'then hip=h end end local rootH=2 pcall(
+function()rootH=root.Size.Y end)local partH=1 pcall(function()partH=part.Size.Y
+end)return hip+(rootH*0.5)+(partH*0.5)end 
+local function ensureAirwalkPart()if
+_airwalkPart and _airwalkPart.Parent then return _airwalkPart end if
+_airwalkPart then pcall(function()_airwalkPart:Destroy()end)_airwalkPart=nil end
+local p=createInstance('Part',{Name='_nvAirwalk',Size=Vector3.new(12,1,12),
+Transparency=1,Anchored=true,CanCollide=true,CanQuery=false,CanTouch=false,
+CastShadow=false,Massless=true,Parent=workspace})_airwalkPart=p return p end
+
+reg('airwalk','Walk on air (Space to go up)','',{'aw'},function()if _airwalkConn
+then _nvL.notify('Airwalk','Already active')return end local uis=game:
+GetService('UserInputService')_airwalkHoldUp=false _airwalkJumpConn=uis.
+JumpRequest:Connect(function()_airwalkHoldUp=true end)_airwalkConn=runService.
+Heartbeat:Connect(function(dt)local char=_nvL.lp.Character local hum=char and
+char:FindFirstChildOfClass('Humanoid')local root=char and(char:FindFirstChild(
+'HumanoidRootPart')or char:FindFirstChild('Torso'))if not root then return end
+local part=ensureAirwalkPart()local off=airwalkFootOffset(hum,root,part)local
+pos=root.Position local floorY=_airwalkFloorY if type(floorY)~='number'then
+floorY=pos.Y-off _airwalkFloorY=floorY end if pos.Y<(floorY-8)then floorY=pos.Y-
+off _airwalkFloorY=floorY end local goingUp=_airwalkHoldUp _airwalkHoldUp=false
+pcall(function()if not uis:GetFocusedTextBox()and uis:IsKeyDown(Enum.KeyCode.
+Space)then goingUp=true end end)if goingUp then local step=24*(tonumber(dt)or 0)
+floorY=floorY+step _airwalkFloorY=floorY end part.CFrame=CFrame.new(pos.X,floorY
+,pos.Z)end)_airwalkCharConn=_nvL.lp.CharacterAdded:Connect(function()
+_airwalkFloorY=nil end)_nvL.notify('Airwalk','Enabled ,  Space to go up')end)
+
+reg('unairwalk','Disable airwalk','',{'uaw'},function()stopAirwalk()_nvL.notify(
+'Airwalk','Disabled')end)
+end
+end end function __DARKLUA_BUNDLE_MODULES.aM():
+typeof(__modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.aM if not v then v={c=
+__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.aM=v end return v.c end end
+do
+local function __modImpl()return function(env)
+local _cs=env._cs 
+local _isMobile=
+env._isMobile 
+local _nvL=env._nvL 
+local
+getRootPart=env.getRootPart 
+local reg=env.
+reg 
+local runService=env.runService 
+local userInputService=env.userInputService
+
+local function watchFlyDeath()if _cs.
+flyDiedConn then _cs.flyDiedConn:Disconnect()_cs.flyDiedConn=nil end if
+_isMobile or not _G._nvMove.FLYING then return end local hum=_nvL.lp.Character
+and _nvL.lp.Character:FindFirstChildOfClass('Humanoid')if not hum then return
+end _cs.flyDiedConn=hum.Died:Connect(function()if _cs.flyDiedConn then _cs.
+flyDiedConn:Disconnect()_cs.flyDiedConn=nil end if _G._nvMove.FLYING then pcall(
+_nvL.NOFLY)end local prof=_G._nv_profileRuntime if prof and prof.drop then prof:
+drop('fly')end end)end 
+reg('fly','Start flying; optional speed','<s>',{'f'},
+function(a)local v=tonumber(a[2])if v and _G._nvMove.FLYING then _nvL.
+setFlySpeed(v)_nvL.notify('Fly','Speed '..v,3)return end _nvL.NOFLY()task.wait()
+_nvL.sFLY()watchFlyDeath()if v then _nvL.setFlySpeed(v)end end)
+reg('unfly','Stop flying','',{'uf','nofly'},function(
+)_nvL.NOFLY()end)
+reg('superfly','Open Superfly panel (mouse/touch flight)','<s>'
+,{'sfly','sflymode'},function(a)if a[2]and tonumber(a[2])then _nvL.setFlySpeed(
+tonumber(a[2]))end _G._nvEnsurePanel('_flyPanel',_G._initFlyPanel or
+_initFlyPanel)if _G._flyPanel then _G._flyPanel.Visible=not _G._flyPanel.Visible
+end end)
+reg('unsuperfly','Disable superfly mode','',{'usfly','nosuperfly'},
+function()if _G._nvSuperfly then _G._nvSuperfly.enabled=false if _G._nvSuperfly.
+conn then _G._nvSuperfly.conn:Disconnect()_G._nvSuperfly.conn=nil end if _G.
+_nvSuperfly.stopTracks then pcall(_G._nvSuperfly.stopTracks)end end _nvL.NOFLY()
+if _G._flyToggleSet then pcall(_G._flyToggleSet,false,false)end _nvL.notify(
+'Superfly','Disabled')end)
+reg('hatfly',
+'Fly your hat while body is parked under map','',{'hf'},function()local ok,msg=
+_nvL.StartHatFly()if not ok then _nvL.notify('HatFly',msg or'Failed to start')
+return end _nvL.notify('HatFly','Enabled')end)
+reg('unhatfly',
+'Stop hatfly and restore your character','',{'uhf','nohatfly'},function()_nvL.
+StopHatFly()_nvL.notify('HatFly','Disabled')end)
+reg('togglefly',
+'Toggle fly on/off','',{'tf'},function()if _G._nvMove.FLYING then _nvL.NOFLY()
+else _nvL.NOFLY()task.wait()_nvL.sFLY()end watchFlyDeath()local prof=_G.
+_nv_profileRuntime if prof and prof.drop then if _G._nvMove.FLYING then prof:
+set('fly',prof.activeArgs.fly or'')else prof:drop('fly')end end end)
+reg('noclip'
+,'Walk through walls','',{'nc'},function()_G._nvMove.setNoclip('user',true)end)
+
+reg('unnoclip','Restore collision','',{'unc','clip'},function()_G._nvMove.
+setNoclip('user',false)end)
+reg('swim',
+'Float in zero-gravity swim','',{'sw'},function()if _nvL.swimming then return
+end local h=_nvL.lp.Character and _nvL.lp.Character:FindFirstChildOfClass(
+'Humanoid')if not h then return end _nvL.swimGrav=workspace.Gravity workspace.
+Gravity=0 local enums=Enum.HumanoidStateType:GetEnumItems()table.remove(enums,
+table.find(enums,Enum.HumanoidStateType.None))for _,v in enums do h:
+SetStateEnabled(v,false)end h:ChangeState(Enum.HumanoidStateType.Swimming)_nvL.
+swimConn=runService.Heartbeat:Connect(function()pcall(function()local root=
+getRootPart(_nvL.lp.Character)if root then root.Velocity=(h.MoveDirection~=
+Vector3.new()or userInputService:IsKeyDown(Enum.KeyCode.Space))and root.Velocity
+or Vector3.zero end end)end)_nvL.swimming=true end)
+reg('unswim','Stop swimming',
+'',{'usw','noswim'},function()if not _nvL.swimming then return end workspace.
+Gravity=_nvL.swimGrav or 196.2 _nvL.swimming=false if _nvL.swimConn then _nvL.
+swimConn:Disconnect()_nvL.swimConn=nil end local h=_nvL.lp.Character and _nvL.lp
+.Character:FindFirstChildOfClass('Humanoid')if h then local enums=Enum.
+HumanoidStateType:GetEnumItems()table.remove(enums,table.find(enums,Enum.
+HumanoidStateType.None))for _,v in enums do h:SetStateEnabled(v,true)end end end
+)
+end end function __DARKLUA_BUNDLE_MODULES.aN():typeof(__modImpl())
+local v=__DARKLUA_BUNDLE_MODULES.cache.aN if not v then v={c=__modImpl()}
+__DARKLUA_BUNDLE_MODULES.cache.aN=v end return v.c end end
+do local function
+__modImpl()return function(env)
+local _nvL=env.
+_nvL 
+local createInstance=env.createInstance 
+local getRootPart=env.getRootPart 
+local reg=env.reg 
+do
+local heliTrack,heliAnim,
+heliSound,heliDiedConn 
+local HELI_ANIM='129132611803602'
+local HELI_SOUND=
+'99103708154004'
+local function stopHelicopter(keepFly)if heliDiedConn then
+pcall(function()heliDiedConn:Disconnect()end)heliDiedConn=nil end if heliTrack
+then pcall(function()heliTrack:Stop(0)end)heliTrack=nil end if heliAnim then
+pcall(function()heliAnim:Destroy()end)heliAnim=nil end if heliSound then pcall(
+function()heliSound:Stop()end)pcall(function()heliSound:Destroy()end)heliSound=
+nil end if not keepFly then _nvL.NOFLY()end end 
+reg('helicopter',
+'Fly while spinning like a helicopter','',{'heli'},function()local char=_nvL.lp.
+Character local hum=char and char:FindFirstChildOfClass('Humanoid')local root=
+char and getRootPart(char)if not hum or not root then _nvL.notify('Helicopter',
+'No character')return end stopHelicopter(true)_nvL.NOFLY()task.wait()_nvL.sFLY()
+local animator=hum:FindFirstChildOfClass('Animator')if not animator then
+animator=createInstance('Animator',{Parent=hum})end local anim=nil local okObjs,
+objs=pcall(function()return game:GetObjects('rbxassetid://'..HELI_ANIM)end)if
+okObjs and objs and#objs>0 then local item=objs[1]if item:IsA('Animation')then
+anim=item else anim=item:FindFirstChildWhichIsA('Animation',true)end end if not
+anim then anim=createInstance('Animation',{AnimationId='rbxassetid://'..
+HELI_ANIM})end heliAnim=anim local okLoad,track=pcall(function()return animator:
+LoadAnimation(anim)end)if okLoad and track then heliTrack=track heliTrack.
+Priority=Enum.AnimationPriority.Action4 heliTrack.Looped=true pcall(function()
+heliTrack:Play(0.1,1,1)end)end heliSound=createInstance('Sound',{Name=
+'NovolineHelicopter',SoundId='rbxassetid://'..HELI_SOUND,Volume=0.35,Looped=true
+,RollOffMode=Enum.RollOffMode.InverseTapered,Parent=root})pcall(function()
+heliSound:Play()end)heliDiedConn=hum.Died:Connect(function()stopHelicopter(false
+)local prof=_G._nv_profileRuntime if prof and prof.drop then prof:drop(
+'helicopter')end end)_nvL.notify('Helicopter','Enabled ,  ;unhelicopter to stop'
+)end)
+reg('unhelicopter','Stop helicopter fly + anim','',{'unheli','noheli'},
+function()stopHelicopter(false)_nvL.notify('Helicopter','Disabled')end)
+end
+end end function __DARKLUA_BUNDLE_MODULES.aO():typeof(
+__modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.aO if not v then v={c=
+__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.aO=v end return v.c end end
+do local function
+__modImpl()return function(env)
+local _nvL=env.
+_nvL 
+local findPlayers=env.findPlayers 
+local
+getRootPart=env.getRootPart 
+local reg=env.
+reg 
+local tweenService=env.
+tweenService 
+reg(
+'flyspeed','Set fly speed (default 1)','<s>',{'fs','flysp'},function(a)local v=
+tonumber(a[2])if v then _nvL.setFlySpeed(v)_nvL.notify('FlySpeed','Set to '..v)
+end end)
+reg('togglenoclip',
+'Toggle noclip on/off','',{'tnc'},function()local prof=_G._nv_profileRuntime if
+_G._nvMove.noclipHold.user then _G._nvMove.setNoclip('user',false)if prof and
+prof.drop then prof:drop('noclip')end _nvL.notify('Noclip','Noclip OFF')else _G.
+_nvMove.setNoclip('user',true)if prof and prof.drop then prof:set('noclip',prof.
+activeArgs.noclip or'')end _nvL.notify('Noclip','Noclip ON')end end)
+reg('goto',
+'Teleport to player','<p>',{'tp','to'},function(a)local targets=findPlayers(a[2]
+)if#targets==0 then return end local p=targets[1]local myRoot=getRootPart(_nvL.
+lp.Character)local tRoot=getRootPart(p.Character)if myRoot and tRoot then pcall(
+function()local h=_nvL.lp.Character:FindFirstChildOfClass('Humanoid')if h and h.
+SeatPart then h.Sit=false task.wait(0.1)end end)myRoot.CFrame=tRoot.CFrame+
+Vector3.new(3,1,0)end end)
+local extra={speed=60,guis={},boxes=
+setmetatable({},{__mode='k'})}
+local function body()local char=_nvL.lp.Character
+return char and char:FindFirstChild('HumanoidRootPart'),char and char:
+FindFirstChildOfClass('Humanoid')end 
+reg(
+'tweengoto','Glide to a player','<p>',{'tweento','tgoto'},function(a)local
+target=findPlayers(a[2]or'')[1]local goal=target and target.Character and target
+.Character:FindFirstChild('HumanoidRootPart')local root=body()if not(goal and
+root)then _nvL.notify('TweenGoto','Player not found')return end if extra.glide
+then extra.glide:Cancel()end local seconds=math.max((goal.Position-root.Position
+).Magnitude/extra.speed,0.1)extra.glide=tweenService:Create(root,TweenInfo.new(
+seconds,Enum.EasingStyle.Linear),{CFrame=goal.CFrame})extra.glide:Play()_nvL.
+notify('TweenGoto','Gliding to '..target.DisplayName)end)
+reg('tweenspeed',
+'Set tweengoto speed in studs per second','<n>',function(a)extra.speed=math.
+clamp(tonumber(a[2])or 60,5,500)_nvL.notify('TweenGoto','Speed '..extra.speed)
+end)
+reg('clicktp',
+'Hold Ctrl and click to teleport there','',{'ctp','clickteleport'},function()if
+extra.jump then _nvL.notify('ClickTP','Already on')return end local mouse=_nvL.
+lp:GetMouse()local input=game:GetService('UserInputService')extra.jump=input.
+InputBegan:Connect(function(press,handled)local root=body()if handled or press.
+UserInputType~=Enum.UserInputType.MouseButton1 or not root then return end if
+input:IsKeyDown(Enum.KeyCode.LeftControl)and mouse.Target then root.CFrame=
+CFrame.new(mouse.Hit.Position+Vector3.new(0,3,0))*root.CFrame.Rotation end end)
+_nvL.notify('ClickTP','Hold Ctrl and click')end)
+reg('unclicktp',
+'Stop click teleport','',{'unctp'},function()if extra.jump then extra.jump:
+Disconnect()extra.jump=nil end _nvL.notify('ClickTP','Off')end)
+end end function __DARKLUA_BUNDLE_MODULES.aQ(
+):typeof(__modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.aQ if not v then v={
+c=__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.aQ=v end return v.c end end
+do
+local function __modImpl()return function(env)
+local _nvL=env.
+_nvL 
+local cmdReg=env.cmdReg 
+local findPlayers=env.findPlayers 
+local getRootPart
+=env.getRootPart 
+local players=env.players 
+local reg=env.reg 
+local runService=
+env.runService 
+local userInputService=env.userInputService 
+local live={}
+
+local function add(cat,name,desc,args,aliases,fn)reg(name,desc,args,aliases,fn)
+cmdReg[#cmdReg].cat=cat cmdReg[#cmdReg].exact=true end 
+local function toggle(cat
+,name,aliases,desc,args,title,start)add(cat,name,desc,args,aliases,function(a)if
+live[name]then live[name]()live[name]=nil end local undo=start(a)if not undo
+then return false end live[name]=undo _nvL.notify(title,'On')end)add(cat,'un'..
+name,'Turn off '..title:lower(),'',{},function()local undo=live[name]live[name]=
+nil if undo then undo()end _nvL.notify(title,'Off')end)end 
+local function me()
+local char=_nvL.lp.Character local hum=char and char:FindFirstChildOfClass(
+'Humanoid')return char,hum,char and getRootPart(char)end 
+local function num(v,
+default,lo,hi)return math.clamp(tonumber(v)or default,lo,hi)end 
+local function
+typing()return userInputService:GetFocusedTextBox()~=nil end 
+local function key(
+k)return not typing()and userInputService:IsKeyDown(k)end 
+local function other(q
+)if not q or q==''then return nil end for _,p in findPlayers(q)do if p~=_nvL.lp
+then return p end end return nil end 
+local function rootOf(p)local char=p and p.
+Character return char and getRootPart(char)end 
+local function place(cf)local _,_
+,root=me()if not root then return false end root.AssemblyLinearVelocity=Vector3.
+zero root.CFrame=cf return true end 
+local function needPlayer(title,a)local p=
+other(a[2])if not p then _nvL.notify(title,'Player not found')return nil end if
+not rootOf(p)then _nvL.notify(title,p.DisplayName..' has no character')return
+nil end return p end 
+local function steer(hum,seat)local cam=workspace.
+CurrentCamera local look=cam.CFrame.LookVector local right=cam.CFrame.
+RightVector local flat=Vector3.new(look.X,0,look.Z)flat=flat.Magnitude>0.01 and
+flat.Unit or Vector3.zAxis local fwd,side=0,0 local md=hum.MoveDirection if md.
+Magnitude>0.05 then fwd,side=md:Dot(flat),md:Dot(right)elseif seat and seat:IsA(
+'VehicleSeat')and(seat.Throttle~=0 or seat.Steer~=0)then fwd,side=seat.Throttle,
+seat.Steer else fwd=(key(Enum.KeyCode.W)and 1 or 0)-(key(Enum.KeyCode.S)and 1 or
+0)side=(key(Enum.KeyCode.D)and 1 or 0)-(key(Enum.KeyCode.A)and 1 or 0)end local
+up=((key(Enum.KeyCode.E)or key(Enum.KeyCode.Space))and 1 or 0)-((key(Enum.
+KeyCode.Q)or key(Enum.KeyCode.LeftControl))and 1 or 0)local dir=look*fwd+right*
+side+Vector3.yAxis*up if dir.Magnitude>1 then dir=dir.Unit end return dir,flat
+end 
+toggle('movement','cframefly',{'cfly'},
+[[Fly by moving your position directly, gets past some anticheats]],'<speed>',
+'CFrame fly',function(a)local speed=num(a[2],60,5,800)local pos local conn=
+runService.Heartbeat:Connect(function(dt)local _,hum,root=me()if not(hum and
+root)then return end hum.PlatformStand=true local dir,flat=steer(hum)if not pos
+or(root.Position-pos).Magnitude>4 then pos=root.Position end pos+=dir*speed*dt
+root.AssemblyLinearVelocity=Vector3.zero root.AssemblyAngularVelocity=Vector3.
+zero root.CFrame=CFrame.lookAt(pos,pos+flat)end)return function()conn:
+Disconnect()local _,hum,root=me()if hum then hum.PlatformStand=false end if root
+then root.AssemblyLinearVelocity=Vector3.zero end end end)
+toggle('movement',
+'vfly',{'vehiclefly','carfly'},'Fly the vehicle you are sitting in','<speed>',
+'Vehicle fly',function(a)local speed=num(a[2],80,5,800)local _,hum=me()if not(
+hum and hum.SeatPart)then _nvL.notify('Vehicle fly','Sit in a vehicle first')
+return nil end local pos local conn=runService.Heartbeat:Connect(function(dt)
+local _,h=me()local seat=h and h.SeatPart if not seat then return end local base
+=seat.AssemblyRootPart or seat local dir=steer(h,seat)if not pos or(base.
+Position-pos).Magnitude>4 then pos=base.Position end pos+=dir*speed*dt base.
+AssemblyLinearVelocity=Vector3.zero base.AssemblyAngularVelocity=Vector3.zero
+base.CFrame=base.CFrame.Rotation+pos end)return function()conn:Disconnect()end
+end)
+toggle('movement','vehiclespeed',{'vspeed','carspeed'},
+'Raise the top speed of the car you drive','<n>','Vehicle speed',function(a)
+local top=num(a[2],120,10,1000)local saved={}local conn=runService.Heartbeat:
+Connect(function(dt)local _,hum=me()local seat=hum and hum.SeatPart if not(seat
+and seat:IsA('VehicleSeat'))then return end if saved[seat]==nil then saved[seat]
+=seat.MaxSpeed end seat.MaxSpeed=top if seat.Throttle==0 then return end local
+base=seat.AssemblyRootPart or seat local heading=seat.CFrame.LookVector*seat.
+Throttle local v=base.AssemblyLinearVelocity local along=v:Dot(heading)if along<
+top then base.AssemblyLinearVelocity=v+heading*math.min(top-along,top*dt*1.5)end
+end)return function()conn:Disconnect()for seat,was in saved do if seat.Parent
+then seat.MaxSpeed=was end end end end)
+local function shift(title,a,fn)local _,_
+,root=me()if not root then _nvL.notify(title,'No character')return false end
+place(fn(root,num(a[2],10,-100000,100000)))_nvL.notify(title,'Moved')end 
+add(
+'movement','tpup','Teleport straight up','<n>',{},function(a)return shift(
+'TP up',a,function(root,n)return root.CFrame+Vector3.new(0,n,0)end)end)
+add(
+'movement','tpdown','Teleport straight down','<n>',{},function(a)return shift(
+'TP down',a,function(root,n)return root.CFrame-Vector3.new(0,n,0)end)end)
+add(
+'movement','thru','Teleport forward through a wall','<n>',{'through'},function(a
+)return shift('Thru',a,function(root,n)return root.CFrame+root.CFrame.LookVector
+*n end)end)
+local function xyz(a)local x,y,z=tonumber(a[2]),tonumber(a[3]),
+tonumber(a[4])if not(x and y and z)then local packed=a[2]and string.split(a[2],
+',')if packed and#packed==3 then x,y,z=tonumber(packed[1]),tonumber(packed[2]),
+tonumber(packed[3])end end if x and y and z then return Vector3.new(x,y,z)end
+return nil end 
+add('movement','tppos','Teleport to x y z coordinates',
+'<x> <y> <z>',{'tpcoords'},function(a)local pos=xyz(a)if not pos then _nvL.
+notify('TP pos','Give x y z, like tppos 0 50 0')return false end local _,_,root=
+me()if not root then return false end place(root.CFrame.Rotation+pos)_nvL.
+notify('TP pos',string.format('%d, %d, %d',pos.X,pos.Y,pos.Z))end)
+add('movement'
+,'offset','Move yourself by x y z studs','<x> <y> <z>',{},function(a)local by=
+xyz(a)if not by then _nvL.notify('Offset','Give x y z, like offset 0 10 0')
+return false end local _,_,root=me()if not root then return false end place(root
+.CFrame+by)_nvL.notify('Offset','Moved')end)
+local lastDeath 
+local function backTo(spot,char)local root=char:WaitForChild('HumanoidRootPart',
+10)if not root then return end local held,began=0,os.clock()while root.Parent
+and held<0.4 and os.clock()-began<4 do if(root.Position-spot.Position).Magnitude
+>4 then root.AssemblyLinearVelocity=Vector3.zero root.CFrame=spot held=0 else
+held+=runService.Heartbeat:Wait()end end end 
+add('movement','flashback',
+'Teleport to where you last died','',{'lastdeath'},function()if not lastDeath
+then _nvL.notify('Flashback','You have not died yet')return false end place(
+lastDeath)_nvL.notify('Flashback','Back where you died')end)
+toggle('movement',
+'autoflashback',{'autofb'},'Go back to where you died every time you respawn',''
+,'Auto flashback',function()local conn=_nvL.lp.CharacterAdded:Connect(function(
+char)local spot=lastDeath if spot then task.spawn(backTo,spot,char)end end)
+return function()conn:Disconnect()end end)
+toggle('movement','edgejump',{'ej'},
+'Jump by itself when you walk off an edge','','Edge jump',function()local
+grounded=false local conn=runService.Heartbeat:Connect(function()local _,hum=me(
+)if not hum then return end local now=hum.FloorMaterial~=Enum.Material.Air if
+grounded and not now and hum:GetState()==Enum.HumanoidStateType.Freefall then
+hum:ChangeState(Enum.HumanoidStateType.Jumping)end grounded=now end)return
+function()conn:Disconnect()end end)
+toggle('movement','flyjump',{'fj'},
+'Hold jump to keep rising','','Fly jump',function()local conn=runService.
+Heartbeat:Connect(function()local _,hum,root=me()if not(hum and root)or hum.Sit
+then return end if hum.Jump or key(Enum.KeyCode.Space)then local rise=hum.
+UseJumpPower and hum.JumpPower or math.sqrt(2*workspace.Gravity*hum.JumpHeight)
+local v=root.AssemblyLinearVelocity root.AssemblyLinearVelocity=Vector3.new(v.X,
+math.max(v.Y,math.max(rise,30)*0.8),v.Z)end end)return function()conn:
+Disconnect()end end)
+toggle('movement','climb',{'wallclimb'},
+'Climb any wall you walk into','','Climb',function()local params=RaycastParams.
+new()params.FilterType=Enum.RaycastFilterType.Exclude local conn=runService.
+Heartbeat:Connect(function()local char,hum,root=me()if not(hum and root)or hum.
+MoveDirection.Magnitude<0.1 then return end params.FilterDescendantsInstances={
+char}local hit=workspace:Raycast(root.Position,hum.MoveDirection.Unit*2.8,params
+)if hit and math.abs(hit.Normal.Y)<0.5 then local v=root.AssemblyLinearVelocity
+root.AssemblyLinearVelocity=Vector3.new(v.X,math.max(v.Y,hum.WalkSpeed),v.Z)end
+end)return function()conn:Disconnect()end end)
+toggle('movement','jumpboost',{
+'jb'},'Add extra height to every jump','<n>','Jump boost',function(a)local extra
+=num(a[2],40,1,500)local was local conn=runService.Heartbeat:Connect(function()
+local _,hum,root=me()if not(hum and root)then return end local now=hum:GetState(
+)if now==Enum.HumanoidStateType.Jumping and was~=now then task.defer(function()
+if root.Parent then root.AssemblyLinearVelocity+=Vector3.new(0,extra,0)end end)
+end was=now end)return function()conn:Disconnect()end end)
+toggle('movement','loopgoto',{'lgoto',
+'looptp'},'Keep teleporting behind a player','<p>','Loop goto',function(a)local
+p=needPlayer('Loop goto',a)if not p then return nil end local conn=runService.
+Heartbeat:Connect(function()local troot=rootOf(p)if troot then place(troot.
+CFrame*CFrame.new(0,0,3))end end)local gone=players.PlayerRemoving:Connect(
+function(left)if left==p and live.loopgoto then live.loopgoto()live.loopgoto=nil
+end end)return function()conn:Disconnect()gone:Disconnect()end end)
+add(
+'movement','pulsetp','Teleport to a player for a moment, then come back',
+'<p> <secs>',{'ptp'},function(a)local p=needPlayer('Pulse TP',a)local _,_,root=
+me()if not(p and root)then return false end local home=root.CFrame local secs=
+num(a[3],1,0.05,30)place(rootOf(p).CFrame*CFrame.new(0,0,3))task.delay(secs,
+function()place(home)end)_nvL.notify('Pulse TP',p.DisplayName..' for '..secs..
+'s')end)
+add('movement','torandom','Teleport to a random player','',{'tprandom'},
+function()local pool={}for _,p in players:GetPlayers()do if p~=_nvL.lp and
+rootOf(p)then pool[#pool+1]=p end end if#pool==0 then _nvL.notify('Random',
+'Nobody to go to')return false end local p=pool[math.random(#pool)]place(rootOf(
+p).CFrame*CFrame.new(0,0,3))_nvL.notify('Random',p.DisplayName)end)
+end end function __DARKLUA_BUNDLE_MODULES.aS():
+typeof(__modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.aS if not v then v={c=
+__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.aS=v end return v.c end end
+do
+local function __modImpl()return function(env)
+local _nvL=env._nvL
+
+local cmdReg=env.cmdReg 
+local getRootPart=env.getRootPart 
+local reg=env.reg 
+local function add(cat,name,desc,args,aliases,fn)reg(name,desc,args
+,aliases,fn)cmdReg[#cmdReg].cat=cat cmdReg[#cmdReg].exact=true end
+
+local function myRoot()local char=_nvL.lp.Character return char and
+getRootPart(char)end 
+local function place(cf)local root=myRoot()if not root then
+return false end root.AssemblyLinearVelocity=Vector3.zero root.CFrame=cf return
+true end 
+local function words(a)local q=table.concat(a,' ',2):lower()return q~=
+''and q~='all'and q or nil end 
+local function inCharacter(inst)local model=inst:
+FindFirstAncestorOfClass('Model')while model do if model:FindFirstChildOfClass(
+'Humanoid')then return true end model=model:FindFirstAncestorOfClass('Model')end
+return false end 
+local function goFind(title,a,
+class)local q=words(a)if not q then _nvL.notify(title,'Give a name')return false
+end local exact,loose for _,d in workspace:GetDescendants()do if d:IsA(class)and
+not inCharacter(d)then local n=d.Name:lower()if n==q then exact=d break end if
+not loose and n:find(q,1,true)then loose=d end end end local found=exact or
+loose if not found then _nvL.notify(title,'Nothing called '..q)return false end
+local cf=found:IsA('Model')and found:GetPivot()or found.CFrame place(CFrame.new(
+cf.Position+Vector3.new(0,4,0)))_nvL.notify(title,found.Name)end 
+add('movement',
+'gotopart','Teleport to a part by name','<name>',{'topart'},function(a)return
+goFind('Go to part',a,'BasePart')end)
+add('movement','gotomodel',
+'Teleport to a model by name','<name>',{'tomodel'},function(a)return goFind(
+'Go to model',a,'Model')end)
+end
+end function __DARKLUA_BUNDLE_MODULES.aT():typeof(__modImpl())local v=
+__DARKLUA_BUNDLE_MODULES.cache.aT if not v then v={c=__modImpl()}
+__DARKLUA_BUNDLE_MODULES.cache.aT=v end return v.c end end
+do
+local function __modImpl()return function(env)
+local C=env.C 
+local _nvL=env._nvL
+
+local cmdReg=env.cmdReg 
+local createInstance=env.createInstance 
+local
+getRootPart=env.getRootPart 
+local reg=env.reg 
+local runService=env.runService
+
+local live={}
+local function add(cat,name,desc,args,aliases,fn)reg(name,desc,args
+,aliases,fn)cmdReg[#cmdReg].cat=cat cmdReg[#cmdReg].exact=true end
+
+local function toggle(cat,name,aliases,desc,args,title,start)add(cat,name,desc,
+args,aliases,function(a)if live[name]then live[name]()live[name]=nil end local
+undo=start(a)if not undo then return false end live[name]=undo _nvL.notify(title
+,'On')end)add(cat,'un'..name,'Turn off '..title:lower(),'',{},function()local
+undo=live[name]live[name]=nil if undo then undo()end _nvL.notify(title,'Off')end
+)end 
+local function me()local char=_nvL.lp.Character local hum=char and char:
+FindFirstChildOfClass('Humanoid')return char,hum,char and getRootPart(char)end
+
+local function accent()return typeof(_G._nv_themeColor)=='Color3'and _G.
+_nv_themeColor or C.ACCENT end 
+local function persist(apply,revert)local current
+=_nvL.lp.Character if current then apply(current)end local conn=_nvL.lp.
+CharacterAdded:Connect(function(char)current=char char:WaitForChild('Humanoid',
+10)task.wait(0.3)if char.Parent then apply(char)end end)return function()conn:
+Disconnect()if current and current.Parent then revert(current)end end end
+
+toggle('movement','balloonfloat',{
+'balloon'},'Float up slowly holding a balloon','','Balloon',function()local made
+={}local lift local undo=persist(function(char)local root=getRootPart(char)local
+head=char:FindFirstChild('Head')if not(root and head)then return end for _,obj
+in made do obj:Destroy()end local ball=createInstance('Part',{Name='NvBalloon',
+Shape=Enum.PartType.Ball,Size=Vector3.new(2.6,2.6,2.6),Color=accent(),Material=
+Enum.Material.SmoothPlastic,CanCollide=false,Massless=true,CFrame=head.CFrame*
+CFrame.new(1.4,4.5,0),Parent=char})createInstance('WeldConstraint',{Part0=head,
+Part1=ball,Parent=ball})local cord=createInstance('Part',{Name='NvBalloonString'
+,Size=Vector3.new(0.06,3.6,0.06),Color=Color3.new(1,1,1),CanCollide=false,
+Massless=true,CFrame=head.CFrame*CFrame.new(1.1,2.4,0)*CFrame.Angles(0,0,math.
+rad(-12)),Parent=char})createInstance('WeldConstraint',{Part0=head,Part1=cord,
+Parent=cord})local at=createInstance('Attachment',{Name='NvLift',Parent=root})
+lift=createInstance('VectorForce',{Name='NvLiftForce',Attachment0=at,RelativeTo=
+Enum.ActuatorRelativeTo.World,ApplyAtCenterOfMass=true,Force=Vector3.new(0,root.
+AssemblyMass*workspace.Gravity*1.08,0),Parent=root})made={ball,cord,at,lift}end,
+function()for _,obj in made do obj:Destroy()end table.clear(made)end)local keep=
+runService.Heartbeat:Connect(function()local _,hum,root=me()if not(lift and lift
+.Parent and root)then return end lift.Force=Vector3.new(0,root.AssemblyMass*
+workspace.Gravity*1.08,0)local v=root.AssemblyLinearVelocity if v.Y>7 then root.
+AssemblyLinearVelocity=Vector3.new(v.X,7,v.Z)end if hum and hum.FloorMaterial~=
+Enum.Material.Air and hum:GetState()~=Enum.HumanoidStateType.Freefall then hum:
+ChangeState(Enum.HumanoidStateType.Freefall)end end)return function()keep:
+Disconnect()undo()end end)
+end end function __DARKLUA_BUNDLE_MODULES.aW():typeof(
+__modImpl())local v=__DARKLUA_BUNDLE_MODULES.cache.aW if not v then v={c=
+__modImpl()}__DARKLUA_BUNDLE_MODULES.cache.aW=v end return v.c end end
+do
+local function __modImpl()return function(env)
+local _nvL=env.
+_nvL 
+local cmdReg=env.cmdReg 
+local createInstance=env.createInstance 
+local
+getRootPart=env.getRootPart 
+local reg=env.
+reg 
+local runService=env.runService 
+local userInputService=env.userInputService
+
+local live={}
+local function add(cat,
+name,desc,args,aliases,fn)reg(name,desc,args,aliases,fn)cmdReg[#cmdReg].cat=cat
+cmdReg[#cmdReg].exact=true end 
+local function toggle(cat,name,aliases,desc,args,
+title,start)add(cat,name,desc,args,aliases,function(a)if live[name]then live[
+name]()live[name]=nil end local undo=start(a)if not undo then return false end
+live[name]=undo _nvL.notify(title,'On')end)add(cat,'un'..name,'Turn off '..title
+:lower(),'',{},function()local undo=live[name]live[name]=nil if undo then undo()
+end _nvL.notify(title,'Off')end)end 
+local function me()local char=_nvL.lp.
+Character local hum=char and char:FindFirstChildOfClass('Humanoid')return char,
+hum,char and getRootPart(char)end 
+local function num(v,default,lo,hi)return math
+.clamp(tonumber(v)or default,lo,hi)end 
+local function typing()return
+userInputService:GetFocusedTextBox()~=nil end 
+local function xyz(a)local x,y,z=
+tonumber(a[2]),tonumber(a[3]),tonumber(a[4])if x and y and z then return Vector3
+.new(x,y,z)end local p=a[2]and string.split(a[2],',')if p and#p==3 and tonumber(
+p[1])and tonumber(p[2])and tonumber(p[3])then return Vector3.new(tonumber(p[1]),
+tonumber(p[2]),tonumber(p[3]))end return nil end 
+local function onKey(code,down,up)local a=userInputService.InputBegan:Connect(
+function(i,gp)if gp or typing()or i.KeyCode~=code then return end down()end)
+local b=up and userInputService.InputEnded:Connect(function(i)if i.KeyCode==code
+then up()end end)return function()a:Disconnect()if b then b:Disconnect()end end
+end 
+toggle('movement'
+,'glide',{'glider'},'Hold jump in the air to glide down slowly','','Glide',
+function()local conn=runService.Heartbeat:Connect(function()local _,hum,root=me(
+)if not(hum and root)or hum.FloorMaterial~=Enum.Material.Air then return end if
+hum.Jump or(not typing()and userInputService:IsKeyDown(Enum.KeyCode.Space))then
+local v=root.AssemblyLinearVelocity if v.Y<-7 then local flat=hum.MoveDirection*
+hum.WalkSpeed*1.4 root.AssemblyLinearVelocity=Vector3.new(flat.X,-7,flat.Z)end
+end end)return function()conn:Disconnect()end end)
+toggle('movement','moonwalk',{
+'mj'},'Walk backwards while facing forward','','Moonwalk',function()local conn=
+runService.Heartbeat:Connect(function()local _,hum,root=me()if not(hum and root)
+then return end hum.AutoRotate=false local md=hum.MoveDirection if md.Magnitude>
+0.1 then root.CFrame=CFrame.lookAt(root.Position,root.Position-Vector3.new(md.X,
+0,md.Z))end end)return function()conn:Disconnect()local _,hum=me()if hum then
+hum.AutoRotate=true end end end)
+add('movement','tweenpos',
+'Glide smoothly to x y z coordinates','<x> <y> <z> <speed>',{},function(a)local
+goal=xyz(a)if not goal then _nvL.notify('Tween',
+'Give x y z, like tweenpos 0 20 0')return false end local speed=num(tonumber(a[2
+])and a[5]or a[3],60,5,1000)local _,hum,root=me()if not(hum and root)then return
+false end local token={}live.tweenposToken=token task.spawn(function()hum.
+PlatformStand=true while live.tweenposToken==token and root.Parent do local dt=
+runService.Heartbeat:Wait()local gap=goal-root.Position if gap.Magnitude<=speed*
+dt then root.CFrame=root.CFrame.Rotation+goal break end root.
+AssemblyLinearVelocity=Vector3.zero root.CFrame=root.CFrame.Rotation+(root.
+Position+gap.Unit*speed*dt)end root.AssemblyLinearVelocity=Vector3.zero hum.
+PlatformStand=false end)_nvL.notify('Tween',string.format('Going to %d, %d, %d',
+goal.X,goal.Y,goal.Z))end)
+toggle('movement','sprint',{},
+'Hold Shift to run faster','<times>','Sprint',function(a)local mult=num(a[2],1.6
+,1.1,5)local base local stop=onKey(Enum.KeyCode.LeftShift,function()local _,hum=
+me()if hum and not base then base=hum.WalkSpeed hum.WalkSpeed=base*mult end end,
+function()local _,hum=me()if hum and base then hum.WalkSpeed=base end base=nil
+end)return function()stop()local _,hum=me()if hum and base then hum.WalkSpeed=
+base end end end)
+toggle('movement','wiggle',{'shimmy'},'Wiggle side to side','',
+'Wiggle',function()local t=0 local conn=runService.Heartbeat:Connect(function(dt
+)t+=dt local _,hum,root=me()if not(hum and root)or hum.MoveDirection.Magnitude>
+0.1 then return end root.CFrame=root.CFrame*CFrame.Angles(0,math.sin(t*14)*0.09,
+0)end)return function()conn:Disconnect()end end)
+add('movement','velocity',
+'Push yourself with a velocity of x y z','<x> <y> <z>',{'vel'},function(a)local
+v=xyz(a)local _,_,root=me()if not root then return false end if not v then _nvL.
+notify('Velocity','Give x y z, like velocity 0 100 0')return false end root.
+AssemblyLinearVelocity=v _nvL.notify('Velocity','Pushed')end)
+local function
+launch(fn)local _,hum,root=me()if not(hum and root)then return false end return
+fn(hum,root)end 
+add('movement','groundpound','Slam down hard from the air','',{
+'slam'},function()return launch(function(hum,root)if hum.FloorMaterial~=Enum.
+Material.Air then _nvL.notify('Ground pound','Jump first')return false end root.
+AssemblyLinearVelocity=Vector3.new(0,-170,0)_nvL.notify('Ground pound','Slam')
+end)end)
+add('movement','rocketjump','Blast up and forward','<power>',{},function
+(a)local p=num(a[2],1,0.2,5)return launch(function(hum,root)hum:ChangeState(Enum
+.HumanoidStateType.Jumping)root.AssemblyLinearVelocity=root.CFrame.LookVector*45
+*p+Vector3.new(0,115*p,0)_nvL.notify('Rocket jump','Up')end)end)
+add('movement',
+'lunge','Burst forward','<power>',{},function(a)local p=num(a[2],1,0.2,5)return
+launch(function(_,root)local look=root.CFrame.LookVector root.
+AssemblyLinearVelocity=Vector3.new(look.X,0,look.Z).Unit*95*p+Vector3.new(0,18,0
+)_nvL.notify('Lunge','Go')end)end)
+toggle('movement','dash',{'dashkey'},
+'Press X to dash forward','<power>','Dash',function(a)local p=num(a[2],1,0.2,5)
+local ready=0 return onKey(Enum.KeyCode.X,function()if os.clock()<ready then
+return end ready=os.clock()+0.6 local _,hum,root=me()if not(hum and root)then
+return end local dir=hum.MoveDirection.Magnitude>0.1 and hum.MoveDirection or
+root.CFrame.LookVector dir=Vector3.new(dir.X,0,dir.Z)if dir.Magnitude<0.01 then
+return end root.AssemblyLinearVelocity=dir.Unit*110*p+Vector3.new(0,6,0)end)end)
+
+toggle('movement','walkonwalls',{'wallwalk'},
+[[Walk on walls and ceilings. Walk into a wall to climb it, right drag to look, scroll to zoom]]
+,'','Walk on walls',function()local char,hum,root=me()if not(char and hum and
+root)then return nil end local cam=workspace.CurrentCamera local params=
+RaycastParams.new()params.FilterType=Enum.RaycastFilterType.Exclude params.
+FilterDescendantsInstances={char}local function cast(from,dir)return workspace:
+Raycast(from,dir,params)end local function flat(v,n)local p=v-n*v:Dot(n)return p
+.Magnitude>1e-3 and p.Unit or nil end local function turn(v,from,to)local axis=
+from:Cross(to)local sin=axis.Magnitude if sin<1e-5 then return v end return
+CFrame.fromAxisAngle(axis.Unit,math.atan2(sin,from:Dot(to))):VectorToWorldSpace(
+v)end local controls pcall(function()controls=require(_nvL.lp:WaitForChild(
+'PlayerScripts',2):WaitForChild('PlayerModule',2)):GetControls()end)
+local function input()local mv=controls and controls:GetMoveVector()if mv and mv
+.Magnitude>0.05 then return-mv.Z,mv.X end if typing()then return 0,0 end local k
+=function(code)return userInputService:IsKeyDown(code)and 1 or 0 end return k(
+Enum.KeyCode.W)-k(Enum.KeyCode.S),k(Enum.KeyCode.D)-k(Enum.KeyCode.A)end local
+hover=hum.RigType==Enum.HumanoidRigType.R15 and(hum.HipHeight+root.Size.Y/2)or 3
+local S={on=false,up=Vector3.yAxis,goal=Vector3.yAxis,camUp=Vector3.yAxis,
+camLook=Vector3.zAxis,pitch=0,zoom=14,facing=Vector3.zAxis,lastMove=Vector3.
+zAxis,air=0,lock=0,flatFor=0,drag=false}local walkTrack,at,force local conns={}
+local function engage(normal)S.on,S.up,S.goal,S.camUp=true,Vector3.yAxis,normal,
+Vector3.yAxis S.camLook=flat(cam.CFrame.LookVector,Vector3.yAxis)or Vector3.
+zAxis S.pitch=math.clamp(math.asin(math.clamp(cam.CFrame.LookVector.Y,-1,1)),
+math.rad(-80),math.rad(70))S.zoom=math.clamp((cam.CFrame.Position-cam.Focus.
+Position).Magnitude,4,40)S.facing=flat(root.CFrame.LookVector,Vector3.yAxis)or
+Vector3.zAxis S.air,S.lock,S.flatFor=0,0,0 at=createInstance('Attachment',{Name=
+'NvWallWalk',Parent=root})force=createInstance('VectorForce',{Name=
+'NvWallGravity',Attachment0=at,RelativeTo=Enum.ActuatorRelativeTo.World,
+ApplyAtCenterOfMass=true,Force=Vector3.zero,Parent=root})cam.CameraType=Enum.
+CameraType.Scriptable hum.PlatformStand=true end local function release()if not
+S.on then return end S.on=false if force then force:Destroy()force=nil end if at
+then at:Destroy()at=nil end if walkTrack and walkTrack.IsPlaying then walkTrack:
+Stop(0.2)end userInputService.MouseBehavior=Enum.MouseBehavior.Default S.drag=
+false cam.CameraType=Enum.CameraType.Custom cam.CameraSubject=hum if root.Parent
+then local look=flat(root.CFrame.LookVector,Vector3.yAxis)or flat(S.camLook,
+Vector3.yAxis)or Vector3.zAxis root.CFrame=CFrame.lookAt(root.Position,root.
+Position+look)root.AssemblyAngularVelocity=Vector3.zero end hum.PlatformStand=
+false hum:ChangeState(Enum.HumanoidStateType.Freefall)end conns[#conns+1]=
+userInputService.InputBegan:Connect(function(i,gp)if S.on and i.UserInputType==
+Enum.UserInputType.MouseButton2 and not gp then S.drag=true userInputService.
+MouseBehavior=Enum.MouseBehavior.LockCurrentPosition end end)conns[#conns+1]=
+userInputService.InputEnded:Connect(function(i)if i.UserInputType==Enum.
+UserInputType.MouseButton2 and S.drag then S.drag=false userInputService.
+MouseBehavior=Enum.MouseBehavior.Default end end)conns[#conns+1]=
+userInputService.InputChanged:Connect(function(i,gp)if gp or not S.on then
+return end if i.UserInputType==Enum.UserInputType.MouseWheel then S.zoom=math.
+clamp(S.zoom-i.Position.Z*2,4,40)elseif i.UserInputType==Enum.UserInputType.
+Touch then local d=i.Delta S.camLook=CFrame.fromAxisAngle(S.camUp,-d.X*0.008):
+VectorToWorldSpace(S.camLook)S.pitch=math.clamp(S.pitch-d.Y*0.008,math.rad(-80),
+math.rad(70))end end)conns[#conns+1]=_nvL.lp.CharacterAdded:Connect(function()if
+live.walkonwalls then live.walkonwalls()live.walkonwalls=nil end end)conns[#
+conns+1]=runService.Heartbeat:Connect(function(dt)if not root.Parent or hum.
+Health<=0 then return end if not S.on then local md=hum.MoveDirection if md.
+Magnitude<0.1 or hum.Sit then return end local wall=cast(root.Position-Vector3.
+yAxis*(hover*0.4),md.Unit*2.4)if wall and math.abs(wall.Normal.Y)<0.55 then
+engage(wall.Normal)end return end hum.PlatformStand=true local up=S.up local f,
+sd=input()local fwd=flat(S.camLook,up)or S.facing local move=fwd*f+fwd:Cross(up)
+*sd if move.Magnitude>1 then move=move.Unit end local ground=cast(root.Position,
+-up*(hover+2.5))local grounded=ground~=nil and ground.Distance<=hover+0.8 if
+ground then if ground.Normal:Dot(up)>0.3 then S.goal=ground.Normal end S.air=0
+else S.air+=dt local wrap=S.air<0.35 and cast(root.Position-up*(hover+1.2),-S.
+lastMove*3)if wrap then S.goal=wrap.Normal elseif S.air>0.6 then S.goal=Vector3.
+yAxis end end if move.Magnitude>0.05 then S.lastMove=move.Unit local wall=cast(
+root.Position-up*(hover*0.4),S.lastMove*3)if wall and wall.Normal:Dot(up)<0.6
+and(grounded or S.air<0.3)then S.goal=wall.Normal end end up=up:Lerp(S.goal,math
+.min(1,dt*12))up=up.Magnitude>1e-3 and up.Unit or Vector3.yAxis S.up=up if up.Y>
+0.97 and S.goal.Y>0.97 then S.flatFor+=dt if S.flatFor>0.2 then release()return
+end else S.flatFor=0 end force.Force=(Vector3.yAxis-up)*root.AssemblyMass*
+workspace.Gravity local normal=root.AssemblyLinearVelocity:Dot(up)S.lock=math.
+max(0,S.lock-dt)if grounded and S.lock<=0 then normal=math.clamp((hover-ground.
+Distance)*15,-60,60)if hum.Jump or(not typing()and userInputService:IsKeyDown(
+Enum.KeyCode.Space))then normal=hum.UseJumpPower and hum.JumpPower or math.sqrt(
+2*workspace.Gravity*hum.JumpHeight)S.lock=0.3 end end root.
+AssemblyLinearVelocity=move*hum.WalkSpeed+up*normal if move.Magnitude>0.05 then
+S.facing=move.Unit end S.facing=flat(S.facing,up)or fwd root.
+AssemblyAngularVelocity=Vector3.zero root.CFrame=CFrame.fromMatrix(root.Position
+,S.facing:Cross(up),up)local animator=hum:FindFirstChildOfClass('Animator')if
+animator and not walkTrack then local animate=char:FindFirstChild('Animate')
+local folder=animate and(animate:FindFirstChild('walk')or animate:
+FindFirstChild('run'))local anim=folder and folder:FindFirstChildWhichIsA(
+'Animation')if anim then walkTrack=animator:LoadAnimation(anim)end end if
+walkTrack then if move.Magnitude>0.05 and grounded then if not walkTrack.
+IsPlaying then walkTrack:Play(0.15)end walkTrack:AdjustSpeed(hum.WalkSpeed/16*
+move.Magnitude)elseif walkTrack.IsPlaying then walkTrack:Stop(0.2)end end end)
+runService:BindToRenderStep('NvWallCam',Enum.RenderPriority.Camera.Value+1,
+function(dt)if not(S.on and root.Parent)then return end local was=S.camUp local
+camUp=was:Lerp(S.up,math.min(1,dt*8))camUp=camUp.Magnitude>1e-3 and camUp.Unit
+or Vector3.yAxis S.camUp=camUp S.camLook=flat(turn(S.camLook,was,camUp),camUp)or
+flat(S.facing,camUp)or S.camLook if S.drag then local d=userInputService:
+GetMouseDelta()S.camLook=CFrame.fromAxisAngle(camUp,-d.X*0.006):
+VectorToWorldSpace(S.camLook)S.pitch=math.clamp(S.pitch-d.Y*0.006,math.rad(-80),
+math.rad(70))end local view=CFrame.fromAxisAngle(S.camLook:Cross(camUp),S.pitch)
+:VectorToWorldSpace(S.camLook)local focus=root.Position+camUp*1.6 local back=
+cast(focus,-view*S.zoom)local dist=back and math.max(1,back.Distance-0.6)or S.
+zoom cam.CFrame=CFrame.lookAt(focus-view*dist,focus,camUp)end)return function()
+pcall(function()runService:UnbindFromRenderStep('NvWallCam')end)for _,c in conns
+do c:Disconnect()end release()end end)
+toggle('movement','wallrun',{'wr'},
+'Run along walls for a moment when you jump next to them','','Wall run',function
+()local params=RaycastParams.new()params.FilterType=Enum.RaycastFilterType.
+Exclude local used=0 local conn=runService.Heartbeat:Connect(function(dt)local
+char,hum,root=me()if not(hum and root)then return end if hum.FloorMaterial~=Enum
+.Material.Air then used=0 return end if used>1.6 or hum.MoveDirection.Magnitude<
+0.1 then return end params.FilterDescendantsInstances={char}local side=root.
+CFrame.RightVector*2.6 local hit=workspace:Raycast(root.Position,side,params)or
+workspace:Raycast(root.Position,-side,params)if hit and math.abs(hit.Normal.Y)<
+0.3 then used+=dt local run=hum.MoveDirection*hum.WalkSpeed*1.35 root.
+AssemblyLinearVelocity=Vector3.new(run.X,math.max(root.AssemblyLinearVelocity.Y,
+1.5),run.Z)end end)return function()conn:Disconnect()end end)
+end end function
+__DARKLUA_BUNDLE_MODULES.aX():typeof(__modImpl())local v=
+__DARKLUA_BUNDLE_MODULES.cache.aX if not v then v={c=__modImpl()}
+__DARKLUA_BUNDLE_MODULES.cache.aX=v end return v.c end end
+do local function
+__modImpl()return function(env)
+local _nvL=env._nvL 
+local cmdReg=env.cmdReg 
+local getRootPart=env.
+getRootPart 
+local players=env.players 
+local reg=
+env.reg 
+local live={}
+local function add(cat,name,desc,args,aliases,fn)reg(name,desc,
+args,aliases,fn)cmdReg[#cmdReg].cat=cat cmdReg[#cmdReg].exact=true end
+
+local function toggle(cat,name,aliases,desc,args,title,start)add(cat,name,desc,
+args,aliases,function(a)if live[name]then live[name]()live[name]=nil end local
+undo=start(a)if not undo then return false end live[name]=undo _nvL.notify(title
+,'On')end)add(cat,'un'..name,'Turn off '..title:lower(),'',{},function()local
+undo=live[name]live[name]=nil if undo then undo()end _nvL.notify(title,'Off')end
+)end 
+local function me()local char=_nvL.lp.Character local hum=char and char:
+FindFirstChildOfClass('Humanoid')return char,hum,char and getRootPart(char)end
+
+local function place(cf)local _,_,root=me()if not root then return false end
+root.AssemblyLinearVelocity=Vector3.zero root.CFrame=cf return true end
+
+local function inCharacter(inst)
+local model=inst:FindFirstAncestorOfClass('Model')while model do if model:
+FindFirstChildOfClass('Humanoid')then return true end model=model:
+FindFirstAncestorOfClass('Model')end return false end 
+local function words(a,
+from)local q=table.concat(a,' ',from or 2):lower()return q~=''and q or nil end
+
+local function matching(q,limit)local exact,loose={},{}for _,d in workspace:
+GetDescendants()do if d:IsA('BasePart')and not inCharacter(d)then local n=d.Name
+:lower()if n==q then exact[#exact+1]=d elseif n:find(q,1,true)then loose[#loose+
+1]=d end end if#exact>=(limit or 300)then break end end local list=#exact>0 and
+exact or loose while#list>(limit or 300)do table.remove(list)end return list end
+
+local function above(part)return CFrame.new(part.Position+Vector3.new(0,part.
+Size.Y/2+3,0))end 
+local cursor={}
+add('movement','gotopartnext',
+[[Teleport to the next part with a name, one each time you run it]],'<name>',{
+'nextpart'},function(a)local q=words(a)if not q then _nvL.notify('Next part',
+'Give a part name')return false end local list=matching(q)if#list==0 then _nvL.
+notify('Next part','Nothing called '..q)return false end cursor[q]=(cursor[q]or
+0)%#list+1 place(above(list[cursor[q] ]))_nvL.notify('Next part',cursor[q]..
+' of '..#list)end)
+toggle('movement','gotofolder',{'tourfolder'},
+'Visit every part in a folder or model, one after another','<name> <secs>',
+'Folder tour',function(a)local secs=tonumber(a[#a])and#a>2 and math.clamp(
+tonumber(a[#a]),0.1,10)or 0.6 local q=words(tonumber(a[#a])and#a>2 and{table.
+unpack(a,1,#a-1)}or a)if not q then _nvL.notify('Folder tour',
+'Give a folder or model name')return nil end local box for _,d in workspace:
+GetDescendants()do if(d:IsA('Folder')or d:IsA('Model'))and not inCharacter(d)and
+d.Name:lower()==q then box=d break end end if not box then _nvL.notify(
+'Folder tour','Nothing called '..q)return nil end local list={}for _,d in box:
+GetDescendants()do if d:IsA('BasePart')then list[#list+1]=d end if#list>=200
+then break end end if#list==0 then _nvL.notify('Folder tour',box.Name..
+' has no parts')return nil end local on=true task.spawn(function()for i,p in
+list do if not on then break end if p.Parent then place(above(p))_nvL.notify(
+'Folder tour',i..' of '..#list,1)end task.wait(secs)end if on and live.
+gotofolder then live.gotofolder=nil end end)return function()on=false end end)
+
+local function byDistance(far)local _,_,root=me()if not root then
+return false end local best,bestD for _,p in players:GetPlayers()do local r=p~=
+_nvL.lp and p.Character and getRootPart(p.Character)if r then local d=(r.
+Position-root.Position).Magnitude if not bestD or(far and d>bestD)or(not far and
+d<bestD)then best,bestD=p,d end end end if not best then _nvL.notify(far and
+'Farthest'or'Nearest','Nobody to go to')return false end place(getRootPart(best.
+Character).CFrame*CFrame.new(0,0,3))_nvL.notify(far and'Farthest'or'Nearest',
+best.DisplayName..', '..math.floor(bestD)..' studs')end 
+add('movement','nearest'
+,'Teleport to the closest player','',{'closest'},function()return byDistance(
+false)end)
+add('movement','farthest','Teleport to the farthest player','',{
+'furthest'},function()return byDistance(true)end)
+end end function
+__DARKLUA_BUNDLE_MODULES.aY():typeof(__modImpl())local v=
+__DARKLUA_BUNDLE_MODULES.cache.aY if not v then v={c=__modImpl()}
+__DARKLUA_BUNDLE_MODULES.cache.aY=v end return v.c end end
 local _nvL={
 bootAt=os.clock()}
 _nvL.notify=function(title,text)host.notify(title,text)end _nvL.xnotify=_nvL.notify
@@ -8834,6 +10452,9 @@ AddItem(obj,0)end)end
 local _nvAny=
 function(collection)for key,value in collection do return key,value end return
 nil end 
+local _nvClear=function(collection)local keys=table.create(8)local count
+=0 for key in collection do count+=1 keys[count]=key end for index=1,count do
+collection[keys[index] ]=nil end end 
 local function feelPresses(object,className
 )if className~='TextButton'and className~='ImageButton'then return end object.
 MouseButton1Down:Connect(function()local feel=_G._nv_haptic if feel then feel(
@@ -8847,8 +10468,13 @@ elseif key~='Parent'and type(key)=='string'then object[key]=value end end if
 parent~=nil then object.Parent=parent end return object end 
 do
 __DARKLUA_BUNDLE_MODULES.a()({_nvL=_nvL,createInstance=createInstance})end 
+local function
+_nvN(n)if type(n)=='number'then return n end local v=tonumber(n)if type(v)==
+'number'then return v end return 0 end
 local
 _safeLoadstring=loadstring or load 
+local _safeHttpGet=game.HttpGet
+
 local function _nv_env()local env=_G pcall(function()if type(getgenv)==
 'function'then local e=getgenv()if type(e)=='table'then env=e end end end)return
 env end 
@@ -8867,6 +10493,7 @@ local userInputService=game:GetService(
 _nvL.lp=players.LocalPlayer 
 if not _nvL.lp then pcall(function()_nvL.lp=players.
 LocalPlayerAdded:Wait()end)end 
+local mouse=_nvL.lp:GetMouse()
 local
 _isMobile=userInputService.TouchEnabled and not userInputService.KeyboardEnabled
 
@@ -8930,6 +10557,26 @@ _nvL.currentThemeName='Modern'
 _nvL.placeWindows=false 
 _nvL.keybindListening=false 
 _nvL.reloadCustom=function()end 
+local _nv_profileStore=_G._nv_profileStore or{path='Novoline/profiles.json',data
+={version=1,order={},profiles={}},defaults={notifEnabled=true,welcomeEnabled=
+true,singleTabEnabled=false,autoHideNavbar=false,placeWindows=false,tabDocking=
+true,tabDockCorners={},saveWindows=false,immersiveMusic=true,haptics=true,
+islandReanim=true,islandToggles=true,islandTarget=true,islandValues=true,
+islandAlerts=true,islandFriends=true,islandVoiceOn=false,openPanelOnRun=true,
+snapCards=true,islandLyrics=false,islandLyricsPane=true,hideRobloxUi=true,
+rbxChatDark=0,rbxTopGlass=0,rbxLogo=false,rbxTint=false,rbxTintA=0.6,rbxTintB=
+0.6,glassBlur=true,playerArtBlur=false,uiOpacityMain=0.92,uiOpacityPop=0.92,
+uiOpacityV=2,commandPrefix=';',sidebarKeybind='K',cmdBarKeybind='Semicolon',
+spoofEnabled=false,spoofFakeName='',charAvatar='',spoofFakeDisplay='',
+spoofVerified=false,musicSource='mp3',musicSpotify=false,musicApple=false,
+scHideProtected=true,autoExecEnabled=true,bgFpsCapEnabled=false,unlockFpsEnabled
+=false,bindsEnabled=true,hideNametags=false,spatialShield=false,antiSpam=true,
+spamNotifs=true,webhookChat=false,webhookJoin=false,webhookChatUrl='',
+webhookJoinUrl=''}}
+local saveSettings=
+function()pcall(function()local hs=game:GetService('HttpService')local path=
+'Novoline/settings.json'if not isfolder('Novoline')then makefolder('Novoline')
+end writefile(path,hs:JSONEncode(_nv_profileStore:captureSettings()))end)end 
 local sfx={tabOpen=function()end,
 tabClose=function()end,hover=function()end,scroll=function()end,notify=function(
 )end}
@@ -9155,6 +10802,10 @@ _G._nv_keyLabel=
 function(key)local parts={}for part in tostring(key):gmatch('[^+]+')do parts[#
 parts+1]=_nvL.keyWords[part]or part end return table.concat(parts,' ')end
 
+local function saveAutoExec()pcall(function()local hs=game:GetService(
+'HttpService')if not isfolder('Novoline')then makefolder('Novoline')end
+writefile('Novoline/autoexecute.json',hs:JSONEncode(_nvL._nv_autoexec))end)end
+
 local function _nvMakeSliderSwitch
 (parent,default,zindex,layout)layout=type(layout)=='table'and layout or{}local
 set,track=_G._nv_switch(parent,default,{z=zindex or 14,anchor=layout.anchor,
@@ -9344,6 +10995,57 @@ screen=screen,tween=tween,userInputService=userInputService},w,h,anchorX,anchorY
 local function makePanelTitleBar(pnl,title,onClose)return
 __DARKLUA_BUNDLE_MODULES.O()({C=C,_nvFloatCloseRest=_nvFloatCloseRest,_nvL=_nvL,
 createInstance=createInstance,tween=tween},pnl,title,onClose)end 
+local function getRootPart(char)if
+char and char:FindFirstChildOfClass('Humanoid')then return char:
+FindFirstChildOfClass('Humanoid').RootPart end return end 
+_G._nvMove=_G._nvMove
+or{noclipOn=false,noclipConn=nil,noclipCache={},infJumpConn=nil,infJumpStateConn
+=nil,infJumpCharConn=nil,infJumpLandOnly=false,infJumpLastLand=0,FLYING=false,
+QEfly=true,iyflyspeed=1,vehicleflyspeed=1,flyKeyDown=nil,flyKeyUp=nil,
+_flyControl=nil,_flyMouseHeld=false,flyMouseDown=nil,flyMouseUp=nil}
+local _mv=_G
+._nvMove 
+do _mv.noclipHold=_mv.noclipHold or{}_mv.noclipWas=_mv.noclipWas or
+setmetatable({},{__mode='k'})local function inChar(p)local char=players.
+LocalPlayer.Character return char~=nil and p.Parent~=nil and p:IsDescendantOf(
+char)end local function giveBack(p)if not _mv.noclipWas[p]then return end _mv.
+noclipWas[p]=nil pcall(function()p.CanCollide=true end)end function _mv.
+noclipStep()if not _mv.noclipOn then return end for _,p in _mv.noclipCache do if
+p.CanCollide and inChar(p)then _mv.noclipWas[p]=true p.CanCollide=false end end
+end function _mv.noclipRestore()for p in _mv.noclipWas do if inChar(p)then
+pcall(function()p.CanCollide=true end)end end table.clear(_mv.noclipWas)end
+function _mv.setNoclip(key,on)_mv.noclipHold[key]=on and true or nil _mv.
+noclipOn=next(_mv.noclipHold)~=nil if _mv.noclipOn then if not _mv.noclipConn
+then _mv.noclipConn=runService.Stepped:Connect(_mv.noclipStep)end return end if
+_mv.noclipConn then _mv.noclipConn:Disconnect()_mv.noclipConn=nil end _mv.
+noclipRestore()end if _mv.noclipConn then _mv.noclipConn:Disconnect()_mv.
+noclipConn=nil if _mv.noclipOn then if next(_mv.noclipHold)==nil then _mv.
+noclipHold.user=true end _mv.noclipConn=runService.Stepped:Connect(_mv.
+noclipStep)end end local cacheConns={}local function rebuildNoclipCache(char)for
+_,c in cacheConns do c:Disconnect()end table.clear(cacheConns)_mv.noclipCache={}
+table.clear(_mv.noclipWas)if not char then return end for _,p in char:
+GetDescendants()do if p:IsA('BasePart')then _mv.noclipCache[#_mv.noclipCache+1]=
+p end end cacheConns[1]=char.DescendantAdded:Connect(function(d)if d:IsA(
+'BasePart')then _mv.noclipCache[#_mv.noclipCache+1]=d end end)cacheConns[2]=char
+.DescendantRemoving:Connect(function(d)if not d:IsA('BasePart')then return end
+giveBack(d)local i=table.find(_mv.noclipCache,d)if i then table.remove(_mv.
+noclipCache,i)end end)end players.LocalPlayer.CharacterAdded:Connect(
+rebuildNoclipCache)if players.LocalPlayer.Character then rebuildNoclipCache(
+players.LocalPlayer.Character)end end 
+(
+function()return __DARKLUA_BUNDLE_MODULES.Q()({_isMobile=_isMobile,_mv=_mv,_nvL=
+_nvL,createInstance=createInstance,getRootPart=getRootPart,runService=runService
+,userInputService=userInputService})end)()
+do __DARKLUA_BUNDLE_MODULES.R()({_nvL=
+_nvL,createInstance=createInstance,getRootPart=getRootPart,runService=runService
+})end 
+do __DARKLUA_BUNDLE_MODULES.S()({_nvL=_nvL,createInstance=createInstance,
+getRootPart=getRootPart,runService=runService,userInputService=userInputService}
+)end 
+local hiddenMap={}
+
+local spec={target=nil,charConn=nil,
+camConn=nil}
 local _cs={flingActive=false,
 flingDiedConn=nil,afConn=nil,ftpOn=false,ftpConn=nil,carpetLoop=nil,carpetDied=
 nil,carpetTrack=nil,carpetAnim=nil,stalkConn=nil,stalkTarget=nil,stareConn=nil,
@@ -9351,11 +11053,28 @@ stareNearConn=nil,headstandConn=nil,headstandDied=nil,headstandJumpConn=nil,
 headstandParts={},antiAfkConn=nil,antiAfkStored={},annoyActive=false,loopWsConn=
 nil,loopWsCharConn=nil,loopWsVal=nil,loopJpConn=nil,loopJpCharConn=nil,loopJpVal
 =nil,shaderBaseline={},shaderEnabled=false}
+local _orbs={}
+local
+teleportService=game:GetService('TeleportService')
+local function stopOrbit()if _orbs[1]then _orbs[1]:Disconnect()_orbs[1]=
+nil end if _orbs[2]then _orbs[2]:Disconnect()_orbs[2]=nil end if _orbs[3]then
+_orbs[3]:Disconnect()_orbs[3]=nil end if _orbs[4]then _orbs[4]:Disconnect()_orbs
+[4]=nil end _nvL.orbitTarget=nil end 
 _G._nv_csRef=_cs 
 _cs.makePanelDraggable=function(pnl,bar,onMove
 ,onDragStart,onDragEnd)return __DARKLUA_BUNDLE_MODULES.W()({_cs=_cs,runService=
 runService,userInputService=userInputService},pnl,bar,onMove,onDragStart,
 onDragEnd)end 
+do local function ensurePanel(panelKey,
+initFn)if panelKey=='_reanimPanel'and _G._reanimPanel~=nil and _G.
+_reanimSpeedPanel==nil then pcall(function()_G._reanimPanel:Destroy()end)_G.
+_reanimPanel=nil end if _G[panelKey]~=nil then return _G[panelKey]end local fn=
+initFn if type(fn)~='function'and type(_G[initFn])=='function'then fn=_G[initFn]
+end if type(fn)=='function'then local ok,err=pcall(fn)if not ok then warn(
+'Novoline: ensurePanel failed:',panelKey,err)if panelKey=='_reanimPanel'then if
+_G._reanimPanel then pcall(function()_G._reanimPanel:Destroy()end)end _G.
+_reanimPanel=nil _G._reanimSpeedPanel=nil end end end return _G[panelKey]end _G.
+_nvEnsurePanel=ensurePanel end 
 (function()return __DARKLUA_BUNDLE_MODULES.ai(
 )({_nvAny=_nvAny,_nvL=_nvL,_safeLoadstring=_safeLoadstring,createInstance=
 createInstance})end)()
@@ -9366,26 +11085,189 @@ _safeLoadstring=_safeLoadstring,createInstance=createInstance,font=font,
 makeFloatingPanel=makeFloatingPanel,makePanelTitleBar=makePanelTitleBar,
 runService=runService,sfx=sfx,tween=tween,tweenService=tweenService,
 userInputService=userInputService})end 
-return { init = _initReanimPanel, gui = sg }
+_initFlyPanel=function()return __DARKLUA_BUNDLE_MODULES.ar()({_cs=_cs,
+_isMobile=_isMobile,_mv=_mv,_nvL=_nvL,makeFloatingPanel=makeFloatingPanel,
+makePanelTitleBar=makePanelTitleBar})end 
+_G._initFlyPanel=_initFlyPanel 
+local novoCmdReg
+do
+local
+cmdReg={}
+local _cmdCats={fly='character',unfly='character',char='character',
+unchar='character',zip='character',superfly='character',unsuperfly='character',
+hatfly='character',unhatfly='character',togglefly='character',helicopter='troll'
+,unhelicopter='troll',noclip='character',unnoclip='character',clip='character',
+infjump='character',uninfjump='character',stationarywalk='character',
+unstationarywalk='character',invisible='character',fakelag='character',radar=
+'exploit',unradar='exploit',player='misc',swim='character',unswim='character',
+fling='troll',unfling='troll',antifling='character',unantifling='character',
+sitwalk='character',unsitwalk='character',creepywalk='troll',uncreepywalk=
+'troll',spasm='character',unspasm='character',sexyflip='character',speed=
+'character',jump='character',jumppower='character',fov='character',reset=
+'character',wear='character',unwear='character',clearwearing='character',jerk=
+'character',lookat='character',platform='character',removebaseplate='character',
+ugcemotes='character',ugc2='character',friends='character',copyemote='character'
+,automate='misc',infbaseplate='misc',ftp='movement',unftp='movement',tweengoto=
+'movement',tweenspeed='movement',clicktp='movement',unclicktp='movement',
+autojump='character',unautojump='character',lay='character',refresh='character',
+norotate='character',unnorotate='character',animspeed='character',unanimspeed=
+'character',spawnpoint='character',nospawnpoint='character',antivoid='character'
+,unantivoid='character',anchor='character',unanchor='character',trip='character'
+,maxslope='character',firstperson='character',thirdperson='character',hitbox=
+'exploit',unhitbox='exploit',tptool='movement',untptool='movement',freecam=
+'misc',unfreecam='misc',freecamspeed='misc',fcspeed='misc',['goto']='movement',
+spectate='movement',unspectate='movement',walkto='movement',unwalkto='movement',
+unfollow='movement',pathfind='movement',unpathfind='movement',orbit='movement',
+unorbit='movement',rejoin='movement',serverhop='movement',join='movement',
+setwaypoint='movement',gotowaypoint='movement',deletewaypoint='movement',
+clearwaypoints='movement',waypoints='movement',waypointtool='movement',fcgoto=
+'misc',facebang='troll',unfacebang='troll',facebang2='troll',unfacebang2='troll'
+,bang='troll',bang2='troll',unbang2='troll',headsit='troll',unheadsit='troll',
+headsit2='troll',unheadsit2='troll',shouldersit='troll',unshouldersit='troll',
+shouldersit2='troll',unshouldersit2='troll',backpack='troll',unbackpack='troll',
+backpack2='troll',unbackpack2='troll',carpet='troll',uncarpet='troll',stalk=
+'troll',unstalk='troll',hide='troll',unhide='troll',chatedit='misc',mute='misc',
+unmute='misc',mutevc='misc',unmutevc='misc',muteallvc='misc',unmuteallvc='misc',
+listen='misc',unlisten='misc',vcbooster='misc',unvcbooster='misc',adonisbypass=
+'exploit',esp='exploit',dex='exploit',remotespy='exploit',iy='exploit',cobalt=
+'exploit',aimbot='exploit',console='misc',generate='misc',jobid='misc',discord=
+'misc',friend='misc',unfriend='misc',inspect='misc',copyuser='misc',fakeout=
+'troll',annoy='troll',unannoy='troll',stare='troll',unstare='troll',starenear=
+'troll',unstarenear='troll',headstand='troll',unheadstand='troll',headstand2=
+'troll',unheadstand2='troll',asseat='troll',unasseat='troll',asseat2='troll',
+unasseat2='troll',touchfling='troll',vcbypasser='exploit',vcb2='exploit',
+naturaldisastergodmode='exploit',reanim='character',rewind='character',loopws=
+'character',unloopws='character',loopjp='character',unloopjp='character',antiafk
+='misc',unantiafk='misc',shaders='misc',unshaders='misc',xnotify='misc',shlowest
+='misc',shmost='misc',chat='misc',findfriendgroups='misc',gamepass='exploit',
+bind='misc',unbind='misc',binds='misc',autoexecute='misc',loopfling='troll',
+unloopfling='troll',naked='character',npc='character',unnpc='character',stopnpc=
+'character',raknet='exploit',timestop='troll',untimestop='troll',xray='exploit',
+unxray='exploit',walltp='character',unwalltp='character',suck='troll',unsuck=
+'troll',spin='character',unspin='character',hamster='character',unhamster=
+'character',gravity='misc',nogravity='misc',resetgravity='misc',ping='misc',fps=
+'misc',freeze='character',unfreeze='character',age='misc',volume='misc',
+shiftlock='character',unlockcam='misc',ununlockcam='misc',plastic='misc',
+unplastic='misc',untexturebp='misc',texturebp='misc',disablesit='character',
+enablesit='character',fullbright='misc',nofullbright='misc',antilag='misc',
+unantilag='misc',nolights='misc',lights='misc',disableanims='character',
+enableanims='character',hipheight='character',whisper='misc',time='misc',day=
+'misc',night='misc',anim='character',stopanim='character',sit='character',drift=
+'character',undrift='character',delete='troll',recover='troll',loopdelete=
+'troll',unloopdelete='troll',attach='troll',unattach='troll',nohats='character',
+hats='character',drophats='character',serverinfo='misc',position='misc',
+copycoords='misc',light='misc',unlight='misc',respawn='character',nilchar=
+'troll',unnilchar='troll',fireproximityprompts='exploit',
+fireproximitypromptsfind='exploit',noproximitypromptlimits='exploit',
+instantproximityprompts='exploit',uninstantproximityprompts='exploit',
+disableproximityprompts='exploit',enableproximityprompts='exploit',
+fireclickdetectors='exploit',droptools='misc',equiptools='misc',unequiptools=
+'misc',grabtools='misc',autograbtools='misc',unautograbtools='misc',btools=
+'misc',reach='exploit',unreach='exploit',noeffect='misc',loopnoeffect='misc',
+unloopnoeffect='misc',nofog='misc',loopnofog='misc',unloopnofog='misc',gamma=
+'misc',loopgamma='misc',unloopgamma='misc',brightness='misc',loopbrightness=
+'misc',unloopbrightness='misc',globalshadows='misc',unglobalshadows='misc',
+skybox='misc',unskybox='misc',copyname='misc',copyid='misc',switchteam='misc',
+nosales='misc',inviscam='misc',uninviscam='misc',antisit='character',unantisit=
+'character',antikick='exploit',unantikick='exploit',antiteleport='exploit',
+unantiteleport='exploit',maxzoom='misc',float='movement',unfloat='movement',
+nojumpcooldown='movement',unnojumpcooldown='movement',airwalk='movement',
+unairwalk='movement',disablebinds='misc',enablebinds='misc',profile='misc',
+clearsettings='misc',clearprofiles='misc'}
+local function reg(name,desc,args,
+aliases,fn)if type(aliases)=='function'then fn=aliases aliases={}end cmdReg[#
+cmdReg+1]={name=name,desc=desc,args=args,exec=fn,cat=_cmdCats[name]or'misc',
+aliases=aliases or{}}end 
+local function findPlayers(q)if not q or q==''then
+return{}end if q=='me'or q=='.'then return{_nvL.lp}end if q=='all'then return
+players:GetPlayers()end if q=='others'then local o={}for _,p in players:
+GetPlayers()do if p~=_nvL.lp then o[#o+1]=p end end return o end local out={}q=q
+:lower()for _,p in players:GetPlayers()do if p.Name:lower()==q or p.DisplayName:
+lower()==q then return{p}end end for _,p in players:GetPlayers()do if p.Name:
+lower():sub(1,#q)==q or p.DisplayName:lower():sub(1,#q)==q then out[#out+1]=p
+end end if#out==0 then for _,p in players:GetPlayers()do if p.Name:lower():find(
+q,1,true)or p.DisplayName:lower():find(q,1,true)then out[#out+1]=p end end end
+return out end
+local listPanel=__DARKLUA_BUNDLE_MODULES.aV()({
+C=C,_cs=_cs,createInstance=createInstance,makeFloatingPanel=makeFloatingPanel,
+makePanelTitleBar=makePanelTitleBar})
+__DARKLUA_BUNDLE_MODULES.aL()({C=C,_cs=_cs,_nvClear=_nvClear,_nvL=_nvL,_nvN=_nvN
+,_nv_env=_nv_env,_request=_request,_safeHttpGet=_safeHttpGet,_safeLoadstring=
+_safeLoadstring,createInstance=createInstance,findPlayers=findPlayers,
+getRootPart=getRootPart,hiddenMap=hiddenMap,makeFloatingPanel=makeFloatingPanel,
+makePanelTitleBar=makePanelTitleBar,players=players,reg=reg,runService=
+runService,screen=screen,teleportService=teleportService,tween=tween})
+__DARKLUA_BUNDLE_MODULES.aM()({C=C,_cs=_cs,_nvL=_nvL,_orbs=_orbs,createInstance=
+createInstance,findPlayers=findPlayers,getRootPart=getRootPart,mouse=mouse,reg=
+reg,runService=runService,spec=spec,stopOrbit=stopOrbit,userInputService=
+userInputService})
+__DARKLUA_BUNDLE_MODULES.aN()({_cs=_cs,_isMobile=_isMobile,_mv
+=_mv,_nvL=_nvL,_nvN=_nvN,_safeHttpGet=_safeHttpGet,_safeLoadstring=
+_safeLoadstring,createInstance=createInstance,findPlayers=findPlayers,
+getRootPart=getRootPart,makeFloatingPanel=makeFloatingPanel,makePanelTitleBar=
+makePanelTitleBar,players=players,reg=reg,runService=runService,userInputService
+=userInputService})
+__DARKLUA_BUNDLE_MODULES.aO()({C=C,_cs=_cs,_nvL=_nvL,_nvN=
+_nvN,createInstance=createInstance,findPlayers=findPlayers,getRootPart=
+getRootPart,players=players,reg=reg,runService=runService,tween=tween,
+userInputService=userInputService})
+__DARKLUA_BUNDLE_MODULES.aQ()({C=C,_cs=_cs,_nvL=_nvL,
+_nv_profileStore=_nv_profileStore,createInstance=createInstance,findPlayers=
+findPlayers,font=font,getRootPart=getRootPart,makeFloatingPanel=
+makeFloatingPanel,makePanelTitleBar=makePanelTitleBar,players=players,reg=reg,
+runService=runService,saveAutoExec=saveAutoExec,saveSettings=saveSettings,tween=
+tween,tweenService=tweenService})
+__DARKLUA_BUNDLE_MODULES.aS()({_cs=_cs,_nvL=_nvL,cmdReg=cmdReg,findPlayers=
+findPlayers,getRootPart=getRootPart,players=players,reg=reg,runService=
+runService,userInputService=userInputService})
+__DARKLUA_BUNDLE_MODULES.aT()({C=C
+,_nvL=_nvL,cmdReg=cmdReg,createInstance=createInstance,findPlayers=findPlayers,
+getRootPart=getRootPart,mouse=mouse,players=players,reg=reg,runService=
+runService,screen=screen,userInputService=userInputService})
+__DARKLUA_BUNDLE_MODULES.aW()({C=C,_nvL=
+_nvL,cmdReg=cmdReg,createInstance=createInstance,getRootPart=getRootPart,reg=reg
+,runService=runService})
+__DARKLUA_BUNDLE_MODULES.aX()({_cs=_cs,_nvL=_nvL,cmdReg=
+cmdReg,createInstance=createInstance,getRootPart=getRootPart,makeFloatingPanel=
+makeFloatingPanel,makePanelTitleBar=makePanelTitleBar,players=players,reg=reg,
+runService=runService,userInputService=userInputService})
+__DARKLUA_BUNDLE_MODULES.aY()({_nvL=_nvL,_request=_request,cmdReg=cmdReg,
+findPlayers=findPlayers,getRootPart=getRootPart,listPanel=listPanel,players=
+players,reg=reg,runService=runService})
+novoCmdReg=cmdReg
+end
+return { init = _initReanimPanel, gui = sg, cmds = novoCmdReg, nvL = _nvL, mv = _mv }
 end
 
-function NovoReanim.ensure()
-    if NovoReanim.booted then return typeof(_G._reanimPanel) == "Instance" end
-    if NovoReanim.failed then
-        note("Reanim", "Unavailable: " .. NovoReanim.failed:sub(1, 60), RED)
+-- Runs the embedded novoline code once (engines, UI kit, command registry).
+function Novo.boot()
+    if Novo.booted then return true end
+    if Novo.failed then
+        note("Novoline", "Unavailable: " .. Novo.failed:sub(1, 60), RED)
         return false
     end
-    local ok, res = pcall(NovoReanim.boot, {
-        notify = function(title, text) note(tostring(title or "Reanim"), tostring(text or "")) end,
+    local ok, res = pcall(Novo.load, {
+        notify = function(title, text) note(tostring(title or "Novoline"), tostring(text or "")) end,
         parentGui = parentGui,
     })
-    if not ok or type(res) ~= "table" or type(res.init) ~= "function" then
-        NovoReanim.failed = ok and "engine returned nothing" or tostring(res)
-        note("Reanim", "Engine failed: " .. NovoReanim.failed:sub(1, 60), RED)
+    if not ok or type(res) ~= "table" or type(res.init) ~= "function" or type(res.cmds) ~= "table" then
+        Novo.failed = ok and "engine returned nothing" or tostring(res)
+        note("Novoline", "Engine failed: " .. Novo.failed:sub(1, 60), RED)
         return false
     end
-    NovoReanim.booted, NovoReanim.gui = true, res.gui
-    if NovoReanim.gui then NovoReanim.gui.Enabled = not Hide.uiHidden end
+    Novo.booted, Novo.gui, Novo.cmds, Novo.nvL, Novo.init = true, res.gui, res.cmds, res.nvL, res.init
+    if Novo.gui then Novo.gui.Enabled = not Hide.uiHidden end
+    return true
+end
+
+-- Builds the Reanimate panel on first use.
+function Novo.ensure()
+    if typeof(_G._reanimPanel) == "Instance" then return true end
+    if not Novo.boot() then return false end
+    if Novo.panelFailed then
+        note("Reanim", "Panel failed: " .. Novo.panelFailed:sub(1, 120), RED)
+        return false
+    end
     -- the panel builder catches its own errors and only warn()s them; keep the
     -- first such line so the failure note says what actually broke
     local captured
@@ -9397,13 +11279,13 @@ function NovoReanim.ensure()
             end
         end)
     end)
-    local okInit, err = pcall(res.init)
+    local okInit, err = pcall(Novo.init)
     task.wait() -- MessageOut can arrive a frame late
     if logConn then logConn:Disconnect() end
     if captured then warn("[PuppyAdmin] reanimation panel: " .. captured) end
     if not okInit or typeof(_G._reanimPanel) ~= "Instance" then
-        NovoReanim.failed = okInit and (captured or "panel was not created") or tostring(err)
-        note("Reanim", "Panel failed: " .. NovoReanim.failed:sub(1, 120), RED)
+        Novo.panelFailed = okInit and (captured or "panel was not created") or tostring(err)
+        note("Reanim", "Panel failed: " .. Novo.panelFailed:sub(1, 120), RED)
         return false
     end
     return true
@@ -9417,8 +11299,8 @@ local function novoLoadApi()
 end
 
 -- open: true / false, or nil to toggle.
-function NovoReanim.setOpen(open)
-    if not NovoReanim.ensure() then return end
+function Novo.setOpen(open)
+    if not Novo.ensure() then return end
     local panel = _G._reanimPanel
     if open == nil then open = not panel.Visible end
     panel.Visible = open
@@ -9427,8 +11309,8 @@ end
 
 -- Goes through the panel's power button logic (3 s cooldown, R6 warning,
 -- trick preferences, status line), so the panel and the command agree.
-function NovoReanim.panelState()
-    if not NovoReanim.ensure() then return nil end
+function Novo.panelState()
+    if not Novo.ensure() then return nil end
     novoLoadApi()
     local rs = _G._nv_reanimState
     if type(rs) ~= "table" or type(rs.toggleReanim) ~= "function" then
@@ -9438,8 +11320,8 @@ function NovoReanim.panelState()
     return rs
 end
 
-function NovoReanim.setActive(on)
-    local rs = NovoReanim.panelState()
+function Novo.setActive(on)
+    local rs = Novo.panelState()
     if not rs then return end
     if on == nil then on = not rs.reanimActive end
     if (rs.reanimActive == true) ~= on then rs.toggleReanim() end
@@ -9449,7 +11331,7 @@ do
     local setUI = Hide.setUI
     function Hide.setUI(hidden)
         setUI(hidden)
-        if NovoReanim.gui then NovoReanim.gui.Enabled = not hidden end
+        if Novo.gui then Novo.gui.Enabled = not hidden end
     end
 end
 
@@ -9467,76 +11349,198 @@ table.insert(cleanups, function()
         if typeof(p) == "Instance" then pcall(function() p:Destroy() end) end
         _G[key] = nil
     end
-    if NovoReanim.gui then pcall(function() NovoReanim.gui:Destroy() end) end
+    if Novo.gui then pcall(function() Novo.gui:Destroy() end) end
     -- a later run of the script must register a fresh API, not find this one
     _G._reanimAPI, _G._reanimLoaded, _G._nv_reanimState = nil, nil, nil
 end)
 
 
+-- Generated from novoline.lua: every command novoline files under "movement",
+-- plus the fly / noclip / swim / hatfly / helicopter family. Each runs novoline's
+-- own handler (Novo.run); this table only feeds help, aliases and autocomplete.
+local NOVO_MOVE = {
+    { name = "airwalk", args = "", desc = "Walk on air (Space to go up)", aliases = { "aw" } },
+    { name = "autoflashback", args = "", desc = "Go back to where you died every time you respawn", aliases = { "autofb" } },
+    { name = "balloonfloat", args = "", desc = "Float up slowly holding a balloon", aliases = { "balloon" } },
+    { name = "cframefly", args = "<speed>", desc = "Fly by moving your position directly, gets past some anticheats", aliases = { "cfly" } },
+    { name = "clearwaypoints", args = "", desc = "Delete all saved waypoints", aliases = { "cwp" } },
+    { name = "clicktp", args = "", desc = "Hold Ctrl and click to teleport there", aliases = { "ctp", "clickteleport" } },
+    { name = "climb", args = "", desc = "Climb any wall you walk into", aliases = { "wallclimb" } },
+    { name = "clip", args = "", desc = "Disable noclip", aliases = {} },
+    { name = "dash", args = "<power>", desc = "Press X to dash forward", aliases = { "dashkey" } },
+    { name = "deletewaypoint", args = "<n>", desc = "Delete a named waypoint", aliases = { "dwp" } },
+    { name = "edgejump", args = "", desc = "Jump by itself when you walk off an edge", aliases = { "ej" } },
+    { name = "farthest", args = "", desc = "Teleport to the farthest player", aliases = { "furthest" } },
+    { name = "flashback", args = "", desc = "Teleport to where you last died", aliases = { "lastdeath" } },
+    { name = "float", args = "", desc = "Spawn a platform beneath you (Q=down, E=up)", aliases = { "plat", "platform" } },
+    { name = "fly", args = "<s>", desc = "Start flying; optional speed", aliases = { "f" } },
+    { name = "flyjump", args = "", desc = "Hold jump to keep rising", aliases = { "fj" } },
+    { name = "flyspeed", args = "<s>", desc = "Set fly speed (default 1)", aliases = { "fs", "flysp" } },
+    { name = "ftp", args = "", desc = "Teleport to mouse (F key)", aliases = { "mousetp" } },
+    { name = "glide", args = "", desc = "Hold jump in the air to glide down slowly", aliases = { "glider" } },
+    { name = "goto", args = "<p>", desc = "Teleport to player", aliases = { "tp", "to" } },
+    { name = "gotofolder", args = "<name> <secs>", desc = "Visit every part in a folder or model, one after another", aliases = { "tourfolder" } },
+    { name = "gotomodel", args = "<name>", desc = "Teleport to a model by name", aliases = { "tomodel" } },
+    { name = "gotopart", args = "<name>", desc = "Teleport to a part by name", aliases = { "topart" } },
+    { name = "gotopartnext", args = "<name>", desc = "Teleport to the next part with a name, one each time you run it", aliases = { "nextpart" } },
+    { name = "gotowaypoint", args = "<n>", desc = "Teleport to a saved waypoint", aliases = { "gwp", "wp" } },
+    { name = "groundpound", args = "", desc = "Slam down hard from the air", aliases = { "slam" } },
+    { name = "hatfly", args = "", desc = "Fly your hat while body is parked under map", aliases = { "hf" } },
+    { name = "helicopter", args = "", desc = "Fly while spinning like a helicopter", aliases = { "heli" } },
+    { name = "join", args = "<s>", desc = "Join server by Job ID", aliases = {} },
+    { name = "jumpboost", args = "<n>", desc = "Add extra height to every jump", aliases = { "jb" } },
+    { name = "loopgoto", args = "<p>", desc = "Keep teleporting behind a player", aliases = { "lgoto", "looptp" } },
+    { name = "lunge", args = "<power>", desc = "Burst forward", aliases = {} },
+    { name = "moonwalk", args = "", desc = "Walk backwards while facing forward", aliases = { "mj" } },
+    { name = "nearest", args = "", desc = "Teleport to the closest player", aliases = { "closest" } },
+    { name = "noclip", args = "", desc = "Walk through walls", aliases = { "nc" } },
+    { name = "nojumpcooldown", args = "", desc = "Remove jump cooldown in games", aliases = { "njc" } },
+    { name = "offset", args = "<x> <y> <z>", desc = "Move yourself by x y z studs", aliases = {} },
+    { name = "orbit", args = "<p>", desc = "Orbit around player", aliases = { "orb" } },
+    { name = "pathfind", args = "<x,y,z | CFrame.new(...)>", desc = "Pathfind to xyz or CFrame", aliases = { "pf", "pathto" } },
+    { name = "pulsetp", args = "<p> <secs>", desc = "Teleport to a player for a moment, then come back", aliases = { "ptp" } },
+    { name = "rejoin", args = "", desc = "Rejoin this server", aliases = { "rj" } },
+    { name = "rocketjump", args = "<power>", desc = "Blast up and forward", aliases = {} },
+    { name = "serverhop", args = "", desc = "Hop to a random server", aliases = { "shop", "sh" } },
+    { name = "setwaypoint", args = "<n>", desc = "Save current position as a named waypoint", aliases = { "swp", "savepos" } },
+    { name = "spectate", args = "<p>", desc = "Spectate player camera", aliases = { "spec", "view" } },
+    { name = "sprint", args = "<times>", desc = "Hold Shift to run faster", aliases = {} },
+    { name = "superfly", args = "<s>", desc = "Open Superfly panel (mouse/touch flight)", aliases = { "sfly", "sflymode" } },
+    { name = "swim", args = "", desc = "Float in zero-gravity swim", aliases = { "sw" } },
+    { name = "thru", args = "<n>", desc = "Teleport forward through a wall", aliases = { "through" } },
+    { name = "togglefly", args = "", desc = "Toggle fly on/off", aliases = { "tf" } },
+    { name = "togglenoclip", args = "", desc = "Toggle noclip on/off", aliases = { "tnc" } },
+    { name = "torandom", args = "", desc = "Teleport to a random player", aliases = { "tprandom" } },
+    { name = "tpdown", args = "<n>", desc = "Teleport straight down", aliases = {} },
+    { name = "tppos", args = "<x> <y> <z>", desc = "Teleport to x y z coordinates", aliases = { "tpcoords" } },
+    { name = "tptool", args = "", desc = "Equip click-to-teleport tool", aliases = { "tpt" } },
+    { name = "tpup", args = "<n>", desc = "Teleport straight up", aliases = {} },
+    { name = "tweengoto", args = "<p>", desc = "Glide to a player", aliases = { "tweento", "tgoto" } },
+    { name = "tweenpos", args = "<x> <y> <z> <speed>", desc = "Glide smoothly to x y z coordinates", aliases = {} },
+    { name = "tweenspeed", args = "<n>", desc = "Set tweengoto speed in studs per second", aliases = {} },
+    { name = "unairwalk", args = "", desc = "Disable airwalk", aliases = { "uaw" } },
+    { name = "unautoflashback", args = "", desc = "Turn off auto flashback", aliases = {} },
+    { name = "unballoonfloat", args = "", desc = "Turn off balloon", aliases = {} },
+    { name = "uncframefly", args = "", desc = "Turn off cframe fly", aliases = {} },
+    { name = "unclicktp", args = "", desc = "Stop click teleport", aliases = { "unctp" } },
+    { name = "unclimb", args = "", desc = "Turn off climb", aliases = {} },
+    { name = "undash", args = "", desc = "Turn off dash", aliases = {} },
+    { name = "unedgejump", args = "", desc = "Turn off edge jump", aliases = {} },
+    { name = "unfloat", args = "", desc = "Remove the float platform", aliases = { "uplat", "nofloat" } },
+    { name = "unfly", args = "", desc = "Stop flying", aliases = { "uf", "nofly" } },
+    { name = "unflyjump", args = "", desc = "Turn off fly jump", aliases = {} },
+    { name = "unfollow", args = "", desc = "Stop following player", aliases = {} },
+    { name = "unftp", args = "", desc = "Disable FTP", aliases = {} },
+    { name = "unglide", args = "", desc = "Turn off glide", aliases = {} },
+    { name = "ungotofolder", args = "", desc = "Turn off folder tour", aliases = {} },
+    { name = "unhatfly", args = "", desc = "Stop hatfly and restore your character", aliases = { "uhf", "nohatfly" } },
+    { name = "unhelicopter", args = "", desc = "Stop helicopter fly + anim", aliases = { "unheli", "noheli" } },
+    { name = "unjumpboost", args = "", desc = "Turn off jump boost", aliases = {} },
+    { name = "unloopgoto", args = "", desc = "Turn off loop goto", aliases = {} },
+    { name = "unmoonwalk", args = "", desc = "Turn off moonwalk", aliases = {} },
+    { name = "unnoclip", args = "", desc = "Restore collision", aliases = { "unc", "clip" } },
+    { name = "unnojumpcooldown", args = "", desc = "Disable nojumpcooldown", aliases = {} },
+    { name = "unorbit", args = "", desc = "Stop orbiting", aliases = { "uorb" } },
+    { name = "unpathfind", args = "", desc = "Stop current pathfinding route", aliases = { "upf", "stoppf" } },
+    { name = "unspectate", args = "", desc = "Stop spectating", aliases = { "uspec", "unview" } },
+    { name = "unsprint", args = "", desc = "Turn off sprint", aliases = {} },
+    { name = "unsuperfly", args = "", desc = "Disable superfly mode", aliases = { "usfly", "nosuperfly" } },
+    { name = "unswim", args = "", desc = "Stop swimming", aliases = { "usw", "noswim" } },
+    { name = "untptool", args = "", desc = "Remove the teleport tool", aliases = { "utpt" } },
+    { name = "unvehiclespeed", args = "", desc = "Turn off vehicle speed", aliases = {} },
+    { name = "unvfly", args = "", desc = "Turn off vehicle fly", aliases = {} },
+    { name = "unwalkonwalls", args = "", desc = "Turn off walk on walls", aliases = {} },
+    { name = "unwalkto", args = "", desc = "Stop walking to player", aliases = { "uwt" } },
+    { name = "unwallrun", args = "", desc = "Turn off wall run", aliases = {} },
+    { name = "unwiggle", args = "", desc = "Turn off wiggle", aliases = {} },
+    { name = "vehiclespeed", args = "<n>", desc = "Raise the top speed of the car you drive", aliases = { "vspeed", "carspeed" } },
+    { name = "velocity", args = "<x> <y> <z>", desc = "Push yourself with a velocity of x y z", aliases = { "vel" } },
+    { name = "vfly", args = "<speed>", desc = "Fly the vehicle you are sitting in", aliases = { "vehiclefly", "carfly" } },
+    { name = "walkonwalls", args = "", desc = "Walk on walls and ceilings. Walk into a wall to climb it, right drag to look, scroll to zoom", aliases = { "wallwalk" } },
+    { name = "walkto", args = "<p>", desc = "Walk toward player", aliases = { "wt" } },
+    { name = "wallrun", args = "", desc = "Run along walls for a moment when you jump next to them", aliases = { "wr" } },
+    { name = "waypoints", args = "", desc = "List all saved waypoints", aliases = {} },
+    { name = "waypointtool", args = "", desc = "Equip a tool ,  click anywhere to place a waypoint there", aliases = {} },
+    { name = "wiggle", args = "", desc = "Wiggle side to side", aliases = { "shimmy" } },
+}
+
 ------------------------------------------------------------------------
--- Teleport and click-teleport
+-- Movement: novoline's movement commands, run through novoline's registry
+--
+-- The handlers are novoline's code (embedded above in Novo.boot): fly and
+-- its speed/keys, superfly and its panel, hatfly, helicopter, noclip holds,
+-- airwalk, swim, every teleport / waypoint / follow command, and the
+-- movement library (cframefly, vfly, dash, glide, wallrun, ...). They are
+-- called the way novoline's command bar calls them: exec({ name, args... }).
 ------------------------------------------------------------------------
 
-local Teleport = { click = false }
+Novo.active = {}   -- commands with an "un..." counterpart that are on right now
 
--- The part that actually moves you: the clone while reanimated.
-local function bodyRoot()
-    local owner = (Reanim.active and Reanim.clone) or chr
-    return owner and owner:FindFirstChild("HumanoidRootPart")
+function Novo.find(name)
+    if not Novo.boot() then return nil end
+    for _, c in ipairs(Novo.cmds) do
+        if c.name == name then return c end
+    end
+    return nil
 end
 
-function Teleport.toCFrame(cf)
-    local root = bodyRoot()
-    if not root then return false end
-    root.CFrame = cf
-    root.AssemblyLinearVelocity = Vector3.zero
-    root.AssemblyAngularVelocity = Vector3.zero
-    return true
+-- a: PuppyAdmin args (without the command name). Runs on its own thread
+-- because novoline handlers wait (fly restarts, tweens, teleports).
+function Novo.run(name, a)
+    local c = Novo.find(name)
+    if not c or type(c.exec) ~= "function" then
+        note("Movement", "Not available: " .. tostring(name), RED)
+        return
+    end
+    local packed = { name }
+    for _, v in ipairs(a or {}) do table.insert(packed, v) end
+    if name:sub(1, 2) == "un" then
+        Novo.active[name:sub(3)] = nil
+    elseif Novo.find("un" .. name) then
+        Novo.active[name] = true
+    end
+    task.spawn(function()
+        local ok, err = pcall(c.exec, packed)
+        if not ok then note("Movement", name .. ": " .. tostring(err):sub(1, 70), RED) end
+        if UIAPI.sync then UIAPI.sync() end
+    end)
 end
 
-function Teleport.toPlayer(p)
-    local tr = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
-    if not tr then return false end
-    return Teleport.toCFrame(tr.CFrame * CFrame.new(0, 0, 3))
+-- State the Movement panel shows. Fly, superfly, noclip, swim and the fly
+-- speed are novoline's own fields; helicopter, hatfly and airwalk keep their
+-- state in module locals, so those follow the commands sent from here.
+Novo.state = {}
+function Novo.state.flying() return type(_G._nvMove) == "table" and _G._nvMove.FLYING == true end
+function Novo.state.superfly() return type(_G._nvSuperfly) == "table" and _G._nvSuperfly.enabled == true end
+function Novo.state.noclip() return type(_G._nvMove) == "table" and type(_G._nvMove.noclipHold) == "table" and _G._nvMove.noclipHold.user == true end
+function Novo.state.swimming() return Novo.nvL ~= nil and Novo.nvL.swimming == true end
+function Novo.state.flySpeed() return type(_G._nvMove) == "table" and tonumber(_G._nvMove.iyflyspeed) or 1 end
+function Novo.state.setFlySpeed(v)
+    if Novo.boot() and type(Novo.nvL.setFlySpeed) == "function" then pcall(Novo.nvL.setFlySpeed, v) end
+end
+function Novo.state.on(name)
+    if name == "helicopter" and not Novo.state.flying() then Novo.active.helicopter = nil end
+    return Novo.active[name] == true
 end
 
-function Teleport.toPoint(pos)
-    local root = bodyRoot()
-    if not root then return false end
-    return Teleport.toCFrame(CFrame.new(pos) * (root.CFrame - root.CFrame.Position))
-end
-
--- Raycast from the mouse position; returns the hit position or nil.
-function Teleport.mousePoint(screenPos)
-    local cam = workspace.CurrentCamera
-    if not cam then return nil end
-    local ray = cam:ScreenPointToRay(screenPos.X, screenPos.Y)
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    local skip = { chr }
-    if Reanim.clone then table.insert(skip, Reanim.clone) end
-    params.FilterDescendantsInstances = skip
-    local hit = workspace:Raycast(ray.Origin, ray.Direction * 2000, params)
-    return hit and hit.Position
-end
-
-function Teleport.onClick(input)
-    if not Teleport.click then return end
-    local t = input.UserInputType
-    if t ~= Enum.UserInputType.MouseButton1 and t ~= Enum.UserInputType.Touch then return end
-    local p = Teleport.mousePoint(Vector2.new(input.Position.X, input.Position.Y))
-    if p then Teleport.toPoint(p + Vector3.new(0, 3, 0)) end
-end
+table.insert(cleanups, function()
+    if not Novo.booted then return end
+    local off = {}
+    for name in pairs(Novo.active) do off["un" .. name] = true end
+    off.unfly, off.unnoclip, off.unswim, off.unsuperfly = true, true, true, true
+    for name in pairs(off) do
+        local c = Novo.find(name)
+        if c and type(c.exec) == "function" then pcall(c.exec, { name }) end
+    end
+    Novo.active = {}
+end)
 
 ------------------------------------------------------------------------
--- Movement, world and visuals (ported from novoline.lua)
--- fly / togglefly / flyspeed / superfly / hatfly / helicopter, noclip,
--- airwalk, swim, infinite baseplate, ESP (chams, hitboxes, tracers), rejoin.
--- Everything here acts on plr.Character at the moment it runs, so while you
--- are reanimated it drives the clone and your real body follows it.
+-- World and visuals: infinite baseplate, ESP (chams, hitboxes, tracers).
+-- Movement is novoline's own code now (see Novo / NOVO_MOVE above).
 ------------------------------------------------------------------------
 
-local Fly, Superfly, Helicopter, HatFly, Noclip, Airwalk, Swim, Baseplate, BASEPLATE_PRESETS, bpApplyAll, Esp, isMobile
+local Baseplate, BASEPLATE_PRESETS, bpApplyAll, Esp, isMobile
 do
 local function getRootPart(char)
     return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
@@ -9552,678 +11556,6 @@ end
 local function disconnect(c)
     if c then pcall(function() c:Disconnect() end) end
     return nil
-end
-
-------------------------------------------------------------------------
--- Fly (novoline sFLY / mobilefly / NOFLY)
-------------------------------------------------------------------------
-
-Fly = { flying = false, speed = 1, qe = true, gen = 0, mouseHeld = false, conns = {}, diedConn = nil }
-local FLY_VEL, FLY_GYRO = "_paFlyVel", "_paFlyGyro"
-
-local function restoreFlyHumanoid(h, root)
-    if h then
-        pcall(function()
-            h.PlatformStand = false
-            h.Sit = false
-            h.AutoRotate = true
-            h:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
-            h:SetStateEnabled(Enum.HumanoidStateType.GettingUp, true)
-            h:SetStateEnabled(Enum.HumanoidStateType.Running, true)
-            h:SetStateEnabled(Enum.HumanoidStateType.Freefall, true)
-            h:ChangeState(Enum.HumanoidStateType.GettingUp)
-        end)
-        task.defer(function()
-            if not h.Parent then return end
-            pcall(function()
-                if h.PlatformStand then h.PlatformStand = false end
-                local st = h:GetState()
-                if st == Enum.HumanoidStateType.Physics or st == Enum.HumanoidStateType.Ragdoll then
-                    h:ChangeState(Enum.HumanoidStateType.GettingUp)
-                end
-            end)
-        end)
-    end
-    if root then
-        pcall(function()
-            root.AssemblyLinearVelocity = Vector3.zero
-            root.AssemblyAngularVelocity = Vector3.zero
-        end)
-    end
-    pcall(function()
-        local cam = workspace.CurrentCamera
-        if cam then cam.CameraType = Enum.CameraType.Custom end
-    end)
-end
-
-local function destroyFlyMovers(root)
-    if not root then return end
-    for _, n in ipairs({ FLY_VEL, FLY_GYRO }) do
-        local o = root:FindFirstChild(n)
-        if o then pcall(function() o:Destroy() end) end
-    end
-end
-
-local function prepFlyHumanoid(hum)
-    pcall(function()
-        hum.Sit = false
-        hum.AutoRotate = false
-        hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
-        hum.PlatformStand = true
-    end)
-end
-
-function Fly.setSpeed(v)
-    v = tonumber(v)
-    if not v or v ~= v then return end
-    Fly.speed = math.max(0.1, math.min(100, v))
-end
-
-local function flyInputConns()
-    Fly.mouseHeld = false
-    local held = isMobile and Enum.UserInputType.Touch or Enum.UserInputType.MouseButton1
-    table.insert(Fly.conns, UserInputService.InputBegan:Connect(function(input, processed)
-        if not processed and input.UserInputType == held then Fly.mouseHeld = true end
-    end))
-    table.insert(Fly.conns, UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == held then Fly.mouseHeld = false end
-    end))
-end
-
-local function flyWatchDeath(hum)
-    Fly.diedConn = disconnect(Fly.diedConn)
-    Fly.diedConn = hum.Died:Connect(function()
-        Fly.diedConn = disconnect(Fly.diedConn)
-        if Fly.flying then pcall(Fly.stop) end
-    end)
-end
-
--- Keyboard / mouse flight: BodyVelocity + BodyGyro on the root, camera-relative.
-local function flyDesktop(hum, T, myGen)
-    local BG = make("BodyGyro", { Name = FLY_GYRO, P = 9e4, MaxTorque = Vector3.new(9e9, 9e9, 9e9), CFrame = T.CFrame }, T)
-    local BV = make("BodyVelocity", { Name = FLY_VEL, Velocity = Vector3.zero, MaxForce = Vector3.new(9e9, 9e9, 9e9) }, T)
-    task.spawn(function()
-        local smooth = Vector3.zero
-        while Fly.flying and myGen == Fly.gen do
-            local dt = task.wait()
-            if not Fly.flying or myGen ~= Fly.gen then break end
-            local cam = workspace.CurrentCamera
-            if not cam or not BV.Parent then break end
-            if not T.Parent then
-                local nt = getRootPart(plr.Character)
-                if nt then T = nt; BG.Parent = T; BV.Parent = T end
-            end
-            if not hum.Parent then hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") or hum end
-            if hum and hum.Parent and hum.PlatformStand ~= true then hum.PlatformStand = true end
-
-            local fB, lR, qE = 0, 0, 0
-            if not UserInputService:GetFocusedTextBox() then
-                if UserInputService:IsKeyDown(Enum.KeyCode.W) then fB = fB + 1 end
-                if UserInputService:IsKeyDown(Enum.KeyCode.S) then fB = fB - 1 end
-                if UserInputService:IsKeyDown(Enum.KeyCode.D) then lR = lR + 1 end
-                if UserInputService:IsKeyDown(Enum.KeyCode.A) then lR = lR - 1 end
-                if Fly.qe then
-                    if UserInputService:IsKeyDown(Enum.KeyCode.E) then qE = qE + 1 end
-                    if UserInputService:IsKeyDown(Enum.KeyCode.Q) then qE = qE - 1 end
-                end
-                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then qE = qE + 1 end
-                if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then
-                    qE = qE - 1
-                end
-            end
-            local camCF = cam.CFrame
-            local dir = Vector3.zero
-            if Superfly.on and Fly.mouseHeld then dir = dir + camCF.LookVector end
-            dir = dir + camCF.LookVector * fB + camCF.RightVector * lR + Vector3.yAxis * qE
-            local hasInput = dir.Magnitude > 0.05
-            local target = hasInput and dir.Unit * (Fly.speed * 50) or Vector3.zero
-            smooth = smooth:Lerp(target, 1 - math.exp(-dt * (hasInput and 9 or 3.5)))
-            if not hasInput then smooth = Vector3.zero end
-            BV.Velocity = smooth
-            if not hasInput and T.Parent and T.AssemblyLinearVelocity.Magnitude > 0 then
-                T.AssemblyLinearVelocity = Vector3.zero
-            end
-            BG.CFrame = BG.CFrame:Lerp(camCF, 1 - math.exp(-dt * 14))
-        end
-        local settleUntil = os.clock() + 0.08
-        while os.clock() < settleUntil and BV.Parent and smooth.Magnitude > 4 do
-            local dt = task.wait()
-            smooth = smooth:Lerp(Vector3.zero, 1 - math.exp(-dt * 16))
-            BV.Velocity = smooth
-        end
-        pcall(function() BG:Destroy() end)
-        pcall(function() BV:Destroy() end)
-        -- Fly.stop() bumps the generation and restores the humanoid itself; reaching here with
-        -- the same generation means the loop ended on its own (root or movers removed)
-        if myGen == Fly.gen then
-            Fly.flying = false
-            restoreFlyHumanoid(hum, T)
-            if UIAPI.sync then UIAPI.sync() end
-        end
-    end)
-end
-
--- Touch flight: the default ControlModule's move vector drives the velocity.
-local function flyMobile(hum, root, myGen)
-    local ok, controlModule = pcall(function()
-        return require(plr:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule", 5):WaitForChild("ControlModule", 5))
-    end)
-    if not ok or not controlModule then
-        note("Fly", "Could not reach the touch controls", RED)
-        Fly.flying = false
-        return
-    end
-    make("BodyVelocity", { Name = FLY_VEL, MaxForce = Vector3.zero, Velocity = Vector3.zero }, root)
-    make("BodyGyro", { Name = FLY_GYRO, MaxTorque = Vector3.new(9e9, 9e9, 9e9), P = 1000, D = 50 }, root)
-    local smooth = Vector3.zero
-    table.insert(Fly.conns, RunService.RenderStepped:Connect(function(dt)
-        if myGen ~= Fly.gen then return end
-        local r = getRootPart(plr.Character)
-        local cam = workspace.CurrentCamera
-        local h = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
-        local VH = r and r:FindFirstChild(FLY_VEL)
-        local GH = r and r:FindFirstChild(FLY_GYRO)
-        if not (h and VH and GH and cam) then return end
-        VH.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-        if h.PlatformStand ~= true then h.PlatformStand = true end
-        local spd = Fly.speed * 50
-        local target, moving
-        if Superfly.on then
-            moving = Fly.mouseHeld
-            target = moving and cam.CFrame.LookVector * spd or Vector3.zero
-        else
-            local d = controlModule:GetMoveVector()
-            target = cam.CFrame.RightVector * (d.X * spd) - cam.CFrame.LookVector * (d.Z * spd)
-            moving = d.Magnitude > 0.05
-        end
-        smooth = smooth:Lerp(target, 1 - math.exp(-dt * (moving and 9 or 3.5)))
-        if not moving then smooth = Vector3.new(smooth.X, 0, smooth.Z) end
-        VH.Velocity = smooth
-        if not moving then
-            local av = r.AssemblyLinearVelocity
-            if av.Y ~= 0 then r.AssemblyLinearVelocity = Vector3.new(av.X, 0, av.Z) end
-        end
-        GH.CFrame = GH.CFrame:Lerp(cam.CFrame, 1 - math.exp(-dt * 14))
-    end))
-end
-
-function Fly.start()
-    Fly.stop(true)
-    local char = plr.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    local root = getRootPart(char)
-    if not (hum and root) then note("Fly", "No character", RED); return false end
-    destroyFlyMovers(root)
-    Fly.gen = Fly.gen + 1
-    Fly.flying = true
-    prepFlyHumanoid(hum)
-    pcall(function()
-        local cam = workspace.CurrentCamera
-        if cam then cam.CameraType = Enum.CameraType.Custom end
-    end)
-    flyInputConns()
-    if isMobile then flyMobile(hum, root, Fly.gen) else flyDesktop(hum, root, Fly.gen) end
-    flyWatchDeath(hum)
-    return true
-end
-
--- keepModes: called from Fly.start, so superfly / helicopter state survives a restart.
-function Fly.stop(keepModes)
-    local was = Fly.flying
-    Fly.flying = false
-    Fly.gen = Fly.gen + 1
-    for _, c in ipairs(Fly.conns) do disconnect(c) end
-    Fly.conns = {}
-    Fly.diedConn = disconnect(Fly.diedConn)
-    Fly.mouseHeld = false
-    if not keepModes then
-        if Superfly then Superfly.off() end
-        if Helicopter and Helicopter.on then Helicopter.stop(true) end
-    end
-    local char = plr.Character
-    local root = getRootPart(char)
-    destroyFlyMovers(root)
-    if was then restoreFlyHumanoid(char and char:FindFirstChildOfClass("Humanoid"), root) end
-end
-
-------------------------------------------------------------------------
--- Superfly: hold the mouse (or the screen) to fly forward, with
--- state animations (novoline's ids).
-------------------------------------------------------------------------
-
-Superfly = {
-    on = false, conn = nil, tracks = {}, current = nil, state = "", pending = "idle", pendingAt = 0, hum = nil,
-    ids = {
-        idle = 98353973763565, forward = 123269449592573, backward = 101457848070067,
-        up = 102256275785620, down = 616108001,
-    },
-}
-
-local function isTrack(t) return typeof(t) == "Instance" and t:IsA("AnimationTrack") end
-
-local function loadLoopTrack(hum, id)
-    local animator = hum:FindFirstChildOfClass("Animator") or make("Animator", {}, hum)
-    local ok, played, tr = pcall(function() return hum:PlayEmoteAndGetAnimTrackById(id) end)
-    if ok and played and isTrack(tr) then
-        pcall(function()
-            tr:Stop(0)
-            tr.Priority = Enum.AnimationPriority.Action4
-            tr.Looped = true
-        end)
-        return tr
-    end
-    local a = Instance.new("Animation")
-    a.AnimationId = resolveAnimationId("rbxassetid://" .. tostring(id))
-    local ok2, t2 = pcall(function() return animator:LoadAnimation(a) end)
-    if ok2 and isTrack(t2) then
-        t2.Priority = Enum.AnimationPriority.Action4
-        t2.Looped = true
-        return t2
-    end
-    return nil
-end
-
-function Superfly.stopTracks()
-    Superfly.conn = disconnect(Superfly.conn)
-    for _, tr in pairs(Superfly.tracks) do pcall(function() tr:Stop(0.15) end) end
-    Superfly.tracks, Superfly.current, Superfly.hum, Superfly.state = {}, nil, nil, ""
-    Superfly.pending, Superfly.pendingAt = "idle", 0
-end
-
-local function sfTrack(hum, state)
-    if Superfly.hum ~= hum then Superfly.stopTracks(); Superfly.hum = hum end
-    local t = Superfly.tracks[state]
-    if isTrack(t) then return t end
-    t = loadLoopTrack(hum, Superfly.ids[state] or Superfly.ids.idle)
-    if not t and state ~= "idle" then
-        t = Superfly.tracks.idle or loadLoopTrack(hum, Superfly.ids.idle)
-    end
-    if isTrack(t) then Superfly.tracks[state] = t end
-    return t
-end
-
-local function sfStep()
-    if not Superfly.on or not Fly.flying then return end
-    local char = plr.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    local root = getRootPart(char)
-    if not (hum and root) then return end
-    local lv = root.CFrame:VectorToObjectSpace(root.AssemblyLinearVelocity)
-    local hspd = math.sqrt(lv.X * lv.X + lv.Z * lv.Z)
-    local thresh = math.max(10, Fly.speed * 50 * 0.4)
-    local state = "idle"
-    if math.abs(lv.Y) > thresh and math.abs(lv.Y) >= hspd * 0.9 then
-        state = lv.Y > 0 and "up" or "down"
-    elseif hspd > thresh then
-        state = lv.Z > 0 and "backward" or "forward"
-    end
-    local now = os.clock()
-    if Superfly.pending ~= state then Superfly.pending, Superfly.pendingAt = state, now end
-    local holdFor = state == "idle" and 0.05 or 0.12
-    if state ~= Superfly.state and now - Superfly.pendingAt < holdFor then state = Superfly.state end
-    if state == "" then state = "idle" end
-    local want = sfTrack(hum, state)
-    if not isTrack(want) then return end
-    local fade = state == "idle" and 0.14 or 0.3
-    if Superfly.current ~= want then
-        if isTrack(Superfly.current) and Superfly.current.IsPlaying then pcall(function() Superfly.current:Stop(fade) end) end
-        pcall(function() want:Play(fade, 1, 1) end)
-        Superfly.current, Superfly.state = want, state
-    elseif not want.IsPlaying then
-        pcall(function() want:Play(fade, 1, 1) end)
-    end
-end
-
-function Superfly.set(on)
-    if on then
-        if not Fly.start() then return false end
-        Superfly.on = true
-        Superfly.conn = disconnect(Superfly.conn)
-        Superfly.conn = RunService.RenderStepped:Connect(sfStep)
-        return true
-    end
-    Fly.stop()
-    return true
-end
-
-function Superfly.off()
-    Superfly.on = false
-    Superfly.stopTracks()
-end
-
-------------------------------------------------------------------------
--- Helicopter: fly + spinning animation + rotor sound (novoline's ids)
-------------------------------------------------------------------------
-
-Helicopter = { on = false, track = nil, sound = nil, diedConn = nil }
-local HELI_ANIM, HELI_SOUND = "129132611803602", "99103708154004"
-
-function Helicopter.stop(keepFly)
-    Helicopter.on = false
-    Helicopter.diedConn = disconnect(Helicopter.diedConn)
-    if Helicopter.track then pcall(function() Helicopter.track:Stop(0) end); Helicopter.track = nil end
-    if Helicopter.sound then pcall(function() Helicopter.sound:Stop(); Helicopter.sound:Destroy() end); Helicopter.sound = nil end
-    if not keepFly then Fly.stop(true) end
-end
-
-function Helicopter.start()
-    local char = plr.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    local root = getRootPart(char)
-    if not (hum and root) then note("Helicopter", "No character", RED); return false end
-    Helicopter.stop(true)
-    if not Fly.start() then return false end
-    Helicopter.on = true
-    local animator = hum:FindFirstChildOfClass("Animator") or make("Animator", {}, hum)
-    local a = Instance.new("Animation")
-    a.AnimationId = resolveAnimationId("rbxassetid://" .. HELI_ANIM)
-    local ok, track = pcall(function() return animator:LoadAnimation(a) end)
-    if ok and track then
-        Helicopter.track = track
-        track.Priority = Enum.AnimationPriority.Action4
-        track.Looped = true
-        pcall(function() track:Play(0.1, 1, 1) end)
-    end
-    Helicopter.sound = make("Sound", {
-        Name = "PuppyAdminHelicopter", SoundId = "rbxassetid://" .. HELI_SOUND, Volume = 0.35,
-        Looped = true, RollOffMode = Enum.RollOffMode.InverseTapered,
-    }, root)
-    pcall(function() Helicopter.sound:Play() end)
-    Helicopter.diedConn = hum.Died:Connect(function() Helicopter.stop(false) end)
-    return true
-end
-
-------------------------------------------------------------------------
--- HatFly: your hats fly while the body is parked under the map
-------------------------------------------------------------------------
-
-HatFly = { active = false, conns = {}, vel = Vector3.zero }
-
-function HatFly.stop()
-    if not HatFly.active and not HatFly.plate then return end
-    HatFly.active = false
-    for _, c in ipairs(HatFly.conns) do disconnect(c) end
-    HatFly.conns = {}
-    for _, fp in ipairs(HatFly.parts or {}) do
-        if fp.part and fp.part.Parent then pcall(function() fp.part:Destroy() end) end
-    end
-    if HatFly.plate then pcall(function() HatFly.plate:Destroy() end) end
-    for _, sh in ipairs(HatFly.src or {}) do
-        if sh.Parent then pcall(function() sh.LocalTransparencyModifier = 0 end) end
-    end
-    local root, hum = HatFly.root, HatFly.hum
-    if root and root.Parent then
-        pcall(function()
-            root.AssemblyLinearVelocity = Vector3.zero
-            root.AssemblyAngularVelocity = Vector3.zero
-            if HatFly.savedCF then root.CFrame = HatFly.savedCF end
-        end)
-    end
-    if hum and hum.Parent then pcall(function() hum.PlatformStand = false end) end
-    pcall(function()
-        local cam = workspace.CurrentCamera
-        if cam and HatFly.camType then cam.CameraType = HatFly.camType end
-        if cam and HatFly.camSubject and HatFly.camSubject.Parent then cam.CameraSubject = HatFly.camSubject end
-    end)
-    HatFly.parts, HatFly.src, HatFly.plate, HatFly.flyHat = nil, nil, nil, nil
-    HatFly.root, HatFly.hum, HatFly.savedCF, HatFly.camType, HatFly.camSubject = nil, nil, nil, nil, nil
-    HatFly.vel, HatFly.pos = Vector3.zero, nil
-end
-
-function HatFly.start()
-    HatFly.stop()
-    local char = plr.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    local root = getRootPart(char)
-    if not (hum and root) then return false, "Character not ready" end
-    local src = {}
-    for _, v in ipairs(char:GetChildren()) do
-        if v:IsA("Accessory") then
-            local h = v:FindFirstChild("Handle")
-            if h and h:IsA("BasePart") then table.insert(src, h) end
-        end
-    end
-    if #src == 0 then return false, "No accessory handle found" end
-    -- novoline parks at Y -4500; parts below FallenPartsDestroyHeight get deleted,
-    -- so stay just above that limit when the game's limit is higher.
-    local parkY = -4500
-    pcall(function() parkY = math.max(parkY, workspace.FallenPartsDestroyHeight + 25) end)
-    local plate = make("Part", {
-        Name = "PuppyAdminHatFlyPlate", Anchored = true, CanCollide = true, CanTouch = false, CanQuery = false,
-        CastShadow = false, Material = Enum.Material.SmoothPlastic, Color = Color3.fromRGB(30, 30, 34),
-        Transparency = 0.45, Size = Vector3.new(220, 1, 220),
-        CFrame = CFrame.new(root.Position.X, parkY, root.Position.Z),
-    }, workspace)
-    local primary = src[1]
-    local primaryCF = primary.CFrame
-    local function cleanClone(s)
-        local c = s:Clone()
-        c.Anchored, c.CanCollide, c.CanTouch, c.CanQuery, c.Massless = true, false, false, false, true
-        for _, w in ipairs(c:GetDescendants()) do
-            if w:IsA("JointInstance") or w:IsA("WeldConstraint") then w:Destroy() end
-        end
-        c.Name = "PuppyAdminHatFly"
-        return c
-    end
-    local parts, flyHat = {}, nil
-    for _, s in ipairs(src) do
-        local c = cleanClone(s)
-        c.CFrame = s.CFrame
-        c.Parent = workspace
-        if s == primary then flyHat = c end
-        table.insert(parts, { part = c, offset = primaryCF:ToObjectSpace(s.CFrame) })
-    end
-    HatFly.active, HatFly.root, HatFly.hum, HatFly.src = true, root, hum, src
-    HatFly.parts, HatFly.flyHat, HatFly.plate, HatFly.savedCF = parts, flyHat, plate, root.CFrame
-    HatFly.pos, HatFly.vel = primaryCF.Position, Vector3.zero
-    pcall(function()
-        local cam = workspace.CurrentCamera
-        HatFly.camType, HatFly.camSubject = cam.CameraType, cam.CameraSubject
-        cam.CameraType = Enum.CameraType.Custom
-        cam.CameraSubject = flyHat
-    end)
-    for _, s in ipairs(src) do pcall(function() s.LocalTransparencyModifier = 1 end) end
-    pcall(function()
-        if hum.SeatPart then hum.Sit = false end
-        hum.PlatformStand = true
-        root.CFrame = plate.CFrame + Vector3.new(0, 6, 0)
-        root.AssemblyLinearVelocity = Vector3.zero
-    end)
-    table.insert(HatFly.conns, RunService.Heartbeat:Connect(function(dt)
-        if not HatFly.active or not flyHat.Parent then return end
-        local cam = workspace.CurrentCamera
-        if not cam then return end
-        if cam.CameraSubject ~= flyHat then pcall(function() cam.CameraType = Enum.CameraType.Custom; cam.CameraSubject = flyHat end) end
-        local f, s, v = 0, 0, 0
-        if not UserInputService:GetFocusedTextBox() then
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then f = f + 1 end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then f = f - 1 end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then s = s + 1 end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then s = s - 1 end
-            if UserInputService:IsKeyDown(Enum.KeyCode.E) or UserInputService:IsKeyDown(Enum.KeyCode.Space) then v = v + 1 end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Q) or UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
-                or UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then v = v - 1 end
-        end
-        local look, right = cam.CFrame.LookVector, cam.CFrame.RightVector
-        local lookH = Vector3.new(look.X, 0, look.Z)
-        lookH = lookH.Magnitude > 0.001 and lookH.Unit or Vector3.new(0, 0, -1)
-        local rightH = Vector3.new(right.X, 0, right.Z)
-        rightH = rightH.Magnitude > 0.001 and rightH.Unit or Vector3.new(1, 0, 0)
-        local want = lookH * f + rightH * s + Vector3.new(0, v, 0)
-        want = want.Magnitude > 0 and want.Unit * (math.max(Fly.speed, 0.5) * 85) or Vector3.zero
-        if v == 0 then want = Vector3.new(want.X, 0, want.Z) end
-        HatFly.vel = HatFly.vel + (want - HatFly.vel) * (want.Magnitude > 0 and 0.26 or 0.08)
-        if v == 0 then HatFly.vel = Vector3.new(HatFly.vel.X, 0, HatFly.vel.Z) end
-        HatFly.pos = HatFly.pos + HatFly.vel * math.max(dt, 0.016)
-        local pcf = CFrame.new(HatFly.pos, HatFly.pos + look)
-        for _, fp in ipairs(parts) do
-            if fp.part.Parent then fp.part.CFrame = pcf * fp.offset end
-        end
-        if root.Parent and plate.Parent then
-            root.CFrame = plate.CFrame + Vector3.new(0, 6, 0)
-            root.AssemblyLinearVelocity = Vector3.zero
-            root.AssemblyAngularVelocity = Vector3.zero
-        end
-    end))
-    return true
-end
-
-------------------------------------------------------------------------
--- Noclip (novoline _mv.setNoclip: reference-counted holds)
-------------------------------------------------------------------------
-
-Noclip = { holds = {}, on = false, conn = nil, cache = {}, was = {}, cacheConns = {}, charConn = nil }
-
-local function noclipRebuild()
-    for _, c in ipairs(Noclip.cacheConns) do disconnect(c) end
-    Noclip.cacheConns, Noclip.cache = {}, {}
-    local char = plr.Character
-    if not char then return end
-    for _, p in ipairs(char:GetDescendants()) do
-        if p:IsA("BasePart") then Noclip.cache[p] = true end
-    end
-    table.insert(Noclip.cacheConns, char.DescendantAdded:Connect(function(d)
-        if d:IsA("BasePart") then Noclip.cache[d] = true end
-    end))
-    table.insert(Noclip.cacheConns, char.DescendantRemoving:Connect(function(d)
-        Noclip.cache[d] = nil
-        if Noclip.was[d] then
-            Noclip.was[d] = nil
-            pcall(function() d.CanCollide = true end)
-        end
-    end))
-end
-
-local function noclipRestore()
-    for p in pairs(Noclip.was) do
-        if p.Parent then pcall(function() p.CanCollide = true end) end
-    end
-    Noclip.was = {}
-end
-
-function Noclip.set(key, on)
-    Noclip.holds[key] = on and true or nil
-    Noclip.on = next(Noclip.holds) ~= nil
-    if Noclip.on then
-        if not Noclip.conn then
-            noclipRebuild()
-            Noclip.charConn = plr:GetPropertyChangedSignal("Character"):Connect(function()
-                noclipRestore()
-                noclipRebuild()
-            end)
-            Noclip.conn = RunService.Stepped:Connect(function()
-                for p in pairs(Noclip.cache) do
-                    if p.Parent and p.CanCollide then
-                        Noclip.was[p] = true
-                        p.CanCollide = false
-                    end
-                end
-            end)
-        end
-        return
-    end
-    Noclip.conn = disconnect(Noclip.conn)
-    Noclip.charConn = disconnect(Noclip.charConn)
-    for _, c in ipairs(Noclip.cacheConns) do disconnect(c) end
-    Noclip.cacheConns, Noclip.cache = {}, {}
-    noclipRestore()
-end
-
-------------------------------------------------------------------------
--- Airwalk: an invisible platform follows under your feet; hold Space to rise
-------------------------------------------------------------------------
-
-Airwalk = { conn = nil, jumpConn = nil, part = nil, floorY = nil, holdUp = false }
-
-function Airwalk.stop()
-    Airwalk.conn = disconnect(Airwalk.conn)
-    Airwalk.jumpConn = disconnect(Airwalk.jumpConn)
-    Airwalk.holdUp, Airwalk.floorY = false, nil
-    if Airwalk.part then pcall(function() Airwalk.part:Destroy() end); Airwalk.part = nil end
-    local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
-    if hum then pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Freefall, true) end) end
-end
-
-local function airwalkPart()
-    if Airwalk.part and Airwalk.part.Parent then return Airwalk.part end
-    Airwalk.part = make("Part", {
-        Name = "PuppyAdminAirwalk", Size = Vector3.new(12, 1, 12), Transparency = 1, Anchored = true,
-        CanCollide = true, CanQuery = false, CanTouch = false, CastShadow = false, Massless = true,
-    }, workspace)
-    return Airwalk.part
-end
-
-local function airwalkFootOffset(hum, root, part)
-    local hip = 0
-    pcall(function() hip = hum and hum.HipHeight or 0 end)
-    local rootH, partH = 2, 1
-    pcall(function() rootH = root.Size.Y end)
-    pcall(function() partH = part.Size.Y end)
-    return hip + rootH * 0.5 + partH * 0.5
-end
-
-function Airwalk.start()
-    if Airwalk.conn then return false end
-    Airwalk.holdUp = false
-    Airwalk.jumpConn = UserInputService.JumpRequest:Connect(function() Airwalk.holdUp = true end)
-    Airwalk.conn = RunService.Heartbeat:Connect(function(dt)
-        local char = plr.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        local root = getRootPart(char)
-        if not root then return end
-        local part = airwalkPart()
-        local off = airwalkFootOffset(hum, root, part)
-        local pos = root.Position
-        if type(Airwalk.floorY) ~= "number" or pos.Y < Airwalk.floorY - 8 then Airwalk.floorY = pos.Y - off end
-        local up = Airwalk.holdUp
-        Airwalk.holdUp = false
-        if not UserInputService:GetFocusedTextBox() and UserInputService:IsKeyDown(Enum.KeyCode.Space) then up = true end
-        if up then Airwalk.floorY = Airwalk.floorY + 24 * dt end
-        part.CFrame = CFrame.new(pos.X, Airwalk.floorY, pos.Z)
-    end)
-    return true
-end
-
-------------------------------------------------------------------------
--- Swim: zero gravity, every humanoid state but Swimming disabled
-------------------------------------------------------------------------
-
-Swim = { on = false, conn = nil, gravity = nil, hum = nil }
-
-local function swimStates(hum, enabled)
-    for _, st in ipairs(Enum.HumanoidStateType:GetEnumItems()) do
-        if st ~= Enum.HumanoidStateType.None then
-            pcall(function() hum:SetStateEnabled(st, enabled) end)
-        end
-    end
-end
-
-function Swim.start()
-    if Swim.on then return false end
-    local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
-    if not hum then return false end
-    Swim.gravity = workspace.Gravity
-    workspace.Gravity = 0
-    swimStates(hum, false)
-    pcall(function() hum:ChangeState(Enum.HumanoidStateType.Swimming) end)
-    Swim.hum = hum
-    Swim.conn = RunService.Heartbeat:Connect(function()
-        local root = getRootPart(plr.Character)
-        if root and hum.MoveDirection == Vector3.zero and not UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-            root.AssemblyLinearVelocity = Vector3.zero
-        end
-    end)
-    Swim.on = true
-    return true
-end
-
-function Swim.stop()
-    if not Swim.on then return end
-    Swim.on = false
-    workspace.Gravity = Swim.gravity or 196.2
-    Swim.conn = disconnect(Swim.conn)
-    if Swim.hum and Swim.hum.Parent then swimStates(Swim.hum, true) end
-    Swim.hum = nil
 end
 
 ------------------------------------------------------------------------
@@ -10622,14 +11954,7 @@ function Esp.refresh() if Esp.conns.hb then espRefresh() end end
 ------------------------------------------------------------------------
 
 table.insert(cleanups, function()
-    pcall(HatFly.stop)
-    pcall(Helicopter.stop, true)
-    pcall(Fly.stop)
-    pcall(Airwalk.stop)
-    pcall(Swim.stop)
     pcall(Baseplate.stop)
-    Noclip.holds = {}
-    pcall(Noclip.set, "user", false)
     Esp.mode, Esp.hitboxes, Esp.tracers = "off", false, false
     pcall(espStopIfIdle)
 end)
@@ -11992,11 +13317,9 @@ end)
 
 local cmds = {
     "tools",
-    "fly", "unfly", "togglefly", "flyspeed", "superfly", "unsuperfly", "hatfly", "unhatfly",
-    "helicopter", "unhelicopter", "noclip", "unnoclip", "togglenoclip", "airwalk", "unairwalk",
-    "swim", "unswim", "moveui", "infbaseplate", "uninfbaseplate", "esp", "unesp", "rejoin",
+    "moveui", "infbaseplate", "uninfbaseplate", "esp", "unesp",
     "hide", "unhide", "mute", "unmute",
-    "reanimui", "tp", "goto", "clicktp",
+    "reanimui", "tp",
     "aura", "unaura", "auras",
     "tagui", "antikick", "unantikick", "antivcban",
     "reanim", "anim",
@@ -12004,44 +13327,20 @@ local cmds = {
 }
 
 -- Novoline's short names for the commands ported from it.
+-- Movement aliases come from novoline's own registrations (NOVO_MOVE).
 local ALIASES = {
-    f = "fly", uf = "unfly", nofly = "unfly", tf = "togglefly", fs = "flyspeed", flysp = "flyspeed",
-    sfly = "superfly", sflymode = "superfly", usfly = "unsuperfly", nosuperfly = "unsuperfly",
-    hf = "hatfly", uhf = "unhatfly", nohatfly = "unhatfly", heli = "helicopter", unheli = "unhelicopter",
-    noheli = "unhelicopter", nc = "noclip", unc = "unnoclip", clip = "unnoclip", tnc = "togglenoclip",
-    aw = "airwalk", uaw = "unairwalk", sw = "swim", usw = "unswim", noswim = "unswim",
-    wh = "esp", wallhack = "esp", unwh = "unesp", noesp = "unesp", ibp = "infbaseplate", rj = "rejoin",
+    wh = "esp", wallhack = "esp", unwh = "unesp", noesp = "unesp", ibp = "infbaseplate",
 }
 
 local cmdDocs = {
     tools = "tools [sub] [value] - Orbit/tail/wings; no sub opens the panel, 'tools help' lists subs",
-    fly = "fly [speed] - Fly (WASD, Space/Ctrl or E/Q for up/down)",
-    unfly = "unfly - Stop flying",
-    togglefly = "togglefly - Toggle fly",
-    flyspeed = "flyspeed [num] - Fly speed (default 1)",
-    superfly = "superfly [speed] - Hold the mouse to fly, with fly animations",
-    unsuperfly = "unsuperfly - Stop superfly",
-    hatfly = "hatfly - Fly your hats while your body waits under the map",
-    unhatfly = "unhatfly - Stop hatfly and bring your body back",
-    helicopter = "helicopter - Fly while spinning like a helicopter",
-    unhelicopter = "unhelicopter - Stop helicopter",
-    noclip = "noclip - Walk through walls",
-    unnoclip = "unnoclip - Restore collision",
-    togglenoclip = "togglenoclip - Toggle noclip",
-    airwalk = "airwalk - Walk on air (Space to rise)",
-    unairwalk = "unairwalk - Stop airwalk",
-    swim = "swim - Float in zero gravity",
-    unswim = "unswim - Stop swimming",
     moveui = "moveui - Movement panel (fly modes, speed, noclip, airwalk, swim)",
     infbaseplate = "infbaseplate - Endless floor under you (opens its panel)",
     uninfbaseplate = "uninfbaseplate - Remove the endless floor",
     esp = "esp - Names, health and distance through walls (opens its panel)",
     unesp = "unesp - Turn ESP, chams, hitboxes and tracers off",
-    rejoin = "rejoin - Rejoin this server",
     reanimui = "reanimui - Reanimation panel",
-    tp = "tp [name] or tp [x] [y] [z] - Teleport to a player or a point",
-    ["goto"] = "goto [name] - Same as tp",
-    clicktp = "clicktp [on|off] - Click anywhere to teleport there",
+    tp = "tp [name] or tp [x] [y] [z] - Teleport to a player (goto) or a point (tppos)",
     hide = "hide [ui|me|all|others|name] - Hide the script UI or a character (your screen)",
     unhide = "unhide [ui|me|all|others|name] - Undo hide",
     mute = "mute [name|all|others] - Silence a player's chat and sounds (your side)",
@@ -12322,14 +13621,14 @@ function H.reanim(a)
         local l = tok:lower()
         if l == "on" then want = true elseif l == "off" then want = false end
     end
-    NovoReanim.setActive(want)
+    Novo.setActive(want)
 end
 
 -- Library, states, keybinds and recordings live in the Reanimate panel
 -- (`reanimui`); this covers playback from the command line.
 function H.anim(a)
     local sub = a[1] and a[1]:lower()
-    local rs = NovoReanim.panelState()
+    local rs = Novo.panelState()
     if not rs then return end
     if sub == "play" then
         local url = a[2]
@@ -12361,31 +13660,8 @@ end
 
 -- Panels and teleport -------------------------------------------------------------
 
-function H.reanimui() NovoReanim.setOpen() end
+function H.reanimui() Novo.setOpen() end
 
-function H.tp(a)
-    local x, y, z = tonumber(a[1]), tonumber(a[2]), tonumber(a[3])
-    if x and y and z then
-        if Teleport.toPoint(Vector3.new(x, y, z)) then
-            note("Teleport", string.format("%.0f, %.0f, %.0f", x, y, z), LIGHT)
-        else
-            note("Teleport", "No body to move", RED)
-        end
-        return
-    end
-    if not a[1] then note("Teleport", "Usage: tp [name] or tp [x] [y] [z]"); return end
-    local target
-    for _, p in ipairs(resolveTargets(a[1])) do
-        if p ~= plr then target = p; break end
-    end
-    if not target then note("Teleport", "No matching player", RED); return end
-    if Teleport.toPlayer(target) then
-        note("Teleport", "To " .. target.DisplayName, LIGHT)
-    else
-        note("Teleport", target.DisplayName .. " has no character", RED)
-    end
-end
-H["goto"] = H.tp
 
 function H.antikick()
     if AntiKick.on then note("AntiKick", "Already active"); return end
@@ -12424,10 +13700,6 @@ function H.tagui()
     UIAPI.togglePanel("tags")
 end
 
-function H.clicktp(a)
-    Teleport.click = parseToggle(a[1], Teleport.click)
-    note("Click TP", Teleport.click and "On - click to teleport" or "Off", LIGHT)
-end
 
 -- Script settings ---------------------------------------------------------------
 
@@ -12567,110 +13839,50 @@ local function showPanel(key)
     if p then p.Visible = true; UIAPI.sync() end
 end
 
-function H.fly(a)
-    local v = tonumber(a[1])
-    if v and Fly.flying then
-        Fly.setSpeed(v)
-        note("Fly", "Speed " .. Fly.speed)
-        return
+do
+    local docsTaken = {}
+    for _, c in ipairs(NOVO_MOVE) do
+        local name = c.name
+        if not H[name] then
+            H[name] = function(a) Novo.run(name, a) end
+        end
+        if not table.find(cmds, name) then table.insert(cmds, name) end
+        cmdDocs[name] = name .. (c.args ~= "" and (" " .. c.args) or "") .. " - " .. c.desc
+        if c.args:find("<p>", 1, true) then PLAYER_ARG[name] = 1 end
+        for _, al in ipairs(c.aliases) do
+            if not ALIASES[al] and not table.find(cmds, al) and not docsTaken[al] then
+                ALIASES[al] = name
+                docsTaken[al] = true
+            end
+        end
     end
-    HatFly.stop()
-    Fly.stop()
-    if Fly.start() then
-        if v then Fly.setSpeed(v) end
-        note("Fly", "Enabled - WASD, Space up, Ctrl down (Q/E too)", LIGHT)
+end
+
+-- tp keeps PuppyAdmin's two forms: a player (novoline goto) or x y z (novoline tppos).
+function H.tp(a)
+    if tonumber(a[1]) and tonumber(a[2]) and tonumber(a[3]) then
+        Novo.run("tppos", a)
+    elseif a[1] then
+        Novo.run("goto", a)
+    else
+        note("Teleport", "Usage: tp [name] or tp [x] [y] [z]")
     end
 end
 
-function H.unfly()
-    Fly.stop()
-    note("Fly", "Disabled")
+-- clicktp [on|off]: novoline's click teleport (hold Ctrl and click).
+function H.clicktp(a)
+    local l = a[1] and a[1]:lower()
+    if l == "off" or l == "0" or l == "false" then Novo.run("unclicktp", {}) else Novo.run("clicktp", {}) end
 end
 
-function H.togglefly()
-    if Fly.flying then H.unfly() else H.fly({}) end
-end
-
-function H.flyspeed(a)
-    local v = tonumber(a[1])
-    if not v then note("Fly", "Speed is " .. Fly.speed .. " - usage: flyspeed [num]"); return end
-    Fly.setSpeed(v)
-    note("Fly", "Speed set to " .. Fly.speed, LIGHT)
-end
-
-function H.superfly(a)
-    local v = tonumber(a[1])
-    if v then Fly.setSpeed(v) end
-    HatFly.stop()
-    if Helicopter.on then Helicopter.stop(true) end
-    if Superfly.set(true) then
-        note("Superfly", isMobile and "Hold the screen to fly" or "Hold the mouse to fly", LIGHT)
-    end
-    showPanel("move")
-end
-
-function H.unsuperfly()
-    Superfly.set(false)
-    note("Superfly", "Disabled")
-end
-
-function H.helicopter()
-    HatFly.stop()
-    Superfly.off()
-    if Helicopter.start() then note("Helicopter", "Enabled - " .. firstPrefix() .. "unhelicopter to stop", LIGHT) end
-end
-
-function H.unhelicopter()
-    Helicopter.stop(false)
-    note("Helicopter", "Disabled")
-end
-
-function H.hatfly()
-    if Fly.flying then Fly.stop() end
-    local ok, msg = HatFly.start()
-    note("HatFly", ok and "Enabled - WASD to move the hat" or tostring(msg), ok and LIGHT or RED)
-end
-
-function H.unhatfly()
-    HatFly.stop()
-    note("HatFly", "Disabled")
-end
-
-function H.noclip()
-    Noclip.set("user", true)
-    note("Noclip", "On", LIGHT)
-end
-
-function H.unnoclip()
-    Noclip.set("user", false)
-    note("Noclip", "Off")
-end
-
-function H.togglenoclip()
-    if Noclip.holds.user then H.unnoclip() else H.noclip() end
-end
-
-function H.airwalk()
-    if not Airwalk.start() then note("Airwalk", "Already active"); return end
-    note("Airwalk", "Enabled - Space to go up", LIGHT)
-end
-
-function H.unairwalk()
-    Airwalk.stop()
-    note("Airwalk", "Disabled")
-end
-
-function H.swim()
-    if Swim.on then note("Swim", "Already swimming"); return end
-    if Swim.start() then note("Swim", "Enabled", LIGHT) else note("Swim", "No character", RED) end
-end
-
-function H.unswim()
-    Swim.stop()
-    note("Swim", "Disabled")
+-- novoline's rejoin kicks you first on a solo server; let antikick pass it.
+function H.rejoin(a)
+    AntiKick.allowUntil = os.clock() + 3
+    Novo.run("rejoin", a)
 end
 
 function H.moveui() UIAPI.togglePanel("move") end
+
 
 -- World / visuals (novoline) -----------------------------------------------------------
 
@@ -12701,24 +13913,6 @@ function H.unesp()
     note("ESP", "Disabled")
 end
 
-function H.rejoin()
-    note("Rejoin", "Rejoining...", LIGHT)
-    task.spawn(function()
-        local ts = game:GetService("TeleportService")
-        local ok, err = pcall(function()
-            if #Players:GetPlayers() <= 1 then
-                -- a solo server closes once you leave it, so leave first, then teleport back
-                AntiKick.allowUntil = os.clock() + 2
-                plr:Kick("\nRejoining...")
-                task.wait()
-                ts:Teleport(game.PlaceId, plr)
-            else
-                ts:TeleportToPlaceInstance(game.PlaceId, game.JobId, plr)
-            end
-        end)
-        if not ok then note("Rejoin", tostring(err):sub(1, 70), RED) end
-    end)
-end
 end
 
 local function processCommandString(input)
@@ -13094,7 +14288,7 @@ function UIAPI.sync()
 end
 
 function UIAPI.togglePanel(key)
-    if key == "reanim" then NovoReanim.setOpen(); return end
+    if key == "reanim" then Novo.setOpen(); return end
     local f = UIAPI.panels[key]
     if f then
         f.Visible = not f.Visible
@@ -13457,19 +14651,20 @@ function buildMovementPanel(screenGui)
         table.insert(syncers, function() s.set(get()) end)
     end
     sectionTitle(body, add, "Flight")
-    switch("Fly", function() return Fly.flying and not Superfly.on and not Helicopter.on end, function(on) H[on and "fly" or "unfly"]({}) end)
-    switch("Superfly (hold mouse)", function() return Superfly.on end, function(on) H[on and "superfly" or "unsuperfly"]({}) end)
-    switch("Helicopter", function() return Helicopter.on end, function(on) H[on and "helicopter" or "unhelicopter"]({}) end)
-    switch("HatFly", function() return HatFly.active end, function(on) H[on and "hatfly" or "unhatfly"]({}) end)
+    local S = Novo.state
+    switch("Fly", function() return S.flying() and not S.superfly() and not S.on("helicopter") end, function(on) H[on and "fly" or "unfly"]({}) end)
+    switch("Superfly (opens novoline's Fly panel)", function() return S.superfly() end, function(on) H[on and "superfly" or "unsuperfly"]({}) end)
+    switch("Helicopter", function() return S.on("helicopter") end, function(on) H[on and "helicopter" or "unhelicopter"]({}) end)
+    switch("HatFly", function() return S.on("hatfly") end, function(on) H[on and "hatfly" or "unhatfly"]({}) end)
     local sp = uiSlider(body, "Fly speed", UDim2.fromOffset(12, add(48)), IW, {
-        min = 0.5, max = 20, step = 0.5, value = Fly.speed, format = function(v) return string.format("%.1f", v) end,
-        onChange = function(v) Fly.setSpeed(v) end,
+        min = 0.5, max = 20, step = 0.5, value = S.flySpeed(), format = function(v) return string.format("%.1f", v) end,
+        onChange = function(v) S.setFlySpeed(v) end,
     })
-    table.insert(syncers, function() if not sp.isDragging() then sp.set(Fly.speed) end end)
+    table.insert(syncers, function() if not sp.isDragging() then sp.set(S.flySpeed()) end end)
     sectionTitle(body, add, "Body")
-    switch("Noclip", function() return Noclip.holds.user == true end, function(on) H[on and "noclip" or "unnoclip"]({}) end)
-    switch("Airwalk (Space to rise)", function() return Airwalk.conn ~= nil end, function(on) H[on and "airwalk" or "unairwalk"]({}) end)
-    switch("Swim", function() return Swim.on end, function(on) H[on and "swim" or "unswim"]({}) end)
+    switch("Noclip", function() return S.noclip() end, function(on) H[on and "noclip" or "unnoclip"]({}) end)
+    switch("Airwalk (Space to rise)", function() return S.on("airwalk") end, function(on) H[on and "airwalk" or "unairwalk"]({}) end)
+    switch("Swim", function() return S.swimming() end, function(on) H[on and "swim" or "unswim"]({}) end)
     UIAPI.syncFns.move = function()
         if not f.Visible then return end
         for _, fn in ipairs(syncers) do pcall(fn) end
@@ -14346,10 +15541,7 @@ Chat.start()
 
 table.insert(conns, UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
-    if input.UserInputType ~= Enum.UserInputType.Keyboard then
-        Teleport.onClick(input)
-        return
-    end
+    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
     if input.KeyCode.Name == Cfg.uiKey then
         Hide.setUI(not Hide.uiHidden)
     end
