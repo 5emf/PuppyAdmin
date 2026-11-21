@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.21-40" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.21-41" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -10620,14 +10620,17 @@ end
 -- UIAPI.newPcmStream.
 ------------------------------------------------------------------------
 
-UIAPI.GBA_MODULE = { version = "ae4a9684a2", bytes = 115918 }
+UIAPI.GBA_MODULE = { version = "d1e61327b1", bytes = 129455 }
 UIAPI.GBA_BIOS = { path = "assets/gba/cult_bios_v1.bin", bytes = 16384 }
 
 -- Generated sound. Roblox has no raw-audio stream, so the emulator's samples
--- are cut into 0.25 s files (WAV, or FLAC when WAV does not load) that play
--- back to back, each faded into the next over 32 ms. The sound runs about
--- 0.35 s behind the picture. Pcm is the encoder table from the emulator module.
---   stream.push(buf, n)  signed 16-bit mono samples;  stream.update() every frame
+-- are cut into 0.25 s files that play back to back, each faded into the next
+-- over 32 ms; the sound runs about 0.35 s behind the picture. Which file type
+-- Roblox loads depends on the executor, so at the start one short silent file
+-- of each type is loaded side by side: WAV, FLAC, or MPEG audio saved as .mp3
+-- (the type executors load most reliably). Pcm is the encoder table from the
+-- emulator module.
+--   stream.push(buf, n)  signed 16-bit mono samples;  stream.update(dt) every frame
 --   stream.reset(), stream.setVolume(v), stream.destroy(), stream.state, stream.failed
 function UIAPI.newPcmStream(Pcm, rate, tag)
     local N = math.floor(rate / 4)
@@ -10639,30 +10642,88 @@ function UIAPI.newPcmStream(Pcm, rate, tag)
     local folder = Instance.new("Folder")
     folder.Name = "PuppyAdmin_" .. tag .. "_sound"
     folder.Parent = game:GetService("SoundService")
-    local S = { state = "sound starting", failed = false, volume = 1 }
+    local S = { state = "sound: checking", failed = false, volume = 1 }
     local ring = buffer.create(CAP * 2)
     local written, nextChunk, t0 = 0, 0, nil
+    local clock = 0 -- seconds, moved on by update(dt)
     local chunks = {}
-    local formats = { "wav", "flac" }
-    local fmtIndex, fmtOk, probeStart = 1, false, nil
     local session = tostring(math.random(100000, 999999))
-    local dead = false
+    local dead, errors = false, 0
+    local FORMATS = {
+        { ext = "wav", enc = Pcm.wav, delay = 0 },
+        { ext = "flac", enc = Pcm.flac, delay = 0 },
+        { ext = "mp3", enc = Pcm.mp2, delay = Pcm.mp2Delay or 0 },
+    }
+    local fmt, probes, probeStart = nil, {}, nil
     pcall(function()
         if makefolder and isfolder and not isfolder(DIR) then makefolder(DIR) end
     end)
+
+    local function soundFor(file, body)
+        if not pcall(writefile, file, body) then return nil, "could not write the file" end
+        local okA, id = pcall(getAsset, file)
+        if not (okA and type(id) == "string" and id ~= "") then
+            if delfile then pcall(delfile, file) end
+            return nil, "getcustomasset refused it"
+        end
+        local snd = Instance.new("Sound")
+        snd.SoundId = id
+        snd.Volume = S.volume
+        snd.Parent = folder
+        return snd
+    end
     local function dropChunk(c)
-        pcall(function() c.snd:Destroy() end)
-        if delfile then pcall(delfile, c.file) end
+        if c.snd then pcall(function() c.snd:Destroy() end) end
+        if delfile and c.file then pcall(delfile, c.file) end
     end
     local function fail(why)
         if S.failed then return end
         S.failed = true
         S.state = "no sound"
         for _, c in ipairs(chunks) do dropChunk(c) end
-        chunks = {}
+        for _, pr in ipairs(probes) do dropChunk(pr) end
+        chunks, probes = {}, {}
         note("Sound", "No sound: " .. why, RED)
     end
-    if not getAsset then fail("this executor has no getcustomasset") end
+
+    -- one short silent file per type, loaded side by side
+    if not getAsset then
+        fail("this executor has no getcustomasset")
+    else
+        local n = math.floor(rate / 5)
+        local silent = buffer.create(n * 2)
+        for i, f in ipairs(FORMATS) do
+            local okE, body = pcall(f.enc, silent, n, rate)
+            local file = DIR .. "/" .. session .. "_check." .. f.ext
+            local snd, why
+            if okE then snd, why = soundFor(file, body) else why = "could not be made" end
+            probes[i] = { f = f, snd = snd, file = snd and file or nil, why = why }
+        end
+        probeStart = 0
+    end
+
+    local function checkFormats()
+        local age = clock - probeStart
+        local pick
+        for _, pr in ipairs(probes) do
+            if pr.snd and pr.snd.IsLoaded then pick = pr; break end
+        end
+        -- prefer WAV / FLAC, but take whatever loaded after a second; give up after 8 s
+        if pick and (pick.f.ext == "wav" or age > 1) then
+            fmt = pick.f
+            for _, pr in ipairs(probes) do dropChunk(pr) end
+            probes = {}
+            S.state = "sound: starting (" .. fmt.ext .. ")"
+            nextChunk = math.max(0, math.floor(written / N) - 1)
+            t0 = nil
+        elseif age > 8 then
+            local parts = {}
+            for _, pr in ipairs(probes) do
+                parts[#parts + 1] = pr.f.ext .. ": " .. (pr.why or (pr.snd and "Roblox did not load it" or "failed"))
+            end
+            fail("no generated sound file played on this executor (" .. table.concat(parts, ", ") .. ")")
+        end
+    end
 
     function S.push(buf, n)
         if dead or S.failed or n <= 0 then return end
@@ -10677,42 +10738,35 @@ function UIAPI.newPcmStream(Pcm, rate, tag)
             t0 = nil
         end
     end
-    local function makeChunk(k, now)
+    local function makeChunk(k)
         local from = k * N - O
         local n = N + 2 * O
-        if t0 and t0 + from / rate < now + 0.05 then t0 = nil end -- fell behind: start again a little later
+        if t0 and t0 + from / rate - fmt.delay < clock + 0.05 then t0 = nil end -- fell behind: start again a little later
         local data = Pcm.chunk(ring, CAP, from, n, 2 * O)
-        local fmt = formats[fmtIndex]
-        local body = fmt == "wav" and Pcm.wav(data, n, rate) or Pcm.flac(data, n, rate)
-        local file = DIR .. "/" .. session .. "_" .. k .. "." .. fmt
-        if not pcall(writefile, file, body) then return nil, "could not write " .. file end
-        local okA, id = pcall(getAsset, file)
-        if not (okA and type(id) == "string" and id ~= "") then
-            if delfile then pcall(delfile, file) end
-            return nil, "getcustomasset failed for ." .. fmt
-        end
-        local snd = Instance.new("Sound")
-        snd.Name = "Chunk" .. k
-        snd.SoundId = id
-        snd.Volume = S.volume
-        snd.Parent = folder
-        if not t0 then t0 = now + LEAD - from / rate end
-        return { snd = snd, start = t0 + from / rate, len = n / rate, file = file, fmt = fmt }
+        local okE, body = pcall(fmt.enc, data, n, rate)
+        if not okE then return nil, "the ." .. fmt.ext .. " encoder failed: " .. tostring(body) end
+        local file = DIR .. "/" .. session .. "_" .. k .. "." .. fmt.ext
+        local snd, why = soundFor(file, body)
+        if not snd then return nil, "." .. fmt.ext .. ": " .. why end
+        if not t0 then t0 = clock + LEAD - from / rate end
+        return { snd = snd, start = t0 + from / rate - fmt.delay, len = n / rate + fmt.delay, file = file }
     end
-    function S.update()
+    function S.update(dt)
         if dead or S.failed then return end
-        local now = os.clock()
+        clock = clock + math.min(dt or (1 / 60), 0.25)
+        if not fmt then checkFormats(); return end
+        local now = clock
         local made = 0
         while written >= (nextChunk + 1) * N + O and made < 2 do
-            local c, why = makeChunk(nextChunk, now)
+            local c, why = makeChunk(nextChunk)
             nextChunk = nextChunk + 1
             made = made + 1
             if c then
                 chunks[#chunks + 1] = c
-                if not probeStart then probeStart = now end
-            elseif not fmtOk then
-                fail(why)
-                return
+                errors = 0
+            else
+                errors = errors + 1
+                if errors >= 4 then fail(why); return end
             end
         end
         local i = 1
@@ -10727,8 +10781,7 @@ function UIAPI.newPcmStream(Pcm, rate, tag)
                             c.snd:Play()
                         end)
                         c.played = true
-                        if not fmtOk then fmtOk = true end
-                        S.state = "sound on"
+                        S.state = "sound on (" .. fmt.ext .. ")"
                     elseif now > c.start + 0.12 then
                         drop = true -- not loaded in time
                     end
@@ -10738,22 +10791,11 @@ function UIAPI.newPcmStream(Pcm, rate, tag)
             end
             if drop then dropChunk(c); table.remove(chunks, i) else i = i + 1 end
         end
-        -- nothing has loaded within 3 s of the first file: try the next format
-        if not fmtOk and probeStart and now - probeStart > 3 then
-            if fmtIndex < #formats then
-                fmtIndex = fmtIndex + 1
-                probeStart = now
-                S.state = "sound: trying " .. formats[fmtIndex]
-            else
-                fail("Roblox did not load the generated WAV or FLAC sound files on this executor")
-            end
-        end
     end
     function S.reset()
         for _, c in ipairs(chunks) do dropChunk(c) end
         chunks = {}
         written, nextChunk, t0 = 0, 0, nil
-        if probeStart then probeStart = os.clock() end
     end
     function S.setVolume(v)
         S.volume = v
@@ -10762,7 +10804,8 @@ function UIAPI.newPcmStream(Pcm, rate, tag)
     function S.destroy()
         dead = true
         for _, c in ipairs(chunks) do dropChunk(c) end
-        chunks = {}
+        for _, pr in ipairs(probes) do dropChunk(pr) end
+        chunks, probes = {}, {}
         pcall(function() folder:Destroy() end)
     end
     return S
@@ -11113,7 +11156,7 @@ function UIAPI.buildGbaPanel(screenGui)
             if stream then
                 local buf, n = emu.audioPull()
                 if S.fast then stream.reset() else stream.push(buf, n) end
-                stream.update()
+                stream.update(dt)
                 if stream.failed then emu.setAudio(false) end
             end
             -- draw less often when a frame costs more than real time allows

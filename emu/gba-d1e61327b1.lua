@@ -1,4 +1,4 @@
--- PuppyAdmin gba ae4a9684a2 (original Game Boy Advance emulator; games are loaded from your own PuppyAdmin/gba folder)
+-- PuppyAdmin gba d1e61327b1 (original Game Boy Advance emulator; games are loaded from your own PuppyAdmin/gba folder)
 --!optimize 2
 --!native
 local GBA = (function()
@@ -2574,6 +2574,7 @@ local Pcm = (function()
 --   Pcm.chunk(ring, cap, from, n, fade) -> buffer of n signed 16-bit samples taken from a ring
 --       buffer (cap samples) starting at absolute sample `from`, faded in and out over `fade` samples
 --   Pcm.wav(buf, n, rate), Pcm.flac(buf, n, rate) -> file contents (mono, 16-bit)
+--   Pcm.mp2(buf, n, rate) -> MPEG-1 Layer II at 32 kHz (Pcm.mp2Delay seconds of filter delay)
 local Pcm = {}
 do
     local band, bxor, rsh, lsh = bit32.band, bit32.bxor, bit32.rshift, bit32.lshift
@@ -2660,6 +2661,233 @@ do
         for q = frameStart, p - 1 do c16 = bxor(band(lsh(c16, 8), 0xFFFF), CRC16[bxor(rsh(c16, 8), rd8(b, q))]) end
         wr8(b, p, rsh(c16, 8)); wr8(b, p + 1, band(c16, 0xFF))
         return buffer.tostring(b)
+    end
+
+    -- MPEG-1 Layer II (mono, 64 kbit/s, 32 kHz), written to a file named .mp3: the mp3 decoder
+    -- Roblox uses also reads Layer II, and .mp3 files are what executors load most reliably.
+    -- ISO 11172-3 analysis window (table C.1), in units of 1e-9
+    local WIN_I = {
+        0, -477, -477, -477, -477, -477, -477, -954, -954, -954, -954, -1431, -1431, -1907, -1907, -2384,
+        -2384, -2861, -3338, -3338, -3815, -4292, -4768, -5245, -6199, -6676, -7629, -8106, -9060, -10014, -11444, -12398,
+        -13828, -14782, -16689, -18120, -19550, -21458, -23365, -25272, -27657, -30041, -32425, -34809, -37670, -40531, -43392, -46253,
+        -49591, -52929, -55790, -59605, -62943, -66280, -70095, -73433, -76771, -80585, -83923, -87261, -90599, -93460, -96321, -99182,
+        101566, 103951, 105858, 107288, 108242, 108719, 108719, 108242, 106812, 105381, 102520, 99182, 95367, 90122, 84400, 77724,
+        69618, 60558, 50545, 39577, 27180, 13828, -954, -17166, -34332, -52929, -72956, -93937, -116348, -140190, -165462, -191212,
+        -218868, -247478, -277042, -307560, -339031, -371456, -404358, -438213, -472546, -507355, -542164, -576973, -611782, -646591, -680923, -714302,
+        -747204, -779152, -809669, -838757, -866413, -891685, -915051, -935555, -954151, -968933, -980854, -989437, -994205, -995159, -991821, -983715,
+        971317, 953674, 930786, 902653, 868797, 829220, 783920, 731945, 674248, 610352, 539303, 462532, 378609, 288486, 191689, 88215,
+        -21458, -137329, -259876, -388145, -522137, -661850, -806808, -956535, -1111031, -1269817, -1432419, -1597881, -1766682, -1937389, -2110004, -2283096,
+        -2457142, -2630711, -2803326, -2974033, -3141880, -3306866, -3467083, -3622532, -3771782, -3914356, -4048824, -4174709, -4290581, -4395962, -4489899, -4570484,
+        -4638195, -4691124, -4728317, -4748821, -4752159, -4737377, -4703045, -4649162, -4573822, -4477024, -4357815, -4215240, -4049301, -3858566, -3643036, -3401756,
+        3134727, 2841473, 2521515, 2174854, 1800537, 1399517, 971317, 515938, 33379, -475883, -1011848, -1573563, -2161503, -2774239, -3411293, -4072189,
+        -4756451, -5462170, -6189346, -6937027, -7703304, -8487225, -9287834, -10103703, -10933399, -11775017, -12627602, -13489246, -14358521, -15233517, -16112804, -16994476,
+        -17876148, -18756866, -19634247, -20506859, -21372318, -22228718, -23074150, -23907185, -24725437, -25527000, -26310921, -27073860, -27815342, -28532982, -29224873, -29890060,
+        -30526638, -31132698, -31706810, -32248020, -32754898, -33225536, -33659935, -34055710, -34412861, -34730434, -35007000, -35242081, -35435200, -35586357, -35694122, -35758972,
+        35780907, 35758972, 35694122, 35586357, 35435200, 35242081, 35007000, 34730434, 34412861, 34055710, 33659935, 33225536, 32754898, 32248020, 31706810, 31132698,
+        30526638, 29890060, 29224873, 28532982, 27815342, 27073860, 26310921, 25527000, 24725437, 23907185, 23074150, 22228718, 21372318, 20506859, 19634247, 18756866,
+        17876148, 16994476, 16112804, 15233517, 14358521, 13489246, 12627602, 11775017, 10933399, 10103703, 9287834, 8487225, 7703304, 6937027, 6189346, 5462170,
+        4756451, 4072189, 3411293, 2774239, 2161503, 1573563, 1011848, 475883, -33379, -515938, -971317, -1399517, -1800537, -2174854, -2521515, -2841473,
+        3134727, 3401756, 3643036, 3858566, 4049301, 4215240, 4357815, 4477024, 4573822, 4649162, 4703045, 4737377, 4752159, 4748821, 4728317, 4691124,
+        4638195, 4570484, 4489899, 4395962, 4290581, 4174709, 4048824, 3914356, 3771782, 3622532, 3467083, 3306866, 3141880, 2974033, 2803326, 2630711,
+        2457142, 2283096, 2110004, 1937389, 1766682, 1597881, 1432419, 1269817, 1111031, 956535, 806808, 661850, 522137, 388145, 259876, 137329,
+        21458, -88215, -191689, -288486, -378609, -462532, -539303, -610352, -674248, -731945, -783920, -829220, -868797, -902653, -930786, -953674,
+        971317, 983715, 991821, 995159, 994205, 989437, 980854, 968933, 954151, 935555, 915051, 891685, 866413, 838757, 809669, 779152,
+        747204, 714302, 680923, 646591, 611782, 576973, 542164, 507355, 472546, 438213, 404358, 371456, 339031, 307560, 277042, 247478,
+        218868, 191212, 165462, 140190, 116348, 93937, 72956, 52929, 34332, 17166, 954, -13828, -27180, -39577, -50545, -60558,
+        -69618, -77724, -84400, -90122, -95367, -99182, -102520, -105381, -106812, -108242, -108719, -108719, -108242, -107288, -105858, -103951,
+        101566, 99182, 96321, 93460, 90599, 87261, 83923, 80585, 76771, 73433, 70095, 66280, 62943, 59605, 55790, 52929,
+        49591, 46253, 43392, 40531, 37670, 34809, 32425, 30041, 27657, 25272, 23365, 21458, 19550, 18120, 16689, 14782,
+        13828, 12398, 11444, 10014, 9060, 8106, 7629, 6676, 6199, 5245, 4768, 4292, 3815, 3338, 3338, 2861,
+        2384, 2384, 1907, 1907, 1431, 1431, 954, 954, 954, 954, 477, 477, 477, 477, 477, 477,
+    }
+    local WIN = table.create(512, 0)
+    for i = 1, 512 do WIN[i] = WIN_I[i] * 1e-9 end
+    local SB_USED = 17 -- subbands 0-16 (0-8.5 kHz) hold everything a 16384 Hz source has
+    local SBLIMIT = 27 -- allocation table B.2a (32 kHz at 56-80 kbit/s per channel)
+    local NBAL = {}
+    local CLASSES = {}
+    local A = { 0, 3, 7, 15, 31, 63, 127, 255, 511, 1023, 2047, 4095, 8191, 16383, 32767, 65535 }
+    local B = { 0, 3, 5, 7, 9, 15, 31, 63, 127, 255, 511, 1023, 2047, 4095, 8191, 65535 }
+    local Cc = { 0, 3, 5, 7, 9, 15, 31, 65535 }
+    local D = { 0, 3, 5, 65535 }
+    for sb = 0, SBLIMIT - 1 do
+        if sb <= 2 then NBAL[sb], CLASSES[sb] = 4, A
+        elseif sb <= 10 then NBAL[sb], CLASSES[sb] = 4, B
+        elseif sb <= 22 then NBAL[sb], CLASSES[sb] = 3, Cc
+        else NBAL[sb], CLASSES[sb] = 2, D end
+    end
+    local SNR = { [0] = 0, [3] = 7.00, [5] = 11.00, [7] = 16.00, [9] = 20.84, [15] = 25.28, [31] = 31.59, [63] = 37.75,
+        [127] = 43.84, [255] = 49.89, [511] = 55.93, [1023] = 61.96, [2047] = 67.98, [4095] = 74.01, [8191] = 80.03,
+        [16383] = 86.05, [32767] = 92.01, [65535] = 98.01 }
+    local GROUP_BITS = { [3] = 5, [5] = 7, [9] = 10 }
+    local function tripleBits(L)
+        if L == 0 then return 0 end
+        local g = GROUP_BITS[L]
+        if g then return g end
+        local nb = 0
+        while lsh(1, nb) - 1 < L do nb += 1 end
+        return 3 * nb
+    end
+    local SF = table.create(63, 0)
+    for i = 0, 62 do SF[i + 1] = 2.0 * 2 ^ (-i / 3) end
+    -- folded matrixing: 32 values per block (see below), cos((2k+1) j pi / 64)
+    local FOLD_J = table.create(32, 0)
+    FOLD_J[1] = 0
+    for m = 1, 16 do FOLD_J[1 + m] = m end        -- Y[16-m] + Y[16+m]
+    for m = 1, 15 do FOLD_J[17 + m] = 32 - m end  -- Y[48-m] - Y[48+m]
+    local MAT = {}
+    for k = 0, SB_USED - 1 do
+        local row = table.create(32, 0)
+        for q = 1, 32 do row[q] = math.cos((2 * k + 1) * FOLD_J[q] * math.pi / 64) end
+        MAT[k] = row
+    end
+    Pcm.mp2Delay = 481 / 32000 -- analysis + synthesis filter delay
+
+    function Pcm.mp2(buf, n, rate)
+        -- resample to 32 kHz (linear), then pad so the filters empty out
+        local m = math.floor(n * 32000 / rate)
+        local frames = math.ceil((m + 512) / 1152)
+        local total = frames * 1152
+        local src = table.create(total, 0)
+        local step = rate / 32000
+        for j = 0, m - 1 do
+            local p = j * step
+            local i0 = p // 1
+            local f = p - i0
+            local a = buffer.readi16(buf, i0 * 2)
+            local b = i0 + 1 < n and buffer.readi16(buf, i0 * 2 + 2) or a
+            src[j + 1] = (a + (b - a) * f) / 32768
+        end
+        local out = buffer.create(frames * 288)
+        local x = table.create(512, 0)
+        local xpos = 0
+        local Y = table.create(64, 0)
+        local F = table.create(32, 0)
+        local S = {} -- S[sb][s], s = 1..36
+        for sb = 0, SBLIMIT - 1 do S[sb] = table.create(36, 0) end
+        local scf = {}
+        for sb = 0, SBLIMIT - 1 do scf[sb] = { 62, 62, 62 } end
+        local alloc = table.create(SBLIMIT, 0)
+        local bytePos, acc, accBits
+        local function put(v, bits)
+            acc = acc * lsh(1, bits) + v
+            accBits += bits
+            while accBits >= 8 do
+                accBits -= 8
+                local d = 2 ^ accBits
+                local b = acc // d
+                buffer.writeu8(out, bytePos, b)
+                bytePos += 1
+                acc -= b * d
+            end
+        end
+        local si = 0
+        for fr = 0, frames - 1 do
+            -- analysis: 36 blocks of 32 samples
+            for blk = 1, 36 do
+                for _ = 1, 32 do
+                    xpos = (xpos - 1) % 512
+                    si += 1
+                    x[xpos + 1] = src[si]
+                end
+                for i = 0, 63 do
+                    local s = 0
+                    for j = 0, 7 do
+                        local t = i + 64 * j
+                        s += WIN[t + 1] * x[(xpos + t) % 512 + 1]
+                    end
+                    Y[i + 1] = s
+                end
+                F[1] = Y[17]
+                for mm = 1, 16 do F[1 + mm] = Y[17 - mm] + Y[17 + mm] end
+                for mm = 1, 15 do F[17 + mm] = Y[49 - mm] - Y[49 + mm] end
+                for k = 0, SB_USED - 1 do
+                    local row = MAT[k]
+                    local s = 0
+                    for q = 1, 32 do s += row[q] * F[q] end
+                    S[k][blk] = s
+                end
+            end
+            -- scale factors (three parts of 12 samples) and the level of each subband
+            local level = table.create(SBLIMIT, -200)
+            for sb = 0, SB_USED - 1 do
+                local best = 62
+                for part = 0, 2 do
+                    local mx = 0
+                    for s = part * 12 + 1, part * 12 + 12 do
+                        local v = math.abs(S[sb][s])
+                        if v > mx then mx = v end
+                    end
+                    local idx = 62
+                    if mx > 0 then
+                        idx = math.floor(-3 * math.log(mx / 2, 2))
+                        if idx < 0 then idx = 0 elseif idx > 62 then idx = 62 end
+                        while idx > 0 and SF[idx + 1] < mx do idx -= 1 end
+                    end
+                    scf[sb][part + 1] = idx
+                    if idx < best then best = idx end
+                end
+                level[sb + 1] = 20 * math.log10(SF[best + 1])
+            end
+            -- bit allocation: give bits to the subband with the most noise until they run out
+            local bits = 288 * 8 - 32
+            for sb = 0, SBLIMIT - 1 do bits -= NBAL[sb]; alloc[sb + 1] = 0 end
+            while true do
+                local pick, pickCost, worst = nil, 0, -1e9
+                for sb = 0, SB_USED - 1 do
+                    local a = alloc[sb + 1]
+                    local cls = CLASSES[sb]
+                    if a < #cls - 1 and level[sb + 1] > -120 then
+                        local L, L2 = cls[a + 1], cls[a + 2]
+                        local cost = (tripleBits(L2) - tripleBits(L)) * 12
+                        if a == 0 then cost += 2 + 18 end
+                        local noise = level[sb + 1] - SNR[L]
+                        if cost <= bits and noise > worst then pick, pickCost, worst = sb, cost, noise end
+                    end
+                end
+                if not pick or worst < -110 then break end
+                alloc[pick + 1] += 1
+                bits -= pickCost
+            end
+            -- write the frame
+            bytePos, acc, accBits = fr * 288, 0, 0
+            put(0xFFF, 12); put(1, 1); put(2, 2); put(1, 1) -- sync, MPEG-1, Layer II, no CRC
+            put(4, 4); put(2, 2); put(0, 1); put(0, 1)       -- 64 kbit/s, 32 kHz, no padding
+            put(3, 2); put(0, 2); put(0, 4)                  -- single channel
+            for sb = 0, SBLIMIT - 1 do put(alloc[sb + 1], NBAL[sb]) end
+            for sb = 0, SBLIMIT - 1 do if alloc[sb + 1] > 0 then put(0, 2) end end -- three scale factors each
+            for sb = 0, SBLIMIT - 1 do
+                if alloc[sb + 1] > 0 then
+                    local t = scf[sb]
+                    put(t[1], 6); put(t[2], 6); put(t[3], 6)
+                end
+            end
+            for gr = 0, 11 do
+                local part = gr // 4 + 1
+                for sb = 0, SBLIMIT - 1 do
+                    local a = alloc[sb + 1]
+                    if a > 0 then
+                        local L = CLASSES[sb][a + 1]
+                        local scale = SF[scf[sb][part] + 1]
+                        local v = table.create(3, 0)
+                        for s = 1, 3 do
+                            local xv = S[sb][gr * 3 + s] / scale
+                            local q = math.floor((xv * L + L - 1) / 2 + 0.5)
+                            if q < 0 then q = 0 elseif q > L - 1 then q = L - 1 end
+                            v[s] = q
+                        end
+                        local g = GROUP_BITS[L]
+                        if g then put(v[1] + L * v[2] + L * L * v[3], g)
+                        else
+                            local nb = tripleBits(L) // 3
+                            put(v[1], nb); put(v[2], nb); put(v[3], nb)
+                        end
+                    end
+                end
+            end
+            while bytePos < (fr + 1) * 288 do put(0, 8 - accBits) end -- fill the rest of the frame
+        end
+        return buffer.tostring(out)
     end
 end
 return Pcm
