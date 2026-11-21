@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.21-36" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.21-37" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -9601,14 +9601,16 @@ local function buildGamesPanel(screenGui)
         TextXAlignment = Enum.TextXAlignment.Center, Font = Enum.Font.GothamBold, TextSize = 16, TextStrokeTransparency = 0.4, Text = "" })
 
     local function newCell(parent, cs, x, y)
+        -- layers (explicit, so they hold whether the ScreenGui sorts ZIndex globally or per sibling):
+        -- board 1, stage picture 1 (child of the board), cells 2, cell tile / dot 3, sprites 7
         local c = make("Frame", { Size = UDim2.fromOffset(cs - 1, cs - 1), Position = UDim2.fromOffset((x - 1) * cs, (y - 1) * cs),
-            BorderSizePixel = 0, BackgroundColor3 = PAL.ELEVATED, BackgroundTransparency = 0.55 }, parent)
+            BorderSizePixel = 0, BackgroundColor3 = PAL.ELEVATED, BackgroundTransparency = 0.55, ZIndex = 2 }, parent)
         corner(c, math.max(2, math.floor(cs / 4)))
         local d = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(0.3, 0.3),
-            BorderSizePixel = 0, Visible = false }, c)
+            BorderSizePixel = 0, Visible = false, ZIndex = 3 }, c)
         corner(d, 50)
         local img = make("ImageLabel", { Size = UDim2.new(1, 1, 1, 1), BackgroundTransparency = 1, Visible = false,
-            ImageRectSize = Vector2.new(64, 64), ZIndex = 2 }, c)
+            ImageRectSize = Vector2.new(64, 64), ZIndex = 3 }, c)
         return { frame = c, dot = d, img = img }
     end
 
@@ -9666,7 +9668,7 @@ local function buildGamesPanel(screenGui)
         if mg.backdrop then
             -- the picture covers rows 2 .. last (row 1 is the HUD)
             backdropImg = make("ImageLabel", { Name = "Backdrop", Position = UDim2.fromOffset(1, 1 + cs), Size = UDim2.fromOffset(cs * cols, cs * (rows - 1)),
-                BackgroundTransparency = 1, ScaleType = Enum.ScaleType.Stretch, ZIndex = 0, Visible = false }, board)
+                BackgroundTransparency = 1, ScaleType = Enum.ScaleType.Stretch, ZIndex = 1, Visible = false }, board)
         end
         if mg.splash then
             splashImg = make("ImageLabel", { Name = "Splash", Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 1, 0),
@@ -10054,7 +10056,12 @@ local function buildGamesPanel(screenGui)
             if g.backdrop then
                 local list = type(g.backdrop) == "table" and g.backdrop or { g.backdrop }
                 local got = {}
-                for k, path in ipairs(list) do got[k] = urlImageAsset(SETTINGS.Auras.assetBase .. path, "games") end
+                local missing = {}
+                for k, path in ipairs(list) do
+                    got[k] = urlImageAsset(SETTINGS.Auras.assetBase .. path, "games")
+                    if not got[k] then missing[#missing + 1] = path:match("([^/]+)$") end
+                end
+                if #missing > 0 then note("Games", g.title .. ": stage picture did not download (" .. table.concat(missing, ", ") .. ")", RED) end
                 backdrops[g.id] = got
                 if mg == g then cur = {}; render() end
             end
