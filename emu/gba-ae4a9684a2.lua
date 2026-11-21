@@ -1,4 +1,4 @@
--- PuppyAdmin gba 6094e0e5de (original Game Boy Advance emulator; games are loaded from your own PuppyAdmin/gba folder)
+-- PuppyAdmin gba ae4a9684a2 (original Game Boy Advance emulator; games are loaded from your own PuppyAdmin/gba folder)
 --!optimize 2
 --!native
 local GBA = (function()
@@ -67,6 +67,16 @@ function GBA.new(romStr, biosStr, saveStr)
 
     local function updateIrq() irqLine = IME ~= 0 and band(IE, IF) ~= 0 end
     local function raise(bit) IF = bor(IF, bit); updateIrq() end
+    -- keypad interrupt (KEYCNT): any of the selected keys, or all of them
+    local function keypadCheck()
+        local kc = rd16(io, 0x132)
+        if band(kc, 0x4000) == 0 then return end
+        local mask = band(kc, 0x3FF)
+        local pressed = band(keys, mask)
+        local hit
+        if band(kc, 0x8000) ~= 0 then hit = mask ~= 0 and pressed == mask else hit = pressed ~= 0 end
+        if hit then raise(0x1000) end
+    end
 
     ----------------------------------------------------------------------------
     -- timers
@@ -81,12 +91,12 @@ function GBA.new(romStr, biosStr, saveStr)
         local period = 0x10000 - tReload[i]
         local over = 1 + (c - 0x10000) // period
         tCount[i] = tReload[i] + (c - 0x10000) % period
-        if i <= 2 and apu.on then apu.timerOverflow(i - 1, over) end
+        if i <= 2 then apu.timerOverflow(i - 1, over) end
         if band(tCtrl[i], 0x40) ~= 0 then raise(lsh(8, i - 1)) end
         if i < 4 and band(tCtrl[i + 1], 0x84) == 0x84 then timerAdd(i + 1, over) end
     end
     local function timersUpdate()
-        if apu.on then apu.catchUp(cycles) end
+        apu.catchUp(cycles)
         local el = cycles - timerLast
         timerLast = cycles
         if el <= 0 then return end
@@ -431,6 +441,30 @@ function GBA.new(romStr, biosStr, saveStr)
         elseif off == 0x208 then IME = band(v, 1); updateIrq()
         elseif off == 0x004 then wr16(io, 4, band(v, 0xFFF8))
         elseif off == 0x006 or off == 0x130 then -- read only
+        elseif off == 0x128 then
+            -- link port with no cable: a transfer the GBA clocks itself ends at once (reading
+            -- all 1s); multiplayer ends at once with the other players' slots at 0xFFFF; an
+            -- externally clocked transfer waits for a partner, as on the hardware
+            local smode = band(rsh(v, 12), 3)
+            if band(rd16(io, 0x134), 0x8000) == 0 and band(v, 0x80) ~= 0 and smode ~= 3 then
+                local done = false
+                if smode == 2 then
+                    wr16(io, 0x120, rd16(io, 0x12A))
+                    wr16(io, 0x122, 0xFFFF); wr16(io, 0x124, 0xFFFF); wr16(io, 0x126, 0xFFFF)
+                    done = true
+                elseif band(v, 1) ~= 0 then
+                    if smode == 0 then wr16(io, 0x12A, bor(band(rd16(io, 0x12A), 0xFF00), 0xFF)) else wr32(io, 0x120, 0xFFFFFFFF) end
+                    done = true
+                end
+                if done then
+                    v = band(v, 0xFF7F)
+                    if band(v, 0x4000) ~= 0 then raise(0x80) end
+                end
+            end
+            wr16(io, 0x128, v)
+        elseif off == 0x132 then
+            wr16(io, 0x132, v)
+            keypadCheck()
         elseif off >= 0x60 and off < 0xA8 then apu.write(off, v)
         elseif off >= 0x100 and off <= 0x10E then timerWrite(off, v)
         elseif off >= 0xB0 and off <= 0xDE then
@@ -1331,6 +1365,7 @@ function GBA.new(romStr, biosStr, saveStr)
     biosLatch = 0xE129F000
 
     function emu.runFrame(render)
+        keypadCheck()
         local dispstat
         for line = 0, 227 do
             vcount = line
@@ -1374,7 +1409,10 @@ function GBA.new(romStr, biosStr, saveStr)
             end
         end
     end
-    function emu.setKeys(mask) keys = band(mask, 0x3FF) end
+    function emu.setKeys(mask)
+        mask = band(mask, 0x3FF)
+        if mask ~= keys then keys = mask; keypadCheck() end
+    end
     emu.audioRate = apu.rate
     function emu.setAudio(on)
         if on and not apu.on then apu.start(cycles) end
@@ -1383,6 +1421,7 @@ function GBA.new(romStr, biosStr, saveStr)
     function emu.audioPull() return apu.pull() end
     function emu.reg(n) return R[n + 1] end
     function emu.io16(off) return ioRead16(off) end
+    function emu.peek32(a) return read32(a) end
     function emu.pc() return pc end
     function emu.cpsr() return getCPSR() end
     function emu.cycles() return cycles end
@@ -2175,11 +2214,17 @@ makeAPU = function(io, fifoRequest)
         end
     end
 
-    -- make the samples for the clock cycles up to `now`
+    -- make the samples for the clock cycles up to `now`. With sound off only the
+    -- length / sweep / envelope timers move on (games wait on them), nothing is mixed.
     function A.catchUp(now)
         local n = (now - last) // CPS
         if n <= 0 then return end
         last += n * CPS
+        if not A.on then
+            seqSample += n
+            while seqSample >= 32 do seqSample -= 32; seqTick() end
+            return
+        end
         if n > 4096 then n = 4096 end
         local cntL, cntH = rd16(io, 0x80), rd16(io, 0x82)
         local volR, volL = band(cntL, 7) + 1, band(rsh(cntL, 4), 7) + 1
@@ -2249,7 +2294,7 @@ makeAPU = function(io, fifoRequest)
             outN += 1
         end
     end
-    function A.start(now) last = now; outN = 0 end
+    function A.start(now) outN = 0 end
     function A.fifoByte(off, b) push(off < 0xA4 and 1 or 2, b) end
     -- timer t (0 or 1) overflowed `over` times: the FIFOs it drives play their next samples
     function A.timerOverflow(t, over)

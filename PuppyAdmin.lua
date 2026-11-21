@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.21-39" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.21-40" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -10620,7 +10620,7 @@ end
 -- UIAPI.newPcmStream.
 ------------------------------------------------------------------------
 
-UIAPI.GBA_MODULE = { version = "6094e0e5de", bytes = 113905 }
+UIAPI.GBA_MODULE = { version = "ae4a9684a2", bytes = 115918 }
 UIAPI.GBA_BIOS = { path = "assets/gba/cult_bios_v1.bin", bytes = 16384 }
 
 -- Generated sound. Roblox has no raw-audio stream, so the emulator's samples
