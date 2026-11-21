@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-35" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.21-36" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -363,6 +363,7 @@ local Cfg = {
     games = {},        -- mini game best scores: game id -> number
     fpsCounter = { on = false }, -- Performance > FPS counter: on, x, y (pixels)
     gbVolume = 1,      -- Game Boy sound level (0 = off)
+    doomVolume = 1,    -- Doom sound level (0 = off)
     floor = {},        -- infinite baseplate: { preset = name, color = { r, g, b } }
     antiAfk = false,   -- keep Roblox from disconnecting you for being idle
     windowScales = {}, -- window name -> size set with the corner grip (1 = normal)
@@ -10603,10 +10604,293 @@ end
 -- converted to Luau, in emu/doom-<version>.lua (downloaded once into
 -- PuppyAdmin/engine). The game data is your own WAD in the executor folder
 -- PuppyAdmin/doom (DOOM1.WAD shareware, DOOM.WAD, DOOM2.WAD or Freedoom);
--- saves and Doom's settings are written there too. No sound.
+-- saves and Doom's settings are written there too. Sound: see
+-- UIAPI.newDoomSound.
 ------------------------------------------------------------------------
 
-UIAPI.DOOM_MODULE = { version = "8ce88db02c", bytes = 3072936 }
+UIAPI.DOOM_MODULE = { version = "8b7cd116e5", bytes = 3089460 }
+
+-- Doom's sound. The engine reports each sound effect (lump name, channel,
+-- volume) and each song (its data); this plays them with Roblox Sounds.
+-- Freedoom Phase 1 (the exact WAD in the repository) uses the sound effects
+-- and music pre-rendered in assets/doom/freedoom1 as mp3, a format Roblox
+-- plays here. Other WADs get their sound effects as WAV files made from the
+-- WAD (if the executor plays WAV); their music is not played, because that
+-- would need a MIDI synthesiser. Stereo separation is not used (2D Sounds).
+UIAPI.DOOM_SOUND = { wadBytes = 28795076, pack = "assets/doom/freedoom1/sfx_v1.pak",
+    music = "assets/doom/freedoom1/music_v1/" }
+
+function UIAPI.newDoomSound(Doom, wad)
+    local DS = UIAPI.DOOM_SOUND
+    local DIR = "PuppyAdmin/doom/sound"
+    local SFX_GAIN, MUSIC_GAIN, POOL = 2, 1.2, 4
+    local getAsset = (type(getcustomasset) == "function" and getcustomasset) or (type(getsynasset) == "function" and getsynasset)
+    local folder = Instance.new("Folder")
+    folder.Name = "PuppyAdminDoomSound"
+    folder.Parent = game:GetService("SoundService")
+    local byName, list = Doom.lumps(wad)
+    local freedoom = #wad == DS.wadBytes and Doom.identify(wad) == "freedoom1.wad"
+    local S = { state = "sound off", level = 1 }
+    local dead, loadStarted = false, false
+    local sfx = {}        -- lump name -> { id = content id, len = seconds, pool = { Sound } }
+    local chanSound = {}  -- Doom channel -> Sound playing on it
+    local busyUntil = {}  -- Sound -> os.clock() when it ends
+    local lastVol = {}
+    local userPaused = false
+    -- music: Doom wants it on (musicOn), it is loaded (musicReady), paused by Doom or by the window
+    local music, musicOn, musicReady, musicLoop, musicPaused, musicHeld, musicStarted = nil, false, false, false, false, false, false
+    local musicVol, musicToken, musicIds, musicStartAt = 64, 0, {}, 0
+    local musicBySize = {}
+    for _, l in ipairs(list) do
+        if l.name:sub(1, 2) == "D_" then
+            musicBySize[l.size] = musicBySize[l.size] or {}
+            table.insert(musicBySize[l.size], l)
+        end
+    end
+
+    local function setVol(snd, v)
+        v = math.floor(v * 100 + 0.5) / 100
+        if lastVol[snd] ~= v then lastVol[snd] = v; snd.Volume = v end
+    end
+    local function newSound(id, name)
+        local snd = Instance.new("Sound")
+        snd.Name = name or "Sfx"
+        snd.SoundId = id
+        snd.Volume = 0
+        snd.Parent = folder
+        return snd
+    end
+    local function readCached(file)
+        local ok, exists = pcall(isfile, file)
+        if not (ok and exists) then return nil end
+        local ok2, d = pcall(readfile, file)
+        if ok2 and typeof(d) == "buffer" then d = buffer.tostring(d) end
+        return ok2 and type(d) == "string" and d or nil
+    end
+    local function fileAsset(file, body)
+        local ok, exists = pcall(isfile, file)
+        if not (ok and exists) then pcall(writefile, file, body) end
+        local ok2, id = pcall(getAsset, file)
+        if ok2 and type(id) == "string" and id ~= "" then return id end
+        return nil
+    end
+    -- "PUPSND1", one line per sound ("NAME offset length ms"), a blank line, then the mp3 files
+    local function parsePack(pak)
+        if type(pak) ~= "string" or pak:sub(1, 8) ~= "PUPSND1\n" then return nil end
+        local headEnd = pak:find("\n\n", 9, true)
+        if not headEnd then return nil end
+        local base, out = headEnd + 2, {}
+        for name, o, l, ms in pak:sub(9, headEnd):gmatch("(%w+) (%d+) (%d+) (%d+)") do
+            o, l = tonumber(o), tonumber(l)
+            if base + o + l - 1 > #pak then return nil end
+            out[#out + 1] = { name = name:upper(), data = pak:sub(base + o, base + o + l - 1), len = tonumber(ms) / 1000, ext = "mp3" }
+        end
+        return #out > 0 and out or nil
+    end
+
+    function S.load()
+        if loadStarted then return end
+        loadStarted = true
+        S.state = "sound loading"
+        task.spawn(function()
+            local ok, err = pcall(function()
+                if not getAsset then error("this executor has no getcustomasset", 0) end
+                pcall(function()
+                    if makefolder and isfolder then
+                        for _, d in ipairs({ "PuppyAdmin", "PuppyAdmin/doom", DIR }) do
+                            if not isfolder(d) then makefolder(d) end
+                        end
+                    end
+                end)
+                local entries, prefix
+                if freedoom then
+                    local cache = DIR .. "/freedoom1_" .. DS.pack:match("([^/]+)$")
+                    local pak = readCached(cache)
+                    entries = parsePack(pak)
+                    if not entries then
+                        local okDl, body = pcall(function() return game:HttpGet(SETTINGS.Auras.assetBase .. DS.pack) end)
+                        entries = okDl and parsePack(body)
+                        if not entries then error("the Freedoom sound pack did not download", 0) end
+                        pcall(writefile, cache, body)
+                    end
+                    prefix = "fd1" .. DS.pack:match("_(v%d+)") .. "_"
+                else
+                    entries = {}
+                    for _, l in ipairs(list) do
+                        if l.name:sub(1, 2) == "DS" then
+                            local data, len = Doom.sfxWav(wad, l)
+                            if data then entries[#entries + 1] = { name = l.name, data = data, len = len, ext = "wav" } end
+                        end
+                    end
+                    if #entries == 0 then error("this WAD has no sound effects", 0) end
+                    prefix = "w" .. #wad .. "_"
+                end
+                local made = {}
+                for i, e in ipairs(entries) do
+                    if dead then return end
+                    local id = fileAsset(DIR .. "/" .. prefix .. e.name:lower() .. "." .. e.ext, e.data)
+                    if id then
+                        local snd = newSound(id, e.name)
+                        sfx[e.name] = { id = id, len = e.len, pool = { snd } }
+                        made[#made + 1] = snd
+                    end
+                    if i % 16 == 0 then task.wait() end
+                end
+                if #made == 0 then error("the sound files could not be made", 0) end
+                local t0, loaded = os.clock(), 0
+                repeat
+                    task.wait(0.25)
+                    loaded = 0
+                    for _, snd in ipairs(made) do if snd.IsLoaded then loaded = loaded + 1 end end
+                until dead or loaded == #made or os.clock() - t0 > 8
+                if dead then return end
+                if loaded == 0 then
+                    error("Roblox did not load the ." .. entries[1].ext .. " sound files", 0)
+                end
+                S.state = freedoom and "sound on" or "effects only (music is for Freedoom)"
+            end)
+            if not ok and not dead then
+                sfx = {}
+                S.state = "no sound"
+                note("Doom", "No sound: " .. tostring(err), RED)
+            end
+        end)
+    end
+
+    -- Doom's calls ---------------------------------------------------------------------
+    function S.stop(channel)
+        local snd = chanSound[channel]
+        if not snd then return end
+        chanSound[channel] = nil
+        busyUntil[snd] = 0
+        pcall(function() snd:Stop() end)
+    end
+    function S.start(name, channel, vol)
+        S.stop(channel)
+        local e = sfx[name]
+        if not e or userPaused or S.level <= 0 then return end
+        local now = os.clock()
+        local snd
+        for _, s in ipairs(e.pool) do
+            if (busyUntil[s] or 0) <= now then snd = s; break end
+        end
+        if not snd then
+            if #e.pool < POOL then
+                snd = newSound(e.id, name)
+                e.pool[#e.pool + 1] = snd
+            else
+                -- every copy is busy: take the oldest one
+                snd = table.remove(e.pool, 1)
+                e.pool[#e.pool + 1] = snd
+                for c, s in pairs(chanSound) do if s == snd then chanSound[c] = nil end end
+            end
+        end
+        setVol(snd, vol / 127 * SFX_GAIN * S.level)
+        snd.TimePosition = 0
+        snd:Play()
+        busyUntil[snd] = now + e.len + 0.05
+        chanSound[channel] = snd
+    end
+    function S.params(channel, vol)
+        local snd = chanSound[channel]
+        if snd then setVol(snd, vol / 127 * SFX_GAIN * S.level) end
+    end
+
+    local function syncMusic()
+        if not music then return end
+        setVol(music, musicVol / 127 * MUSIC_GAIN * S.level)
+        local want = musicOn and musicReady and not musicPaused and not userPaused and S.level > 0
+        if want then
+            if musicHeld then
+                musicHeld = false
+                musicStartAt = os.clock()
+                music:Resume()
+            elseif not musicStarted or (not music.IsPlaying and os.clock() - musicStartAt > 1) then
+                -- custom sounds do not always loop by themselves: start again from the top
+                if musicLoop or not musicStarted then
+                    musicStarted = true
+                    musicStartAt = os.clock()
+                    music.TimePosition = 0
+                    music:Play()
+                else
+                    musicOn = false
+                end
+            end
+        elseif music.IsPlaying then
+            musicHeld = true
+            music:Pause()
+        end
+    end
+    function S.musicStop()
+        musicToken = musicToken + 1
+        musicOn, musicReady, musicHeld, musicStarted = false, false, false, false
+        if music then pcall(function() music:Stop() end) end
+    end
+    function S.musicPlay(data, looping)
+        S.musicStop()
+        local name
+        for _, l in ipairs(musicBySize[#data] or {}) do
+            if wad:sub(l.pos + 1, l.pos + l.size) == data then name = l.name; break end
+        end
+        if not name or not freedoom then return end
+        musicOn, musicLoop = true, looping
+        local token = musicToken
+        task.spawn(function()
+            local id = musicIds[name]
+            if not id then
+                id = urlImageAsset(SETTINGS.Auras.assetBase .. DS.music .. name:lower() .. ".mp3", "doommusic")
+                if not id then
+                    if token == musicToken then note("Doom", "Music " .. name .. " did not download", RED) end
+                    return
+                end
+                musicIds[name] = id
+            end
+            if dead or token ~= musicToken then return end
+            if music then music:Destroy() end
+            music = newSound(id, "Music")
+            music.Looped = looping
+            lastVol[music] = nil
+            local t0 = os.clock()
+            while not music.IsLoaded and os.clock() - t0 < 15 do
+                task.wait(0.1)
+                if dead or token ~= musicToken then return end
+            end
+            musicReady = true
+            syncMusic()
+        end)
+    end
+    function S.musicPause() musicPaused = true; syncMusic() end
+    function S.musicResume() musicPaused = false; syncMusic() end
+    function S.musicVolume(v) musicVol = v; syncMusic() end
+
+    -- the Doom window's calls ------------------------------------------------------------
+    local lastUpdate = 0
+    function S.update()
+        local now = os.clock()
+        if now - lastUpdate < 0.25 then return end
+        lastUpdate = now
+        syncMusic()
+    end
+    local function stopAll()
+        for c in pairs(chanSound) do S.stop(c) end
+    end
+    function S.setPaused(on)
+        userPaused = on
+        if on then stopAll() end
+        syncMusic()
+    end
+    function S.setVolume(level)
+        S.level = level
+        if level <= 0 then stopAll() end
+        syncMusic()
+    end
+    function S.destroy()
+        dead = true
+        musicToken = musicToken + 1
+        pcall(function() folder:Destroy() end)
+    end
+    return S
+end
 
 function UIAPI.buildDoomPanel(screenGui)
     local W, HGT = 380, 452
@@ -10619,6 +10903,10 @@ function UIAPI.buildDoomPanel(screenGui)
     local TIC = 1 / 35
 
     local doom, running, starting = nil, false, false
+    local doomSound
+    local function dropSound()
+        if doomSound then doomSound.destroy(); doomSound = nil end
+    end
     local acc, frames, secondStart, fpsShown = 0, 0, os.clock(), 0
     local statusBase = "No game loaded"
 
@@ -10662,7 +10950,7 @@ function UIAPI.buildDoomPanel(screenGui)
         Text = "Pick \"Freedoom Phase 1\" above to play right away (free, downloaded once), or put your own WAD "
             .. "(DOOM1.WAD, DOOM.WAD, DOOM2.WAD) in your executor's workspace/PuppyAdmin/doom folder and pick it.",
     })
-    local status = label(f, { Position = UDim2.fromOffset(16, 340), Size = UDim2.fromOffset(W - 32, 16), TextSize = 11,
+    local status = label(f, { Position = UDim2.fromOffset(16, 340), Size = UDim2.fromOffset(W - 32 - 114, 16), TextSize = 11,
         TextColor3 = PAL.DIM, TextTruncate = Enum.TextTruncate.AtEnd, Text = statusBase })
     label(f, { Position = UDim2.fromOffset(16, 360), Size = UDim2.fromOffset(W - 32, 84), TextSize = 11, TextWrapped = true,
         TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = PAL.DIM,
@@ -10720,6 +11008,7 @@ function UIAPI.buildDoomPanel(screenGui)
     local pauseBtn
     local function setRunning(on)
         running = on and doom ~= nil
+        if doomSound then doomSound.setPaused(not running) end
         if releaseAll then releaseAll() end
         if pauseBtn then pauseBtn.Text = running and "Pause" or "Play" end
     end
@@ -10729,6 +11018,7 @@ function UIAPI.buildDoomPanel(screenGui)
         starting = true
         task.spawn(function()
             doom, running = nil, false
+            dropSound()
             overlay.Visible = true
             overlay.Text = "Loading Doom and " .. name .. "...\n(the first time downloads the engine, about 3 MB)"
             local ok, err = pcall(function()
@@ -10751,7 +11041,14 @@ function UIAPI.buildDoomPanel(screenGui)
                 local wad = downloaded or (UIAPI.gbReadFile and UIAPI.gbReadFile(name, { DIR .. "/" .. name }) or readBinary(DIR .. "/" .. name))
                 if not wad then error("could not read " .. name, 0) end
                 if not Doom.identify(wad) then error(name .. " is not a Doom WAD this engine knows (DOOM1, DOOM, DOOM2 or Freedoom)", 0) end
+                if Doom.lumps then
+                    doomSound = UIAPI.newDoomSound(Doom, wad)
+                    doomSound.setVolume(Cfg.doomVolume)
+                    doomSound.setPaused(true)
+                    if Cfg.doomVolume > 0 then doomSound.load() end
+                end
                 local d = Doom.new(Doom.makeWasm, {
+                    sound = doomSound,
                     wadData = wad,
                     clock = os.clock,
                     readFile = function(n) return readBinary(diskName(n)) end,
@@ -10766,6 +11063,7 @@ function UIAPI.buildDoomPanel(screenGui)
             starting = false
             if not ok then
                 doom = nil
+                dropSound()
                 overlay.Text = "Could not start Doom:\n" .. tostring(err)
                 status.Text = "No game loaded"
                 return
@@ -10799,6 +11097,22 @@ function UIAPI.buildDoomPanel(screenGui)
         if not mouseOn then pcall(function() UserInputService.MouseBehavior = Enum.MouseBehavior.Default end) end
     end
     mouseBtn = uiButton(f, "Mouse", UDim2.fromOffset(104, 28), UDim2.fromOffset(260, 42), function() setMouse(not mouseOn) end)
+    do
+        local VOLUMES = { 1, 0.75, 0.5, 0.25, 0 }
+        if type(Cfg.doomVolume) ~= "number" then Cfg.doomVolume = 1 end
+        local volDd = uiDropdown(f, "", UDim2.fromOffset(108, 22), UDim2.fromOffset(W - 16 - 108, 336),
+            { "Sound 100%", "Sound 75%", "Sound 50%", "Sound 25%", "Sound off" },
+            table.find(VOLUMES, Cfg.doomVolume) or 1, function(i)
+                Cfg.doomVolume = VOLUMES[i]
+                cfgSave()
+                if doomSound then
+                    doomSound.setVolume(Cfg.doomVolume)
+                    -- sound was off when the game started: load it now (load() runs once)
+                    if Cfg.doomVolume > 0 then doomSound.load() end
+                end
+            end)
+        volDd.button.TextSize = 11
+    end
 
     -- input ----------------------------------------------------------------------------------
     local K = Enum.KeyCode
@@ -10886,12 +11200,14 @@ function UIAPI.buildDoomPanel(screenGui)
                 setRunning(false)
                 setMouse(false)
                 doom = nil
+                dropSound()
                 overlay.Visible = true
                 overlay.Text = tostring(err):find("DOOM_EXIT") and "Doom closed. Pick a WAD above to play again."
                     or ("Doom stopped:\n" .. tostring(err))
                 status.Text = "No game loaded"
                 return
             end
+            if doomSound then doomSound.update() end
             if doom.blit(pixels) then
                 pcall(function() image:WritePixelsBuffer(Vector2.zero, Vector2.new(320, 200), pixels) end)
                 frames = frames + 1
@@ -10900,7 +11216,7 @@ function UIAPI.buildDoomPanel(screenGui)
             if now - secondStart >= 1 then
                 fpsShown = math.floor(frames / (now - secondStart) + 0.5)
                 frames, secondStart = 0, now
-                status.Text = statusBase .. "  [" .. fpsShown .. " fps]"
+                status.Text = statusBase .. "  [" .. fpsShown .. " fps" .. (doomSound and (", " .. doomSound.state) or "") .. "]"
             end
         end)
         table.insert(conns, loop)
@@ -10923,7 +11239,7 @@ function UIAPI.buildDoomPanel(screenGui)
         releaseAll()
         if mouseOn then setMouse(false) end
     end))
-    table.insert(cleanups, function() bind(false); stopLoop() end)
+    table.insert(cleanups, function() bind(false); stopLoop(); dropSound() end)
 end
 
 ------------------------------------------------------------------------
