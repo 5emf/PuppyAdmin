@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.21-38" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.21-39" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -364,6 +364,7 @@ local Cfg = {
     fpsCounter = { on = false }, -- Performance > FPS counter: on, x, y (pixels)
     gbVolume = 1,      -- Game Boy sound level (0 = off)
     doomVolume = 1,    -- Doom sound level (0 = off)
+    gbaVolume = 1,     -- Game Boy Advance sound level (0 = off)
     floor = {},        -- infinite baseplate: { preset = name, color = { r, g, b } }
     antiAfk = false,   -- keep Roblox from disconnecting you for being idle
     windowScales = {}, -- window name -> size set with the corner grip (1 = normal)
@@ -10615,11 +10616,157 @@ end
 -- file in the repository (emu/gba-<version>.lua), downloaded once into
 -- PuppyAdmin/engine. It needs a GBA BIOS: the free Cult-of-GBA BIOS (MIT,
 -- assets/gba) is downloaded once, or PuppyAdmin/gba/gba_bios.bin is used
--- when you have your own. Saves go next to the game as .sav. No sound.
+-- when you have your own. Saves go next to the game as .sav. Sound: see
+-- UIAPI.newPcmStream.
 ------------------------------------------------------------------------
 
-UIAPI.GBA_MODULE = { version = "76ba41a6d2", bytes = 95634 }
+UIAPI.GBA_MODULE = { version = "6094e0e5de", bytes = 113905 }
 UIAPI.GBA_BIOS = { path = "assets/gba/cult_bios_v1.bin", bytes = 16384 }
+
+-- Generated sound. Roblox has no raw-audio stream, so the emulator's samples
+-- are cut into 0.25 s files (WAV, or FLAC when WAV does not load) that play
+-- back to back, each faded into the next over 32 ms. The sound runs about
+-- 0.35 s behind the picture. Pcm is the encoder table from the emulator module.
+--   stream.push(buf, n)  signed 16-bit mono samples;  stream.update() every frame
+--   stream.reset(), stream.setVolume(v), stream.destroy(), stream.state, stream.failed
+function UIAPI.newPcmStream(Pcm, rate, tag)
+    local N = math.floor(rate / 4)
+    local O = math.floor(rate * 0.016)
+    local LEAD = 0.35
+    local CAP = rate * 4
+    local DIR = "PuppyAdmin/" .. tag .. "_sound"
+    local getAsset = (type(getcustomasset) == "function" and getcustomasset) or (type(getsynasset) == "function" and getsynasset)
+    local folder = Instance.new("Folder")
+    folder.Name = "PuppyAdmin_" .. tag .. "_sound"
+    folder.Parent = game:GetService("SoundService")
+    local S = { state = "sound starting", failed = false, volume = 1 }
+    local ring = buffer.create(CAP * 2)
+    local written, nextChunk, t0 = 0, 0, nil
+    local chunks = {}
+    local formats = { "wav", "flac" }
+    local fmtIndex, fmtOk, probeStart = 1, false, nil
+    local session = tostring(math.random(100000, 999999))
+    local dead = false
+    pcall(function()
+        if makefolder and isfolder and not isfolder(DIR) then makefolder(DIR) end
+    end)
+    local function dropChunk(c)
+        pcall(function() c.snd:Destroy() end)
+        if delfile then pcall(delfile, c.file) end
+    end
+    local function fail(why)
+        if S.failed then return end
+        S.failed = true
+        S.state = "no sound"
+        for _, c in ipairs(chunks) do dropChunk(c) end
+        chunks = {}
+        note("Sound", "No sound: " .. why, RED)
+    end
+    if not getAsset then fail("this executor has no getcustomasset") end
+
+    function S.push(buf, n)
+        if dead or S.failed or n <= 0 then return end
+        local pos = written % CAP
+        local first = math.min(n, CAP - pos)
+        buffer.copy(ring, pos * 2, buf, 0, first * 2)
+        if n > first then buffer.copy(ring, 0, buf, first * 2, (n - first) * 2) end
+        written = written + n
+        -- the ring is about to overwrite samples not yet cut: skip ahead
+        if written - nextChunk * N > CAP - 2 * N then
+            nextChunk = math.floor(written / N) - 1
+            t0 = nil
+        end
+    end
+    local function makeChunk(k, now)
+        local from = k * N - O
+        local n = N + 2 * O
+        if t0 and t0 + from / rate < now + 0.05 then t0 = nil end -- fell behind: start again a little later
+        local data = Pcm.chunk(ring, CAP, from, n, 2 * O)
+        local fmt = formats[fmtIndex]
+        local body = fmt == "wav" and Pcm.wav(data, n, rate) or Pcm.flac(data, n, rate)
+        local file = DIR .. "/" .. session .. "_" .. k .. "." .. fmt
+        if not pcall(writefile, file, body) then return nil, "could not write " .. file end
+        local okA, id = pcall(getAsset, file)
+        if not (okA and type(id) == "string" and id ~= "") then
+            if delfile then pcall(delfile, file) end
+            return nil, "getcustomasset failed for ." .. fmt
+        end
+        local snd = Instance.new("Sound")
+        snd.Name = "Chunk" .. k
+        snd.SoundId = id
+        snd.Volume = S.volume
+        snd.Parent = folder
+        if not t0 then t0 = now + LEAD - from / rate end
+        return { snd = snd, start = t0 + from / rate, len = n / rate, file = file, fmt = fmt }
+    end
+    function S.update()
+        if dead or S.failed then return end
+        local now = os.clock()
+        local made = 0
+        while written >= (nextChunk + 1) * N + O and made < 2 do
+            local c, why = makeChunk(nextChunk, now)
+            nextChunk = nextChunk + 1
+            made = made + 1
+            if c then
+                chunks[#chunks + 1] = c
+                if not probeStart then probeStart = now end
+            elseif not fmtOk then
+                fail(why)
+                return
+            end
+        end
+        local i = 1
+        while i <= #chunks do
+            local c = chunks[i]
+            local drop = false
+            if not c.played then
+                if now >= c.start - 0.008 then
+                    if c.snd.IsLoaded then
+                        pcall(function()
+                            c.snd.TimePosition = math.max(0, now - c.start)
+                            c.snd:Play()
+                        end)
+                        c.played = true
+                        if not fmtOk then fmtOk = true end
+                        S.state = "sound on"
+                    elseif now > c.start + 0.12 then
+                        drop = true -- not loaded in time
+                    end
+                end
+            elseif now > c.start + c.len + 0.25 then
+                drop = true
+            end
+            if drop then dropChunk(c); table.remove(chunks, i) else i = i + 1 end
+        end
+        -- nothing has loaded within 3 s of the first file: try the next format
+        if not fmtOk and probeStart and now - probeStart > 3 then
+            if fmtIndex < #formats then
+                fmtIndex = fmtIndex + 1
+                probeStart = now
+                S.state = "sound: trying " .. formats[fmtIndex]
+            else
+                fail("Roblox did not load the generated WAV or FLAC sound files on this executor")
+            end
+        end
+    end
+    function S.reset()
+        for _, c in ipairs(chunks) do dropChunk(c) end
+        chunks = {}
+        written, nextChunk, t0 = 0, 0, nil
+        if probeStart then probeStart = os.clock() end
+    end
+    function S.setVolume(v)
+        S.volume = v
+        for _, c in ipairs(chunks) do pcall(function() c.snd.Volume = v end) end
+    end
+    function S.destroy()
+        dead = true
+        for _, c in ipairs(chunks) do dropChunk(c) end
+        chunks = {}
+        pcall(function() folder:Destroy() end)
+    end
+    return S
+end
 
 function UIAPI.buildGbaPanel(screenGui)
     local W, HGT = 392, 478
@@ -10676,11 +10823,25 @@ function UIAPI.buildGbaPanel(screenGui)
         TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = Color3.fromRGB(230, 230, 230), TextSize = 13,
         Text = "Put .gba or .zip games in your executor's workspace/PuppyAdmin/gba folder, then pick one above.\n\n"
             .. "Keys: arrows / WASD move, X = A, Z = B, Q = L, E = R, Enter = Start, Backspace = Select.\n\n"
-            .. "Uses the free Cult-of-GBA BIOS; put your own as PuppyAdmin/gba/gba_bios.bin to use it instead. No sound.",
+            .. "Uses the free Cult-of-GBA BIOS; put your own as PuppyAdmin/gba/gba_bios.bin to use it instead.",
     })
-    local status = label(f, { Position = UDim2.fromOffset(16, 332), Size = UDim2.fromOffset(W - 32, 16), TextSize = 11,
+    local status = label(f, { Position = UDim2.fromOffset(16, 332), Size = UDim2.fromOffset(W - 32 - 114, 16), TextSize = 11,
         TextTruncate = Enum.TextTruncate.AtEnd, TextColor3 = PAL.DIM, Text = "No game loaded" })
     local statusBase = "No game loaded"
+    if type(Cfg.gbaVolume) ~= "number" then Cfg.gbaVolume = 1 end
+    local function stopSound()
+        if S.stream then S.stream.destroy(); S.stream = nil end
+        if S.emu then S.emu.setAudio(false) end
+    end
+    local function startSound()
+        if S.stream then S.stream.destroy(); S.stream = nil end
+        local mod = UIAPI.gbaModuleLoaded
+        if not (S.emu and mod and mod.Pcm and S.emu.setAudio) then return end
+        if Cfg.gbaVolume <= 0 then S.emu.setAudio(false); return end
+        S.stream = UIAPI.newPcmStream(mod.Pcm, S.emu.audioRate, "gba")
+        S.stream.setVolume(Cfg.gbaVolume)
+        S.emu.setAudio(true)
+    end
 
     local image
     local function makeImage()
@@ -10758,11 +10919,15 @@ function UIAPI.buildGbaPanel(screenGui)
         S.running = on and S.emu ~= nil
         if not S.running and releaseAll then releaseAll() end
         if pauseBtn then pauseBtn.Text = S.running and "Pause" or "Play" end
+        -- paused: stop the sound; resumed: drop what was made before the pause
+        if S.stream then S.stream.reset() end
+        if S.running and S.emu and S.emu.audioPull then S.emu.audioPull() end
     end
 
     local function loadGame(name)
         task.spawn(function()
             saveNow()
+            stopSound()
             S.emu, S.running = nil, false
             overlay.Visible = true
             overlay.Text = "Loading " .. name .. "..."
@@ -10798,6 +10963,7 @@ function UIAPI.buildGbaPanel(screenGui)
             overlay.Visible = false
             S.acc, S.renderEvery, S.skipCount, S.frameCost = 0, 1, 0, 0.02
             S.emu.setKeys(S.keys)
+            startSound()
             setRunning(true)
             status.Text = statusBase
         end)
@@ -10825,6 +10991,19 @@ function UIAPI.buildGbaPanel(screenGui)
     uiButton(f, "Reset", UDim2.fromOffset(60, 28), UDim2.fromOffset(318, 42), function()
         if S.romPath then loadGame(S.romPath:match("([^/\\]+)$")) end
     end)
+    do
+        local VOLUMES = { 1, 0.75, 0.5, 0.25, 0 }
+        local volDd = uiDropdown(f, "", UDim2.fromOffset(108, 22), UDim2.fromOffset(W - 16 - 108, 328),
+            { "Sound 100%", "Sound 75%", "Sound 50%", "Sound 25%", "Sound off" },
+            table.find(VOLUMES, Cfg.gbaVolume) or 1, function(i)
+                Cfg.gbaVolume = VOLUMES[i]
+                cfgSave()
+                if Cfg.gbaVolume <= 0 then stopSound()
+                elseif S.stream and not S.stream.failed then S.stream.setVolume(Cfg.gbaVolume)
+                else startSound() end
+            end)
+        volDd.button.TextSize = 11
+    end
 
     -- input ----------------------------------------------------------------------------
     local held = {}
@@ -10930,6 +11109,13 @@ function UIAPI.buildGbaPanel(screenGui)
                 if os.clock() > budget then break end
             end
             if drew then present() end
+            local stream = S.stream
+            if stream then
+                local buf, n = emu.audioPull()
+                if S.fast then stream.reset() else stream.push(buf, n) end
+                stream.update()
+                if stream.failed then emu.setAudio(false) end
+            end
             -- draw less often when a frame costs more than real time allows
             if S.frameCost > FRAME * 1.15 then S.renderEvery = math.min(3, S.renderEvery + 1)
             elseif S.frameCost < FRAME * 0.6 then S.renderEvery = math.max(1, S.renderEvery - 1) end
@@ -10937,7 +11123,8 @@ function UIAPI.buildGbaPanel(screenGui)
             if now - S.secondStart >= 1 then
                 local pct = math.floor(S.frames / (now - S.secondStart) / 59.73 * 100 + 0.5)
                 S.frames, S.secondStart = 0, now
-                status.Text = statusBase .. "  [" .. pct .. "%" .. (S.renderEvery > 1 and (", drawing 1 in " .. S.renderEvery) or "") .. "]"
+                status.Text = statusBase .. "  [" .. pct .. "%" .. (S.renderEvery > 1 and (", drawing 1 in " .. S.renderEvery) or "")
+                    .. (S.stream and (", " .. S.stream.state) or "") .. "]"
             end
             if now - S.lastSave > 5 then saveNow() end
         end)
@@ -10959,7 +11146,7 @@ function UIAPI.buildGbaPanel(screenGui)
         end
     end)
     table.insert(conns, UserInputService.WindowFocusReleased:Connect(function() releaseAll() end))
-    table.insert(cleanups, function() saveNow(); bind(false); stopLoop() end)
+    table.insert(cleanups, function() saveNow(); bind(false); stopLoop(); stopSound() end)
 end
 
 ------------------------------------------------------------------------

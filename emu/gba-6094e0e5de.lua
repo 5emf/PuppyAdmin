@@ -1,4 +1,4 @@
--- PuppyAdmin gba 76ba41a6d2 (original Game Boy Advance emulator; games are loaded from your own PuppyAdmin/gba folder)
+-- PuppyAdmin gba 6094e0e5de (original Game Boy Advance emulator; games are loaded from your own PuppyAdmin/gba folder)
 --!optimize 2
 --!native
 local GBA = (function()
@@ -10,8 +10,10 @@ local GBA = (function()
 --   emu.saveData()            save memory as a string (or nil); emu.saveDirty() / emu.clearSaveDirty()
 --   emu.title, emu.code, emu.saveType
 --   emu.reg(n), emu.pc()      for tests
+--   emu.setAudio(on)          sound on / off (off saves time); emu.audioPull() -> buffer of signed
+--                             16-bit mono samples at emu.audioRate (16384 Hz), count (since the last pull)
 -- BIOS: a 16 KB GBA BIOS image (the free Cult-of-GBA BIOS works). The game starts directly
--- (no boot animation). No sound. Timing is approximate (per instruction, video per scanline).
+-- (no boot animation). Timing is approximate (per instruction, video per scanline).
 local GBA = {}
 
 local band, bor, bxor, bnot = bit32.band, bit32.bor, bit32.bxor, bit32.bnot
@@ -19,7 +21,7 @@ local lsh, rsh, arsh, rrot = bit32.lshift, bit32.rshift, bit32.arshift, bit32.rr
 local rd8, rd16, rd32 = buffer.readu8, buffer.readu16, buffer.readu32
 local wr8, wr16, wr32 = buffer.writeu8, buffer.writeu16, buffer.writeu32
 
-local makePPU, makeSave -- defined below
+local makePPU, makeSave, makeAPU -- defined below
 
 function GBA.new(romStr, biosStr, saveStr)
     if type(romStr) ~= "string" or #romStr < 192 then error("not a GBA ROM", 0) end
@@ -61,6 +63,7 @@ function GBA.new(romStr, biosStr, saveStr)
     local saveRead8, saveWrite8 = save.read8, save.write8
     local eepActive = save.eeprom -- function(addr) -> true when the address is the EEPROM port
     local ppu -- set after the bus exists
+    local apu -- set after DMA exists
 
     local function updateIrq() irqLine = IME ~= 0 and band(IE, IF) ~= 0 end
     local function raise(bit) IF = bor(IF, bit); updateIrq() end
@@ -78,10 +81,12 @@ function GBA.new(romStr, biosStr, saveStr)
         local period = 0x10000 - tReload[i]
         local over = 1 + (c - 0x10000) // period
         tCount[i] = tReload[i] + (c - 0x10000) % period
+        if i <= 2 and apu.on then apu.timerOverflow(i - 1, over) end
         if band(tCtrl[i], 0x40) ~= 0 then raise(lsh(8, i - 1)) end
         if i < 4 and band(tCtrl[i + 1], 0x84) == 0x84 then timerAdd(i + 1, over) end
     end
     local function timersUpdate()
+        if apu.on then apu.catchUp(cycles) end
         local el = cycles - timerLast
         timerLast = cycles
         if el <= 0 then return end
@@ -371,6 +376,33 @@ function GBA.new(romStr, biosStr, saveStr)
         end
     end
 
+    -- sound FIFO refill: DMA 1 / 2 in "special" timing move 4 words to the FIFO
+    local function dmaFifo(addr)
+        for i = 2, 3 do
+            if dmaOn[i] and dmaDst[i] == addr then
+                local base = 0xB0 + (i - 1) * 12
+                local ctl = rd16(io, base + 10)
+                if band(rsh(ctl, 12), 3) == 3 then
+                    local smode = band(rsh(ctl, 7), 3)
+                    local step = smode == 0 and 4 or (smode == 1 and -4 or 0)
+                    local src = band(dmaSrc[i], 0xFFFFFFFC)
+                    for _ = 1, 4 do
+                        write32(addr, read32(src))
+                        src = band(src + step, 0xFFFFFFFF)
+                    end
+                    dmaSrc[i] = src
+                    if band(ctl, 0x200) == 0 then
+                        dmaOn[i] = false
+                        wr16(io, base + 10, band(ctl, 0x7FFF))
+                    end
+                    if band(ctl, 0x4000) ~= 0 then raise(lsh(0x100, i - 1)) end
+                    return
+                end
+            end
+        end
+    end
+    apu = makeAPU(io, dmaFifo)
+
     ----------------------------------------------------------------------------
     -- I/O registers
     ----------------------------------------------------------------------------
@@ -386,6 +418,7 @@ function GBA.new(romStr, biosStr, saveStr)
             if band(off, 2) == 0 then return timerRead((off - 0x100) // 4 + 1) end
             return rd16(io, off)
         elseif off == 0x130 then return band(bnot(keys), 0x3FF)
+        elseif off >= 0x60 and off < 0xA8 then return apu.read(off)
         elseif off == 0x200 then return IE
         elseif off == 0x202 then return IF
         elseif off == 0x208 then return IME
@@ -398,6 +431,7 @@ function GBA.new(romStr, biosStr, saveStr)
         elseif off == 0x208 then IME = band(v, 1); updateIrq()
         elseif off == 0x004 then wr16(io, 4, band(v, 0xFFF8))
         elseif off == 0x006 or off == 0x130 then -- read only
+        elseif off >= 0x60 and off < 0xA8 then apu.write(off, v)
         elseif off >= 0x100 and off <= 0x10E then timerWrite(off, v)
         elseif off >= 0xB0 and off <= 0xDE then
             wr16(io, off, v)
@@ -416,6 +450,7 @@ function GBA.new(romStr, biosStr, saveStr)
         if off == 0x300 then wr8(io, 0x300, v); return end
         if off == 0x202 then IF = band(IF, bnot(v)); updateIrq(); return end
         if off == 0x203 then IF = band(IF, bnot(v * 256)); updateIrq(); return end
+        if off >= 0xA0 and off < 0xA8 then apu.fifoByte(off, v); return end
         local h = off - band(off, 1)
         local old = ioRead16(h)
         if h == 0x202 then old = 0 end
@@ -1340,6 +1375,12 @@ function GBA.new(romStr, biosStr, saveStr)
         end
     end
     function emu.setKeys(mask) keys = band(mask, 0x3FF) end
+    emu.audioRate = apu.rate
+    function emu.setAudio(on)
+        if on and not apu.on then apu.start(cycles) end
+        apu.on = on and true or false
+    end
+    function emu.audioPull() return apu.pull() end
     function emu.reg(n) return R[n + 1] end
     function emu.io16(off) return ioRead16(off) end
     function emu.pc() return pc end
@@ -1943,6 +1984,299 @@ makeSave = function(romStr, saveStr)
     return S
 end
 
+
+
+--------------------------------------------------------------------------------
+-- sound: the four tone channels and the two DirectSound FIFOs, mixed to mono
+-- 16-bit PCM at 16384 Hz (1024 clock cycles per sample). Only runs while the
+-- front end has sound on (apu.on); otherwise the FIFOs fill and drop, as before.
+--------------------------------------------------------------------------------
+local CPS = 1024
+local RATE = 16384
+local DUTY = { [0] = 0.125, 0.25, 0.5, 0.75 }
+local OUT_MAX = 65536
+
+makeAPU = function(io, fifoRequest)
+    local A = { on = false, rate = RATE }
+    local last = 0
+    local out = buffer.create(OUT_MAX * 2)
+    local outN = 0
+    local master = false
+    local ch = {}
+    for n = 1, 4 do
+        ch[n] = { on = false, dac = false, len = 0, lenOn = false, vol = 0, envVol = 0, envUp = false, envPeriod = 0, envTimer = 0,
+            freq = 0, duty = 2, phase = 0, inc = 0 }
+    end
+    local sweepTimer, sweepOn, shadow = 0, false, 0
+    local wave = buffer.create(32) -- two banks of 32 four-bit samples
+    local wavePos, waveLen, waveBank, waveVol = 0, 32, 0, 0
+    local lfsr, noiseAcc, noiseSteps, noise7 = 0x7FFF, 0, 0, false
+    local seqSample, seqStep = 0, 0
+    local fifo = { buffer.create(32), buffer.create(32) }
+    local fRead, fCount, dsVal = { 0, 0 }, { 0, 0 }, { 0, 0 }
+
+    local function squareInc(c) c.inc = 131072 / (2048 - c.freq) / RATE end
+    local function waveInc() ch[3].inc = 2097152 / (2048 - ch[3].freq) / RATE end
+    local function noiseRate(v)
+        local r = band(v, 7)
+        local s = band(rsh(v, 4), 15)
+        noiseSteps = 524288 / (r == 0 and 0.5 or r) / 2 ^ (s + 1) / RATE
+        noise7 = band(v, 8) ~= 0
+    end
+    local function sweepCalc()
+        local r = rd16(io, 0x60)
+        local delta = rsh(shadow, band(r, 7))
+        local nf = band(r, 8) ~= 0 and (shadow - delta) or (shadow + delta)
+        if nf > 2047 then ch[1].on = false end
+        return nf
+    end
+    local function trigger(n)
+        local c = ch[n]
+        c.on = c.dac
+        if c.len == 0 then c.len = n == 3 and 256 or 64 end
+        if n ~= 3 then
+            c.vol = c.envVol
+            c.envTimer = c.envPeriod == 0 and 8 or c.envPeriod
+        end
+        if n == 1 then
+            local r = rd16(io, 0x60)
+            local period, shift = band(rsh(r, 4), 7), band(r, 7)
+            shadow = c.freq
+            sweepTimer = period == 0 and 8 or period
+            sweepOn = period > 0 or shift > 0
+            if shift > 0 then sweepCalc() end
+        elseif n == 3 then
+            wavePos = 0
+        elseif n == 4 then
+            lfsr = noise7 and 0x7F or 0x7FFF
+            noiseAcc = 0
+        end
+    end
+    local function envelopeRegs(c, v)
+        c.envVol, c.envUp, c.envPeriod = rsh(v, 12), band(v, 0x800) ~= 0, band(rsh(v, 8), 7)
+        c.dac = band(v, 0xF800) ~= 0
+        if not c.dac then c.on = false end
+    end
+    local function push(f, b)
+        if fCount[f] < 32 then
+            wr8(fifo[f], (fRead[f] + fCount[f]) % 32, b)
+            fCount[f] += 1
+        end
+    end
+
+    function A.write(off, v)
+        if off >= 0xA0 then
+            local f = off < 0xA4 and 1 or 2
+            push(f, band(v, 0xFF))
+            push(f, rsh(v, 8))
+            return
+        end
+        if off >= 0x90 then
+            wr16(wave, (1 - waveBank) * 16 + (off - 0x90), v)
+            return
+        end
+        if off == 0x82 then
+            if band(v, 0x800) ~= 0 then fCount[1] = 0; fRead[1] = 0 end
+            if band(v, 0x8000) ~= 0 then fCount[2] = 0; fRead[2] = 0 end
+            wr16(io, off, band(v, 0x77FF))
+            return
+        end
+        wr16(io, off, v)
+        if off == 0x84 then
+            master = band(v, 0x80) ~= 0
+            if not master then for n = 1, 4 do ch[n].on = false end end
+        elseif off == 0x62 or off == 0x68 then
+            local c = ch[off == 0x62 and 1 or 2]
+            c.len = 64 - band(v, 63)
+            c.duty = band(rsh(v, 6), 3)
+            envelopeRegs(c, v)
+        elseif off == 0x64 or off == 0x6C then
+            local c = ch[off == 0x64 and 1 or 2]
+            c.freq = band(v, 0x7FF)
+            squareInc(c)
+            c.lenOn = band(v, 0x4000) ~= 0
+            if band(v, 0x8000) ~= 0 then trigger(off == 0x64 and 1 or 2) end
+        elseif off == 0x70 then
+            waveLen = band(v, 0x20) ~= 0 and 64 or 32
+            waveBank = band(rsh(v, 6), 1)
+            ch[3].dac = band(v, 0x80) ~= 0
+            if not ch[3].dac then ch[3].on = false end
+        elseif off == 0x72 then
+            ch[3].len = 256 - band(v, 0xFF)
+            local code = band(rsh(v, 13), 3)
+            waveVol = band(v, 0x8000) ~= 0 and 0.75 or (code == 0 and 0 or (code == 1 and 1 or (code == 2 and 0.5 or 0.25)))
+        elseif off == 0x74 then
+            ch[3].freq = band(v, 0x7FF)
+            waveInc()
+            ch[3].lenOn = band(v, 0x4000) ~= 0
+            if band(v, 0x8000) ~= 0 then trigger(3) end
+        elseif off == 0x78 then
+            ch[4].len = 64 - band(v, 63)
+            envelopeRegs(ch[4], v)
+        elseif off == 0x7C then
+            noiseRate(v)
+            ch[4].lenOn = band(v, 0x4000) ~= 0
+            if band(v, 0x8000) ~= 0 then trigger(4) end
+        end
+    end
+    function A.read(off)
+        if off == 0x84 then
+            local v = band(rd16(io, 0x84), 0x80)
+            for n = 1, 4 do if ch[n].on then v += lsh(1, n - 1) end end
+            return v
+        end
+        if off >= 0x90 and off < 0xA0 then return rd16(wave, (1 - waveBank) * 16 + (off - 0x90)) end
+        if off >= 0xA0 then return 0 end
+        return rd16(io, off)
+    end
+
+    -- 512 Hz: length (256 Hz), sweep (128 Hz), envelope (64 Hz)
+    local function seqTick()
+        local step = seqStep
+        seqStep = (step + 1) % 8
+        if step % 2 == 0 then
+            for n = 1, 4 do
+                local c = ch[n]
+                if c.lenOn and c.len > 0 then
+                    c.len -= 1
+                    if c.len == 0 then c.on = false end
+                end
+            end
+        end
+        if step == 2 or step == 6 then
+            sweepTimer -= 1
+            if sweepTimer <= 0 then
+                local r = rd16(io, 0x60)
+                local period = band(rsh(r, 4), 7)
+                sweepTimer = period == 0 and 8 or period
+                if sweepOn and period > 0 and ch[1].on then
+                    local nf = sweepCalc()
+                    if nf <= 2047 and band(r, 7) > 0 then
+                        shadow = nf
+                        ch[1].freq = nf
+                        squareInc(ch[1])
+                        sweepCalc()
+                    end
+                end
+            end
+        end
+        if step == 7 then
+            for _, n in ipairs({ 1, 2, 4 }) do
+                local c = ch[n]
+                if c.envPeriod ~= 0 then
+                    c.envTimer -= 1
+                    if c.envTimer <= 0 then
+                        c.envTimer = c.envPeriod
+                        if c.envUp and c.vol < 15 then c.vol += 1
+                        elseif not c.envUp and c.vol > 0 then c.vol -= 1 end
+                    end
+                end
+            end
+        end
+    end
+
+    -- make the samples for the clock cycles up to `now`
+    function A.catchUp(now)
+        local n = (now - last) // CPS
+        if n <= 0 then return end
+        last += n * CPS
+        if n > 4096 then n = 4096 end
+        local cntL, cntH = rd16(io, 0x80), rd16(io, 0x82)
+        local volR, volL = band(cntL, 7) + 1, band(rsh(cntL, 4), 7) + 1
+        local psgShift = band(cntH, 3)
+        local psgScale = psgShift == 0 and 0.25 or (psgShift == 1 and 0.5 or 1)
+        local c1, c2, c3, c4 = ch[1], ch[2], ch[3], ch[4]
+        for _ = 1, n do
+            seqSample += 1
+            if seqSample >= 32 then seqSample = 0; seqTick() end
+            local l, r = 0, 0
+            if master then
+                if c1.on then
+                    local ph = (c1.phase + c1.inc) % 1
+                    c1.phase = ph
+                    local v = ph < DUTY[c1.duty] and c1.vol or -c1.vol
+                    if band(cntL, 0x100) ~= 0 then r += v end
+                    if band(cntL, 0x1000) ~= 0 then l += v end
+                end
+                if c2.on then
+                    local ph = (c2.phase + c2.inc) % 1
+                    c2.phase = ph
+                    local v = ph < DUTY[c2.duty] and c2.vol or -c2.vol
+                    if band(cntL, 0x200) ~= 0 then r += v end
+                    if band(cntL, 0x2000) ~= 0 then l += v end
+                end
+                if c3.on and waveVol > 0 then
+                    wavePos = (wavePos + c3.inc) % waveLen
+                    local idx = wavePos // 1
+                    local bank = waveLen == 64 and (idx // 32 + waveBank) % 2 or waveBank
+                    local b = rd8(wave, bank * 16 + (idx % 32) // 2)
+                    local s = idx % 2 == 0 and rsh(b, 4) or band(b, 15)
+                    local v = (s * 2 - 15) * waveVol
+                    if band(cntL, 0x400) ~= 0 then r += v end
+                    if band(cntL, 0x4000) ~= 0 then l += v end
+                end
+                if c4.on then
+                    noiseAcc += noiseSteps
+                    local k = 0
+                    while noiseAcc >= 1 and k < 16 do
+                        local bit = band(bxor(lfsr, rsh(lfsr, 1)), 1)
+                        lfsr = bor(rsh(lfsr, 1), lsh(bit, 14))
+                        if noise7 then lfsr = bor(band(lfsr, 0xFFBF), lsh(bit, 6)) end
+                        noiseAcc -= 1
+                        k += 1
+                    end
+                    if noiseAcc >= 1 then noiseAcc %= 1 end
+                    local v = band(lfsr, 1) == 0 and c4.vol or -c4.vol
+                    if band(cntL, 0x800) ~= 0 then r += v end
+                    if band(cntL, 0x8000) ~= 0 then l += v end
+                end
+                l *= volL * psgScale
+                r *= volR * psgScale
+                local a = dsVal[1] * (band(cntH, 4) ~= 0 and 4 or 2)
+                local b = dsVal[2] * (band(cntH, 8) ~= 0 and 4 or 2)
+                if band(cntH, 0x100) ~= 0 then r += a end
+                if band(cntH, 0x200) ~= 0 then l += a end
+                if band(cntH, 0x1000) ~= 0 then r += b end
+                if band(cntH, 0x2000) ~= 0 then l += b end
+            end
+            -- each side clips at 10 bits, as on the hardware
+            if l > 511 then l = 511 elseif l < -512 then l = -512 end
+            if r > 511 then r = 511 elseif r < -512 then r = -512 end
+            local m = (l + r) * 32 -- (l + r) / 2 in -512..511, scaled to 16 bits
+            if m > 32767 then m = 32767 elseif m < -32768 then m = -32768 end
+            if outN >= OUT_MAX then outN = 0 end -- nobody is reading: start over
+            buffer.writei16(out, outN * 2, m // 1)
+            outN += 1
+        end
+    end
+    function A.start(now) last = now; outN = 0 end
+    function A.fifoByte(off, b) push(off < 0xA4 and 1 or 2, b) end
+    -- timer t (0 or 1) overflowed `over` times: the FIFOs it drives play their next samples
+    function A.timerOverflow(t, over)
+        local cntH = rd16(io, 0x82)
+        for f = 1, 2 do
+            if band(rsh(cntH, f == 1 and 10 or 14), 1) == t then
+                for _ = 1, math.min(over, 32) do
+                    if fCount[f] > 0 then
+                        local s = rd8(fifo[f], fRead[f])
+                        dsVal[f] = s >= 128 and s - 256 or s
+                        fRead[f] = (fRead[f] + 1) % 32
+                        fCount[f] -= 1
+                    end
+                    if fCount[f] <= 16 then fifoRequest(f == 1 and 0x040000A0 or 0x040000A4) end
+                end
+            end
+        end
+    end
+    -- the samples made since the last call: buffer of signed 16-bit values, count
+    function A.pull()
+        local n = outN
+        outN = 0
+        return out, n
+    end
+    return A
+end
+
 return GBA
 
 end)()
@@ -2189,4 +2523,101 @@ end
 return Zip
 
 end)()
-return { GBA = GBA, Zip = Zip }
+local Pcm = (function()
+-- Generated sound files for the front end: Roblox cannot play a raw sample stream, so the
+-- emulator's samples are cut into short files that play back to back.
+--   Pcm.chunk(ring, cap, from, n, fade) -> buffer of n signed 16-bit samples taken from a ring
+--       buffer (cap samples) starting at absolute sample `from`, faded in and out over `fade` samples
+--   Pcm.wav(buf, n, rate), Pcm.flac(buf, n, rate) -> file contents (mono, 16-bit)
+local Pcm = {}
+do
+    local band, bxor, rsh, lsh = bit32.band, bit32.bxor, bit32.rshift, bit32.lshift
+    local rdi16, wri16, wr8, wr16, wr32 = buffer.readi16, buffer.writei16, buffer.writeu8, buffer.writeu16, buffer.writeu32
+    local rd8 = buffer.readu8
+
+    function Pcm.chunk(ring, cap, from, n, fade)
+        local out = buffer.create(n * 2)
+        for i = 0, n - 1 do
+            local s = from + i
+            local v = s >= 0 and rdi16(ring, (s % cap) * 2) or 0
+            if i < fade then v = v * (i + 0.5) / fade
+            elseif i >= n - fade then v = v * (n - i - 0.5) / fade end
+            wri16(out, i * 2, v // 1)
+        end
+        return out
+    end
+
+    function Pcm.wav(buf, n, rate)
+        local b = buffer.create(44 + n * 2)
+        buffer.writestring(b, 0, "RIFF")
+        wr32(b, 4, 36 + n * 2)
+        buffer.writestring(b, 8, "WAVEfmt ")
+        wr32(b, 16, 16)
+        wr16(b, 20, 1)        -- PCM
+        wr16(b, 22, 1)        -- mono
+        wr32(b, 24, rate)
+        wr32(b, 28, rate * 2)
+        wr16(b, 32, 2)
+        wr16(b, 34, 16)
+        buffer.writestring(b, 36, "data")
+        wr32(b, 40, n * 2)
+        buffer.copy(b, 44, buf, 0, n * 2)
+        return buffer.tostring(b)
+    end
+
+    -- FLAC with one verbatim (uncompressed) frame: simple to write, and a second format to try
+    local CRC8, CRC16 = {}, {}
+    for i = 0, 255 do
+        local c = i
+        for _ = 1, 8 do c = band(c, 0x80) ~= 0 and band(bxor(lsh(c, 1), 0x07), 0xFF) or band(lsh(c, 1), 0xFF) end
+        CRC8[i] = c
+        local d = lsh(i, 8)
+        for _ = 1, 8 do d = band(d, 0x8000) ~= 0 and band(bxor(lsh(d, 1), 0x8005), 0xFFFF) or band(lsh(d, 1), 0xFFFF) end
+        CRC16[i] = d
+    end
+    function Pcm.flac(buf, n, rate)
+        local headLen = 4 + 4 + 34
+        local frameHead = 2 + 1 + 1 + 1 + 2 + 1
+        local total = headLen + frameHead + 1 + n * 2 + 2
+        local b = buffer.create(total)
+        buffer.writestring(b, 0, "fLaC")
+        wr8(b, 4, 0x80); wr8(b, 5, 0); wr8(b, 6, 0); wr8(b, 7, 34) -- last metadata block: STREAMINFO, 34 bytes
+        local p = 8
+        local function be16(v) wr8(b, p, rsh(v, 8)); wr8(b, p + 1, band(v, 0xFF)); p += 2 end
+        be16(n); be16(n)                 -- min / max block size
+        for _ = 1, 6 do wr8(b, p, 0); p += 1 end -- min / max frame size: unknown
+        -- sample rate (20 bits), channels - 1 (3), bits per sample - 1 (5), total samples (36)
+        wr8(b, p, rsh(rate, 12)); wr8(b, p + 1, band(rsh(rate, 4), 0xFF))
+        wr8(b, p + 2, band(rate, 15) * 16 + 0 * 2 + rsh(15, 4))
+        wr8(b, p + 3, band(15, 15) * 16 + 0)
+        wr8(b, p + 4, rsh(n, 24)); wr8(b, p + 5, band(rsh(n, 16), 0xFF)); wr8(b, p + 6, band(rsh(n, 8), 0xFF)); wr8(b, p + 7, band(n, 0xFF))
+        p += 8
+        for _ = 1, 16 do wr8(b, p, 0); p += 1 end -- MD5: not computed
+        local frameStart = p
+        wr8(b, p, 0xFF); wr8(b, p + 1, 0xF8)     -- sync, fixed block size
+        wr8(b, p + 2, 0x70)                       -- block size: 16 bits follow; sample rate: from STREAMINFO
+        wr8(b, p + 3, 0x08)                       -- mono, 16 bits per sample
+        wr8(b, p + 4, 0x00)                       -- frame number 0
+        wr8(b, p + 5, rsh(n - 1, 8)); wr8(b, p + 6, band(n - 1, 0xFF))
+        local crc = 0
+        for q = frameStart, p + 6 do crc = CRC8[bxor(crc, rd8(b, q))] end
+        wr8(b, p + 7, crc)
+        p += 8
+        wr8(b, p, 0x02)                           -- verbatim subframe
+        p += 1
+        for i = 0, n - 1 do
+            local v = rdi16(buf, i * 2)
+            if v < 0 then v += 65536 end
+            wr8(b, p, rsh(v, 8)); wr8(b, p + 1, band(v, 0xFF))
+            p += 2
+        end
+        local c16 = 0
+        for q = frameStart, p - 1 do c16 = bxor(band(lsh(c16, 8), 0xFFFF), CRC16[bxor(rsh(c16, 8), rd8(b, q))]) end
+        wr8(b, p, rsh(c16, 8)); wr8(b, p + 1, band(c16, 0xFF))
+        return buffer.tostring(b)
+    end
+end
+return Pcm
+
+end)()
+return { GBA = GBA, Zip = Zip, Pcm = Pcm }
