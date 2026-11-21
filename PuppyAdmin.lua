@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-33" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-34" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -8936,6 +8936,8 @@ do
     local Fighter = {
         id = "fighter", title = "Puppy Fighter", tab = "Fighter", cols = 26, rows = 18, sprites = true, hold = true,
         sheet = "assets/games/puppy_fighter.png",
+        -- painted stage behind rows 2..18, and the VS card shown before each match
+        backdrop = "assets/games/puppy_fighter_stage.png", splash = "assets/games/puppy_fighter_vs.png",
         -- original synthesised effects in assets/sfx/fighter (.ogg, .mp3 fallback)
         sfx = { base = "assets/sfx/fighter/", names = { "punch", "kick", "swing", "block", "jump", "bark", "zap", "ko", "round", "fight", "win", "lose" } },
         pads = { up = "Jump", down = "Crouch", rotate = "Kick", drop = "Punch" },
@@ -8975,7 +8977,7 @@ do
 
     function Fighter.new(rng)
         local g = { rng = rng, score = 0, over = false, level = 1, round = 1, pWins = 0, cWins = 0, clock = 0, popups = {},
-            inp = { left = false, right = false, up = false, down = false }, events = {} }
+            inp = { left = false, right = false, up = false, down = false }, events = {}, splash = 2.4 }
         startRound(g)
         return g
     end
@@ -9150,6 +9152,7 @@ do
             g.level = g.level + 1
             g.score = g.score + 2000
             g.pWins, g.cWins, g.round = 0, 0, 1
+            g.splash = 2.4 -- VS card before the next match
             g.popups[#g.popups + 1] = { x = 13, y = 8, text = "Shadow gets tougher!", t = 1.6, life = 1.6 }
         elseif g.cWins >= 2 then
             sfx(g, "lose")
@@ -9175,6 +9178,7 @@ do
         end
         if g.over then return end
         local p, c = g.p, g.c
+        if (g.splash or 0) > 0 then g.splash = g.splash - dt; g.wantJump, g.wantAttack = false, nil; return end
         if g.pause > 0 then
             g.pause = g.pause - dt
             g.wantJump, g.wantAttack = false, nil
@@ -9246,6 +9250,7 @@ do
         put(13, 1, g.pWins >= 2 and "winOn" or "winOff")
         put(14, 1, g.cWins >= 2 and "winOn" or "winOff")
         put(15, 1, g.cWins >= 1 and "winOn" or "winOff")
+        if g.backdropShown then return end -- the painted stage is behind the board
         for y = 2, Fighter.rows do
             local kind = y <= 5 and "sky1" or (y <= 9 and "sky2" or (y <= 11 and "sky3" or (y <= 15 and "fence" or (y == 16 and "groundTop" or "dirt"))))
             for x = 1, cols do put(x, y, kind) end
@@ -9306,7 +9311,7 @@ do
     function Fighter.cellSprite(kind) local t = FIGHT_TILES[kind]; if t then return t[1], t[2] end end
 
     function Fighter.banner(g)
-        if g.over then return nil end
+        if g.over or (g.splash or 0) > 0 then return nil end
         if g.pause > 0 then return g.pause > 0.6 and ("Round " .. g.round) or "Fight!" end
         if g.roundEnd then
             if g.roundEnd > 1.3 then return g.roundMsg end
@@ -9340,6 +9345,8 @@ local function buildGamesPanel(screenGui)
     local held = {}
     -- sprite layer (games with actors, e.g. Treat Chase): pooled images over the board
     local sheets, spriteLayer, cellSize = {}, nil, 1 -- game id -> sprite sheet content id
+    local backdrops, splashes = {}, {}                 -- game id -> background picture / intro card
+    local backdropImg, splashImg
     local sprites, popLbls = {}, {}
 
     local PIECE = {
@@ -9350,7 +9357,10 @@ local function buildGamesPanel(screenGui)
     -- kind -> colour, transparency, dot size (nil = whole cell)
     local function style(kind)
         -- maze paths stay faint so the walls and pieces stand out
-        if kind == "empty" then return PAL.ELEVATED, mg.sprites and 0.88 or 0.55 end
+        if kind == "empty" then
+            if mg.backdrop and backdrops[mg.id] then return PAL.ELEVATED, 1 end -- the painted stage shows through
+            return PAL.ELEVATED, mg.sprites and 0.88 or 0.55
+        end
         if kind:sub(1, 5) == "head_" then return PAL.ACCENT, 0 end
         if kind:sub(1, 5) == "body_" or kind:sub(1, 5) == "tail_" or kind:sub(1, 7) == "corner_" then return PAL.GOOD, 0.1 end
         if kind == "food" then return Color3.fromRGB(255, 120, 180), 0, 0.7 end
@@ -9436,6 +9446,8 @@ local function buildGamesPanel(screenGui)
 
     local function buildBoard()
         if spriteLayer then spriteLayer:Destroy(); spriteLayer = nil end
+        if backdropImg then backdropImg:Destroy(); backdropImg = nil end
+        if splashImg then splashImg:Destroy(); splashImg = nil end
         sprites, popLbls = {}, {}
         for _, c in ipairs(cells) do c.frame:Destroy() end
         for _, ch in ipairs(preview:GetChildren()) do ch:Destroy() end
@@ -9455,6 +9467,15 @@ local function buildGamesPanel(screenGui)
                 c.frame.Position = c.frame.Position + UDim2.fromOffset(1, 1)
                 cells[#cells + 1] = c
             end
+        end
+        if mg.backdrop then
+            -- the picture covers rows 2 .. last (row 1 is the HUD)
+            backdropImg = make("ImageLabel", { Name = "Backdrop", Position = UDim2.fromOffset(1, 1 + cs), Size = UDim2.fromOffset(cs * cols, cs * (rows - 1)),
+                BackgroundTransparency = 1, ScaleType = Enum.ScaleType.Stretch, ZIndex = 0, Visible = false }, board)
+        end
+        if mg.splash then
+            splashImg = make("ImageLabel", { Name = "Splash", Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 1, 0),
+                BackgroundTransparency = 1, ScaleType = Enum.ScaleType.Fit, ZIndex = 20, Visible = false }, board)
         end
         if mg.actors then
             spriteLayer = make("Frame", { Name = "Sprites", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 6 }, board)
@@ -9536,6 +9557,20 @@ local function buildGamesPanel(screenGui)
     local function render()
         local n = cols * rows
         for i = 1, n do nextK[i] = "empty" end
+        if backdropImg then
+            local pic = backdrops[mg.id]
+            backdropImg.Visible = pic ~= nil
+            if pic and backdropImg.Image ~= pic then backdropImg.Image = pic end
+        end
+        if splashImg then
+            local card, t = splashes[mg.id], state and state.splash or 0
+            splashImg.Visible = card ~= nil and t > 0
+            if card and t > 0 then
+                if splashImg.Image ~= card then splashImg.Image = card end
+                splashImg.ImageTransparency = t < 0.4 and (1 - t / 0.4) or 0 -- fades out at the end
+            end
+        end
+        if state then state.backdropShown = backdrops[mg.id] ~= nil end
         if state then
             mg.draw(state, function(x, y, k)
                 if x >= 1 and x <= cols and y >= 1 and y <= rows then nextK[(y - 1) * cols + x] = k end
@@ -9817,6 +9852,14 @@ local function buildGamesPanel(screenGui)
                     sheets[g.id] = a
                     if mg == g then cur, pcur = {}, {}; render() end
                 end
+            end
+            if g.backdrop then
+                local a = urlImageAsset(SETTINGS.Auras.assetBase .. g.backdrop, "games")
+                if a then backdrops[g.id] = a; if mg == g then cur = {}; render() end end
+            end
+            if g.splash then
+                local a = urlImageAsset(SETTINGS.Auras.assetBase .. g.splash, "games")
+                if a then splashes[g.id] = a end
             end
         end
     end)
