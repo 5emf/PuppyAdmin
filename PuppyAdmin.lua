@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-30" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-31" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -364,6 +364,7 @@ local Cfg = {
     fpsCounter = { on = false }, -- Performance > FPS counter: on, x, y (pixels)
     gbVolume = 1,      -- Game Boy sound level (0 = off)
     floor = {},        -- infinite baseplate: { preset = name, color = { r, g, b } }
+    antiAfk = false,   -- keep Roblox from disconnecting you for being idle
     windowScales = {}, -- window name -> size set with the corner grip (1 = normal)
 }
 
@@ -4521,7 +4522,7 @@ local cmds = {
     "hide", "unhide", "mute", "unmute",
     "tp",
     "aura", "unaura", "auras",
-    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "games", "gameboy", "doom", "finder", "shmost", "shlowest", "owner", "kick", "ban", "unban", "bans", "blacklist", "antikick", "unantikick", "antivcban",
+    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "games", "gameboy", "doom", "finder", "shmost", "shlowest", "antiafk", "unantiafk", "owner", "kick", "ban", "unban", "bans", "blacklist", "antikick", "unantikick", "antivcban",
     "reanim",
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
@@ -4552,6 +4553,8 @@ local cmdDocs = {
     bans = "bans - List players banned from the script (owners only)",
     blacklist = "blacklist - Owners: blacklist menu (everyone banned from the script, unban, add) (also: bl, banlist)",
     doom = "doom - Doom (1993): plays your WAD from the PuppyAdmin/doom folder",
+    antiafk = "antiafk [on|off] - Keep Roblox from disconnecting you for being idle (also in Settings)",
+    unantiafk = "unantiafk - Turn anti-AFK off",
     finder = "finder - Puppy Finder: browse this game's servers and join one (also: servers, serverbrowser)",
     serverhop = "serverhop - Join another server, picked at random (Puppy Finder; also: shop, sh)",
     shmost = "shmost - Join the fullest server (Puppy Finder)",
@@ -4866,6 +4869,16 @@ function H.finder() UIAPI.togglePanel("finder") end
 function H.serverhop() UIAPI.finder.start("random"); note("Puppy Finder", "Looking for another server...", LIGHT) end
 function H.shmost() UIAPI.finder.start("most"); note("Puppy Finder", "Looking for the fullest server...", LIGHT) end
 function H.shlowest() UIAPI.finder.start("lowest"); note("Puppy Finder", "Looking for the emptiest server...", LIGHT) end
+
+-- antiafk [on|off] (no argument: switch)
+function H.antiafk(a)
+    local l = a and a[1] and a[1]:lower()
+    local on
+    if l == "on" or l == "1" or l == "true" then on = true elseif l == "off" or l == "0" or l == "false" then on = false else on = not UIAPI.antiAfk.on end
+    UIAPI.antiAfk.set(on)
+    note("Anti-AFK", on and "On - you will not be disconnected for being idle" or "Off", on and LIGHT or GREY)
+end
+function H.unantiafk() H.antiafk({ "off" }) end
 
 function H.blacklist()
     if not ownerOnly() then return end
@@ -10205,6 +10218,49 @@ end
 -- servers are kept in PuppyAdmin/ServerHistory/<PlaceId>.json.
 ------------------------------------------------------------------------
 
+-- Anti-AFK: Roblox disconnects idle players after 20 minutes. Its idle
+-- handler is switched off where the executor allows it (getconnections), and
+-- whenever Roblox still reports you idle (after 2 minutes) a harmless virtual
+-- right-click resets the timer. On / off is saved (Settings or `antiafk`).
+UIAPI.antiAfk = { on = false }
+do
+    local A = UIAPI.antiAfk
+    local paused = {}
+    local function apply(on)
+        if on == A.on then return end
+        A.on = on
+        if on then
+            if type(getconnections) == "function" then
+                pcall(function()
+                    for _, c in ipairs(getconnections(plr.Idled)) do
+                        if c.Disable then c:Disable(); paused[#paused + 1] = c end
+                    end
+                end)
+            end
+            A.conn = plr.Idled:Connect(function()
+                pcall(function()
+                    local vu = game:GetService("VirtualUser")
+                    vu:CaptureController()
+                    vu:ClickButton2(Vector2.new())
+                end)
+            end)
+        else
+            if A.conn then A.conn:Disconnect(); A.conn = nil end
+            for _, c in ipairs(paused) do pcall(function() c:Enable() end) end
+            paused = {}
+        end
+        if UIAPI.antiAfkChanged then pcall(UIAPI.antiAfkChanged) end
+    end
+    function A.set(on)
+        apply(on and true or false)
+        Cfg.antiAfk = A.on
+        cfgSave()
+    end
+    if Cfg.antiAfk == true then apply(true) end
+    -- killing the script gives Roblox its idle handler back (the saved choice stays)
+    table.insert(cleanups, function() apply(false) end)
+end
+
 UIAPI.finder = { mode = "most", running = false, servers = {}, status = "Ready" }
 do
     local F = UIAPI.finder
@@ -10878,13 +10934,22 @@ local function createUI()
         note("Intro", Cfg.skipIntro and "Skipped from the next start" or "Shown at the next start", LIGHT)
     end)
 
-    -- third row: more windows
+    -- third row: more windows, then the anti-AFK switch
     for i, p in ipairs({ { "Finder", "finder" }, { "Game Boy", "gameboy" }, { "Doom", "doom" } }) do
         actionButton(settingsFrame, p[1], UDim2.new(0, 15 + (i - 1) * 66, 0, 234), UDim2.new(0, 62, 0, 28)).MouseButton1Click:Connect(function()
             local fn = H[p[2]]
             if type(fn) == "function" then fn({}) end
         end)
     end
+    local afkBtn = actionButton(settingsFrame, "", UDim2.new(0, 15 + 3 * 66, 0, 234), UDim2.new(0, 128, 0, 28))
+    afkBtn.TextSize = 11
+    local function afkText()
+        afkBtn.Text = UIAPI.antiAfk.on and "Anti-AFK: on" or "Anti-AFK: off"
+        afkBtn.TextColor3 = UIAPI.antiAfk.on and Color3.fromRGB(120, 230, 140) or Color3.new(1, 1, 1)
+    end
+    afkText()
+    UIAPI.antiAfkChanged = afkText
+    afkBtn.MouseButton1Click:Connect(function() H.antiafk({}) end)
 
     -- Theme: presets, then one row per colour role (hex, r,g,b or a colour name)
     fieldLabel(settingsFrame, "UI theme", 272)
