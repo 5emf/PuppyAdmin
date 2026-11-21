@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-32" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-33" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -8936,6 +8936,8 @@ do
     local Fighter = {
         id = "fighter", title = "Puppy Fighter", tab = "Fighter", cols = 26, rows = 18, sprites = true, hold = true,
         sheet = "assets/games/puppy_fighter.png",
+        -- original synthesised effects in assets/sfx/fighter (.ogg, .mp3 fallback)
+        sfx = { base = "assets/sfx/fighter/", names = { "punch", "kick", "swing", "block", "jump", "bark", "zap", "ko", "round", "fight", "win", "lose" } },
         pads = { up = "Jump", down = "Crouch", rotate = "Kick", drop = "Punch" },
         help = "Left / right move, Up jumps, Down crouches, hold back to block. Space or J punches, R or K kicks, Down + punch fires a Bark Blast.",
     }
@@ -8951,6 +8953,8 @@ do
     }
     Fighter.FK = FK
     local NOCMD = { move = 0 }
+    -- sounds for the window to play (g.events, emptied by the window every frame)
+    local function sfx(g, name) g.events[#g.events + 1] = name end
 
     local function newFighter(x, facing, index)
         return { x = x, y = FK.floor, vx = 0, vy = 0, facing = facing, hp = 100, state = "idle", t = 0, stun = 0,
@@ -8966,11 +8970,12 @@ do
         g.roundEnd, g.roundMsg = nil, nil
         g.cpuPlan, g.cpuT = { move = 0 }, 0.5
         g.wantJump, g.wantAttack = false, nil
+        if g.events then sfx(g, "round") end
     end
 
     function Fighter.new(rng)
         local g = { rng = rng, score = 0, over = false, level = 1, round = 1, pWins = 0, cWins = 0, clock = 0, popups = {},
-            inp = { left = false, right = false, up = false, down = false } }
+            inp = { left = false, right = false, up = false, down = false }, events = {} }
         startRound(g)
         return g
     end
@@ -9005,18 +9010,21 @@ do
             o.state, o.t, o.stun, o.move = "blockstun", 0, 0.18, nil
             o.vx = dir * 3
             spark(g, sx, sy, "blockspark")
+            sfx(g, "block")
         else
             o.hp = o.hp - m.dmg
             o.state, o.t, o.stun, o.move = "hit", 0, m.stun, nil
             o.vx = dir * m.push
             if not grounded(o) then o.vy = -6 end
             spark(g, sx, sy, "spark")
+            sfx(g, m == FK.MOVES.special and "zap" or (m.high and "punch" or "kick"))
             if byPlayer then g.score = g.score + m.dmg * 10 end
         end
         if o.hp <= 0 then
             o.hp = 0
             o.state, o.move = "ko", nil
             o.vx, o.vy = dir * 8, -12
+            sfx(g, "ko")
             endRound(g, "K.O.!")
         end
     end
@@ -9043,6 +9051,7 @@ do
                 if not f.fired and f.t >= m.startup then
                     f.fired = true
                     g.shots[#g.shots + 1] = { x = f.x + f.facing * 1.4, y = f.y - 3.2, dir = f.facing, owner = f }
+                    sfx(g, "bark")
                 end
             elseif not f.hitDone and f.t >= m.startup and f.t <= m.startup + m.active then
                 tryHit(g, f, o, m)
@@ -9057,11 +9066,12 @@ do
             if attack == "special" and (f.cool > 0 or not onGround) then attack = onGround and nil or "kick" end
             if attack then
                 f.move, f.state, f.t, f.hitDone, f.fired = attack, attack, 0, false, false
-                if attack == "special" then f.cool = FK.MOVES.special.cooldown end
+                if attack == "special" then f.cool = FK.MOVES.special.cooldown else sfx(g, "swing") end
                 if onGround then f.vx = 0 end
             elseif onGround then
                 if cmd.jump then
                     f.vy, f.vx, f.state = -FK.jump, (cmd.move or 0) * FK.walk, "jump"
+                    if f.index == 1 then sfx(g, "jump") end
                 elseif cmd.crouch then
                     f.state, f.vx = "crouch", 0
                 elseif (cmd.move or 0) ~= 0 then
@@ -9136,11 +9146,13 @@ do
             g.cWins = g.cWins + 1
         end
         if g.pWins >= 2 then
+            sfx(g, "win")
             g.level = g.level + 1
             g.score = g.score + 2000
             g.pWins, g.cWins, g.round = 0, 0, 1
             g.popups[#g.popups + 1] = { x = 13, y = 8, text = "Shadow gets tougher!", t = 1.6, life = 1.6 }
         elseif g.cWins >= 2 then
+            sfx(g, "lose")
             g.over = true
             return
         else
@@ -9166,6 +9178,7 @@ do
         if g.pause > 0 then
             g.pause = g.pause - dt
             g.wantJump, g.wantAttack = false, nil
+            if g.pause <= 0 then sfx(g, "fight") end
             return
         end
         local pcmd, ccmd = NOCMD, NOCMD
@@ -9581,10 +9594,12 @@ local function buildGamesPanel(screenGui)
         end
     end
 
+    local loadSfxFor -- set once the sound loader exists
     local function selectGame(g)
         mg = g
         state = nil
         paintTabs()
+        if loadSfxFor then loadSfxFor(g) end
         if UIAPI.gamesRelabel then UIAPI.gamesRelabel() end
         buildBoard()
         setStatus("idle")
@@ -9683,6 +9698,7 @@ local function buildGamesPanel(screenGui)
         end
     end
 
+    local playSfx -- game sound effects (defined with their loader below)
     local loop
     local function stopLoop()
         if loop then loop:Disconnect(); loop = nil end
@@ -9697,6 +9713,10 @@ local function buildGamesPanel(screenGui)
                 if now >= t then held[a] = now + 0.05; mg.input(state, a) end
             end
             mg.update(state, dt)
+            if state.events and #state.events > 0 then
+                for _, name in ipairs(state.events) do playSfx(name) end
+                table.clear(state.events)
+            end
             if state.over then setStatus("over") end
             render()
         end)
@@ -9724,6 +9744,70 @@ local function buildGamesPanel(screenGui)
     end)
     table.insert(cleanups, function() bind(false); stopLoop() end)
 
+    -- Sound effects for games that have them (mg.sfx): loaded once per game,
+    -- .ogg first and .mp3 if Roblox does not load those; two copies of each
+    -- sound so quick hits can overlap. The level follows the sound setting in
+    -- the Game Boy window (Cfg.gbVolume).
+    local sfxSets = {} -- game id -> { name -> { pool, next } } | "loading" | false
+    local function loadSfx(g)
+        if not g.sfx or sfxSets[g.id] ~= nil then return end
+        sfxSets[g.id] = "loading"
+        task.spawn(function()
+            local service = game:GetService("SoundService")
+            for _, ext in ipairs({ "ogg", "mp3" }) do
+                local set, made, ok = {}, {}, true
+                for _, name in ipairs(g.sfx.names) do
+                    local id = urlImageAsset(SETTINGS.Auras.assetBase .. g.sfx.base .. name .. "." .. ext, "gamesfx")
+                    if not id then ok = false; break end
+                    local pool = {}
+                    for k = 1, 2 do
+                        local snd = Instance.new("Sound")
+                        snd.Name = "PuppyAdminSfx_" .. name
+                        snd.SoundId = id
+                        snd.Volume = 0
+                        snd.Parent = service
+                        pool[k] = snd
+                        made[#made + 1] = snd
+                    end
+                    set[name] = { pool = pool, next = 1 }
+                end
+                if ok then
+                    local t0, loaded = os.clock(), false
+                    while os.clock() - t0 < 6 do
+                        loaded = true
+                        for _, snd in ipairs(made) do if not snd.IsLoaded then loaded = false; break end end
+                        if loaded then break end
+                        task.wait(0.2)
+                    end
+                    if loaded then sfxSets[g.id] = set; return end
+                end
+                for _, snd in ipairs(made) do pcall(function() snd:Destroy() end) end
+            end
+            sfxSets[g.id] = false
+        end)
+    end
+    playSfx = function(name)
+        local set = sfxSets[mg.id]
+        local e = type(set) == "table" and set[name]
+        if not e then return end
+        local level = type(Cfg.gbVolume) == "number" and Cfg.gbVolume or 1
+        if level <= 0 then return end
+        local snd = e.pool[e.next]
+        e.next = e.next % #e.pool + 1
+        pcall(function()
+            snd.Volume = 0.6 * level
+            snd.TimePosition = 0
+            snd:Play()
+        end)
+    end
+    table.insert(cleanups, function()
+        for _, set in pairs(sfxSets) do
+            if type(set) == "table" then
+                for _, e in pairs(set) do for _, snd in ipairs(e.pool) do pcall(function() snd:Destroy() end) end end
+            end
+        end
+    end)
+
     -- sprite sheets (downloaded once; until then the pieces are coloured cells)
     task.spawn(function()
         for _, g in ipairs(MiniGames.list) do
@@ -9737,6 +9821,8 @@ local function buildGamesPanel(screenGui)
         end
     end)
 
+    loadSfxFor = loadSfx
+    loadSfx(mg)
     selectGame(mg)
 end
 
