@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.21-37" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.21-38" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -4523,14 +4523,14 @@ local cmds = {
     "hide", "unhide", "mute", "unmute",
     "tp",
     "aura", "unaura", "auras",
-    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "games", "gameboy", "doom", "finder", "shmost", "shlowest", "antiafk", "unantiafk", "owner", "kick", "ban", "unban", "bans", "blacklist", "antikick", "unantikick", "antivcban",
+    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "games", "gameboy", "gba", "doom", "finder", "shmost", "shlowest", "antiafk", "unantiafk", "owner", "kick", "ban", "unban", "bans", "blacklist", "antikick", "unantikick", "antivcban",
     "reanim",
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
 
 -- Movement aliases come from the engine's own registrations (PUP_MOVE).
 local ALIASES = {
-    anim = "reanim", reanimui = "reanim", boost = "performance", fpsboost = "performance", minigames = "games", arcade = "games", gb = "gameboy", emulator = "gameboy", servers = "finder", serverbrowser = "finder", puppyfinder = "finder", bl = "blacklist", banlist = "blacklist",
+    anim = "reanim", reanimui = "reanim", boost = "performance", fpsboost = "performance", minigames = "games", arcade = "games", gb = "gameboy", emulator = "gameboy", gameboyadvance = "gba", advance = "gba", servers = "finder", serverbrowser = "finder", puppyfinder = "finder", bl = "blacklist", banlist = "blacklist",
     wh = "esp", wallhack = "esp", unwh = "unesp", noesp = "unesp", ibp = "infbaseplate",
 }
 
@@ -4561,7 +4561,8 @@ local cmdDocs = {
     shmost = "shmost - Join the fullest server (Puppy Finder)",
     shlowest = "shlowest - Join the emptiest server (Puppy Finder)",
     gameboy = "gameboy - Game Boy emulator: plays .gb / .zip games from your PuppyAdmin/roms folder (also: gb, emulator)",
-    games = "games - Mini games: Snake, Stack Drop, Treat Chase, Star Pup, Puppy Fighter, plus Game Boy and Doom (also: minigames, arcade)",
+    gba = "gba - Game Boy Advance emulator: plays .gba / .zip games from your PuppyAdmin/gba folder (also: gameboyadvance, advance)",
+    games = "games - Mini games: Snake, Stack Drop, Treat Chase, Star Pup, Puppy Fighter, plus Game Boy, GBA and Doom (also: minigames, arcade)",
     performance = "performance - Performance panel: FPS unlock, anti-lag, low graphics, no fog / shadows / effects (also: boost)",
     perf = "perf - How long start-up and first-time actions took (for tuning the script)",
     tagrefresh = "tagrefresh - Load tags, auras and bans from the repository again and redraw every tag (running the script again does the same)",
@@ -4992,6 +4993,7 @@ end
 function H.performance() UIAPI.togglePanel("performance") end
 function H.games() UIAPI.togglePanel("games") end
 function H.gameboy() UIAPI.togglePanel("gameboy") end
+function H.gba() UIAPI.togglePanel("gba") end
 function H.doom() UIAPI.togglePanel("doom") end
 
 
@@ -9859,7 +9861,7 @@ local function buildGamesPanel(screenGui)
         render()
     end
 
-    local bw = (W - 32 - 3 * 6) / 4
+    local bw = (W - 32 - 4 * 6) / 5
     startBtn = uiButton(f, "Start", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16, 420), function()
         if status == "play" then setStatus("pause")
         elseif status == "pause" then setStatus("play")
@@ -9867,7 +9869,8 @@ local function buildGamesPanel(screenGui)
     end)
     uiButton(f, "Restart", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16 + (bw + 6), 420), newGame)
     uiButton(f, "Game Boy", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16 + (bw + 6) * 2, 420), function() H.gameboy() end).TextSize = 11
-    uiButton(f, "Doom", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16 + (bw + 6) * 3, 420), function() H.doom() end)
+    uiButton(f, "GBA", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16 + (bw + 6) * 3, 420), function() H.gba() end)
+    uiButton(f, "Doom", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16 + (bw + 6) * 4, 420), function() H.doom() end)
     local pads = { { "Left", "left" }, { "Up", "up" }, { "Down", "down" }, { "Right", "right" }, { "Rotate", "rotate" }, { "Drop", "drop" } }
     local pw = (W - 32 - (#pads - 1) * 6) / #pads
     local padButtons = {}
@@ -10597,6 +10600,359 @@ function UIAPI.buildGameBoyPanel(screenGui)
             startLoop()
         else
             if running then setRunning(false) end
+            saveNow()
+            bind(false)
+            stopLoop()
+        end
+    end)
+    table.insert(conns, UserInputService.WindowFocusReleased:Connect(function() releaseAll() end))
+    table.insert(cleanups, function() saveNow(); bind(false); stopLoop() end)
+end
+
+------------------------------------------------------------------------
+-- Game Boy Advance window (`gba`): runs Game Boy Advance games from the
+-- executor folder PuppyAdmin/gba (.gba or .zip). The emulator is a separate
+-- file in the repository (emu/gba-<version>.lua), downloaded once into
+-- PuppyAdmin/engine. It needs a GBA BIOS: the free Cult-of-GBA BIOS (MIT,
+-- assets/gba) is downloaded once, or PuppyAdmin/gba/gba_bios.bin is used
+-- when you have your own. Saves go next to the game as .sav. No sound.
+------------------------------------------------------------------------
+
+UIAPI.GBA_MODULE = { version = "76ba41a6d2", bytes = 95634 }
+UIAPI.GBA_BIOS = { path = "assets/gba/cult_bios_v1.bin", bytes = 16384 }
+
+function UIAPI.buildGbaPanel(screenGui)
+    local W, HGT = 392, 478
+    local f = uiWindow(screenGui, "gba", "Game Boy Advance", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2, 0.5, -HGT / 2))
+    local ROM_DIR, CACHE_DIR = "PuppyAdmin/gba", "PuppyAdmin/engine"
+    local GM = UIAPI.GBA_MODULE
+    local MOD_NAME = "gba-" .. GM.version .. ".lua"
+    local FRAME = 1 / 59.73
+    local KEYBIT = { a = 1, b = 2, select = 4, start = 8, right = 16, left = 32, up = 64, down = 128, r = 256, l = 512 }
+
+    local S = {
+        emu = nil, romPath = nil, running = false, fast = false,
+        acc = 0, frames = 0, secondStart = os.clock(), lastSave = os.clock(),
+        frameCost = 0.02, renderEvery = 1, skipCount = 0, keys = 0,
+    }
+
+    pcall(function()
+        if makefolder and isfolder and not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
+        if makefolder and isfolder and not isfolder(ROM_DIR) then makefolder(ROM_DIR) end
+    end)
+
+    local fullPath = {}
+    local function romList()
+        local out = {}
+        pcall(function()
+            for _, p in ipairs(listfiles(ROM_DIR)) do
+                local name = tostring(p):match("([^/\\]+)$")
+                local low = name and name:lower() or ""
+                if low:match("%.gba$") or low:match("%.agb$") or low:match("%.zip$") then
+                    out[#out + 1] = name
+                    fullPath[name] = tostring(p)
+                end
+            end
+        end)
+        table.sort(out, function(a, b) return a:lower() < b:lower() end)
+        return out
+    end
+    local listed = {}
+
+    -- screen: 240 x 160 at 1.5x
+    local screenW, screenH = 360, 240
+    local bezel = make("Frame", {
+        Position = UDim2.fromOffset((W - screenW) / 2 - 4, 76), Size = UDim2.fromOffset(screenW + 8, screenH + 8),
+        BackgroundColor3 = Color3.fromRGB(10, 12, 16), BorderSizePixel = 0,
+    }, f)
+    corner(bezel, 8)
+    local screen = make("ImageLabel", {
+        Position = UDim2.fromOffset(4, 4), Size = UDim2.fromOffset(screenW, screenH), BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+        BorderSizePixel = 0, ScaleType = Enum.ScaleType.Stretch,
+    }, bezel)
+    pcall(function() screen.ResampleMode = Enum.ResamplerMode.Pixelated end)
+    local overlay = label(bezel, {
+        Position = UDim2.fromOffset(14, 4), Size = UDim2.fromOffset(screenW - 20, screenH), TextWrapped = true, ZIndex = 3,
+        TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = Color3.fromRGB(230, 230, 230), TextSize = 13,
+        Text = "Put .gba or .zip games in your executor's workspace/PuppyAdmin/gba folder, then pick one above.\n\n"
+            .. "Keys: arrows / WASD move, X = A, Z = B, Q = L, E = R, Enter = Start, Backspace = Select.\n\n"
+            .. "Uses the free Cult-of-GBA BIOS; put your own as PuppyAdmin/gba/gba_bios.bin to use it instead. No sound.",
+    })
+    local status = label(f, { Position = UDim2.fromOffset(16, 332), Size = UDim2.fromOffset(W - 32, 16), TextSize = 11,
+        TextTruncate = Enum.TextTruncate.AtEnd, TextColor3 = PAL.DIM, Text = "No game loaded" })
+    local statusBase = "No game loaded"
+
+    local image
+    local function makeImage()
+        if image then return true end
+        local ok, ei = pcall(function()
+            return game:GetService("AssetService"):CreateEditableImage({ Size = Vector2.new(240, 160) })
+        end)
+        if not ok or not ei then return false, "EditableImage is not available: " .. tostring(ei) end
+        local shown = pcall(function() screen.ImageContent = Content.fromObject(ei) end)
+        if not shown then shown = pcall(function() ei.Parent = screen end) end
+        if not shown then return false, "could not show the screen" end
+        image = ei
+        return true
+    end
+    local function present()
+        if S.emu and image then
+            pcall(function() image:WritePixelsBuffer(Vector2.zero, Vector2.new(240, 160), S.emu.fb) end)
+        end
+    end
+
+    local function readBinary(path)
+        local ok, d = pcall(readfile, path)
+        if ok and typeof(d) == "buffer" then d = buffer.tostring(d) end
+        if ok and type(d) == "string" then return d end
+        return nil
+    end
+    -- emulator module and BIOS (each downloaded once)
+    local function loadModule()
+        if UIAPI.gbaModuleLoaded then return UIAPI.gbaModuleLoaded end
+        local head = "-- PuppyAdmin gba " .. GM.version
+        local function valid(src) return type(src) == "string" and #src == GM.bytes and src:sub(1, #head) == head end
+        local path = CACHE_DIR .. "/" .. MOD_NAME
+        local src = readBinary(path)
+        if not valid(src) then
+            local ok, body = pcall(function() return game:HttpGet(SETTINGS.Auras.assetBase .. "emu/" .. MOD_NAME) end)
+            if not ok or not valid(body) then error("emulator download failed or was incomplete", 0) end
+            src = body
+            pcall(function()
+                if makefolder and isfolder and not isfolder(CACHE_DIR) then makefolder(CACHE_DIR) end
+                writefile(path, src)
+            end)
+        end
+        local fn, err = (loadstring or load)(src, "=PuppyAdminGBA")
+        if not fn then error("emulator did not compile: " .. tostring(err), 0) end
+        UIAPI.gbaModuleLoaded = fn()
+        return UIAPI.gbaModuleLoaded
+    end
+    local function loadBios()
+        local own = readBinary(ROM_DIR .. "/gba_bios.bin")
+        if own and #own == 16384 then return own, "your BIOS" end
+        local B = UIAPI.GBA_BIOS
+        local path = CACHE_DIR .. "/gba_" .. B.path:match("([^/]+)$")
+        local bios = readBinary(path)
+        if not bios or #bios ~= B.bytes then
+            local ok, body = pcall(function() return game:HttpGet(SETTINGS.Auras.assetBase .. B.path) end)
+            if not ok or type(body) ~= "string" or #body ~= B.bytes then error("BIOS download failed or was incomplete", 0) end
+            bios = body
+            pcall(writefile, path, bios)
+        end
+        return bios, "Cult-of-GBA BIOS"
+    end
+
+    local function savePath(path) return (path:gsub("%.[^.]+$", "")) .. ".sav" end
+    local function saveNow()
+        local emu = S.emu
+        if not (emu and S.romPath and emu.saveDirty()) then return end
+        local data = emu.saveData()
+        if data and writefile and pcall(writefile, savePath(S.romPath), data) then emu.clearSaveDirty() end
+        S.lastSave = os.clock()
+    end
+
+    local releaseAll
+    local pauseBtn
+    local function setRunning(on)
+        S.running = on and S.emu ~= nil
+        if not S.running and releaseAll then releaseAll() end
+        if pauseBtn then pauseBtn.Text = S.running and "Pause" or "Play" end
+    end
+
+    local function loadGame(name)
+        task.spawn(function()
+            saveNow()
+            S.emu, S.running = nil, false
+            overlay.Visible = true
+            overlay.Text = "Loading " .. name .. "..."
+            local ok, err = pcall(function()
+                local okImg, why = makeImage()
+                if not okImg then error(why, 0) end
+                local mod = loadModule()
+                local bios, biosName = loadBios()
+                local path = ROM_DIR .. "/" .. name
+                local data = UIAPI.gbReadFile(name, { fullPath[name], path, ROM_DIR .. "\\" .. name })
+                if data:find("PK\3\4", 1, true) == 1 or name:lower():match("%.zip$") then
+                    overlay.Text = "Unpacking " .. name .. "..."
+                    local rom, inner = mod.Zip.extract(data, function() task.wait() end)
+                    if not rom then error(inner, 0) end
+                    data = rom
+                end
+                -- every GBA cartridge header has 0x96 at 0xB2
+                if #data < 0xC0 or data:byte(0xB3) ~= 0x96 then
+                    error((mod.Zip.describe and mod.Zip.describe(data) or "not a GBA game") .. " - not a valid Game Boy Advance game file", 0)
+                end
+                local save = readBinary(savePath(path))
+                S.emu = mod.GBA.new(data, bios, save)
+                S.romPath = path
+                local title = S.emu.title ~= "" and S.emu.title or name
+                statusBase = title .. "  (" .. biosName .. ", save: " .. S.emu.saveType .. ")"
+            end)
+            if not ok then
+                S.emu = nil
+                overlay.Text = "Could not start " .. name .. ":\n" .. tostring(err)
+                status.Text = "No game loaded"
+                return
+            end
+            overlay.Visible = false
+            S.acc, S.renderEvery, S.skipCount, S.frameCost = 0, 1, 0, 0.02
+            S.emu.setKeys(S.keys)
+            setRunning(true)
+            status.Text = statusBase
+        end)
+    end
+
+    -- top row ------------------------------------------------------------------------
+    local dd = uiDropdown(f, "", UDim2.fromOffset(170, 28), UDim2.fromOffset(16, 42), function()
+        listed = romList()
+        if #listed == 0 then return { "No games in PuppyAdmin/gba" } end
+        return listed
+    end, 1, function(i)
+        local name = listed[i]
+        if name then loadGame(name) end
+    end)
+    dd.button.TextSize = 11
+    pauseBtn = uiButton(f, "Play", UDim2.fromOffset(60, 28), UDim2.fromOffset(190, 42), function()
+        if S.emu then setRunning(not S.running) end
+    end)
+    local fastBtn
+    fastBtn = uiButton(f, "Fast", UDim2.fromOffset(60, 28), UDim2.fromOffset(254, 42), function()
+        S.fast = not S.fast
+        fastBtn.BackgroundColor3 = S.fast and PAL.ELEVATED or PAL.CARD
+        fastBtn.Text = S.fast and "Fast on" or "Fast"
+    end)
+    uiButton(f, "Reset", UDim2.fromOffset(60, 28), UDim2.fromOffset(318, 42), function()
+        if S.romPath then loadGame(S.romPath:match("([^/\\]+)$")) end
+    end)
+
+    -- input ----------------------------------------------------------------------------
+    local held = {}
+    local function press(name, down)
+        held[name] = down or nil
+        local mask = 0
+        for k in pairs(held) do mask = mask + KEYBIT[k] end
+        S.keys = mask
+        if S.emu then S.emu.setKeys(mask) end
+    end
+    releaseAll = function()
+        held = {}
+        S.keys = 0
+        if S.emu then S.emu.setKeys(0) end
+    end
+    local function padButton(text, name, x, y, w, h, round)
+        local b = make("TextButton", {
+            Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, h), BackgroundColor3 = PAL.CARD, BackgroundTransparency = 0.1,
+            BorderSizePixel = 0, AutoButtonColor = false, Text = text, TextColor3 = PAL.TEXT, Font = Enum.Font.GothamBold, TextSize = 12,
+        }, f)
+        corner(b, round and math.floor(w / 2) or 6)
+        b.InputBegan:Connect(function(input) if isPointer(input) then press(name, true); b.BackgroundColor3 = PAL.ELEVATED end end)
+        b.InputEnded:Connect(function(input) if isPointer(input) then press(name, false); b.BackgroundColor3 = PAL.CARD end end)
+        b.MouseLeave:Connect(function() if held[name] then press(name, false); b.BackgroundColor3 = PAL.CARD end end)
+        return b
+    end
+    local py = 356
+    padButton("L", "l", 16, py, 70, 24)
+    padButton("R", "r", W - 86, py, 70, 24)
+    padButton("^", "up", 58, py + 30, 32, 32)
+    padButton("<", "left", 24, py + 64, 32, 32)
+    padButton(">", "right", 92, py + 64, 32, 32)
+    padButton("v", "down", 58, py + 98, 32, 32)
+    padButton("Select", "select", 146, py + 92, 52, 22)
+    padButton("Start", "start", 204, py + 92, 52, 22)
+    padButton("B", "b", W - 108, py + 56, 40, 40, true)
+    padButton("A", "a", W - 60, py + 36, 40, 40, true)
+
+    local KC = Enum.KeyCode
+    local KEYS = {
+        [KC.Up] = "up", [KC.W] = "up", [KC.Down] = "down", [KC.S] = "down",
+        [KC.Left] = "left", [KC.A] = "left", [KC.Right] = "right", [KC.D] = "right",
+        [KC.X] = "a", [KC.K] = "a", [KC.Z] = "b", [KC.J] = "b", [KC.Q] = "l", [KC.E] = "r",
+        [KC.Return] = "start", [KC.Backspace] = "select", [KC.RightShift] = "select",
+    }
+    local keyList = {}
+    for kc in pairs(KEYS) do keyList[#keyList + 1] = kc end
+    local ACTION = "PuppyAdminGBA"
+    local bound = false
+    local function onKey(_, state, input)
+        if not (S.running and S.emu) then return Enum.ContextActionResult.Pass end
+        local name = KEYS[input.KeyCode]
+        if not name then return Enum.ContextActionResult.Pass end
+        press(name, state == Enum.UserInputState.Begin)
+        return Enum.ContextActionResult.Sink
+    end
+    local function bind(on)
+        if on == bound then return end
+        bound = on
+        if on then
+            pcall(function() ContextActionService:BindActionAtPriority(ACTION, onKey, false, 3000, table.unpack(keyList)) end)
+        else
+            pcall(function() ContextActionService:UnbindAction(ACTION) end)
+            releaseAll()
+        end
+    end
+
+    -- main loop: real-time pacing. When frames cost more than the time they stand for,
+    -- only every 2nd or 3rd one is drawn (the game keeps its speed for longer).
+    local loop
+    local function startLoop()
+        if loop then return end
+        loop = RunService.Heartbeat:Connect(function(dt)
+            local emu = S.emu
+            if not (S.running and emu) then return end
+            local want
+            if S.fast then
+                want = math.clamp(math.floor(0.03 / math.max(S.frameCost, 0.002)), 1, 4)
+                S.acc = 0
+            else
+                S.acc = math.min(S.acc + dt, 0.25)
+                want = math.min(3, math.floor(S.acc / FRAME))
+                S.acc = S.acc - want * FRAME
+                if S.acc > 0.1 then S.acc = 0 end
+            end
+            local budget = os.clock() + 0.03
+            local drew = false
+            for i = 1, want do
+                local t = os.clock()
+                S.skipCount = S.skipCount + 1
+                local render = (i == want) and S.skipCount >= S.renderEvery
+                if render then S.skipCount = 0 end
+                local ok, err = pcall(emu.runFrame, render)
+                if not ok then
+                    setRunning(false)
+                    overlay.Visible = true
+                    overlay.Text = "The emulator stopped:\n" .. tostring(err)
+                    return
+                end
+                drew = drew or render
+                S.frames = S.frames + 1
+                S.frameCost = S.frameCost * 0.9 + (os.clock() - t) * 0.1
+                if os.clock() > budget then break end
+            end
+            if drew then present() end
+            -- draw less often when a frame costs more than real time allows
+            if S.frameCost > FRAME * 1.15 then S.renderEvery = math.min(3, S.renderEvery + 1)
+            elseif S.frameCost < FRAME * 0.6 then S.renderEvery = math.max(1, S.renderEvery - 1) end
+            local now = os.clock()
+            if now - S.secondStart >= 1 then
+                local pct = math.floor(S.frames / (now - S.secondStart) / 59.73 * 100 + 0.5)
+                S.frames, S.secondStart = 0, now
+                status.Text = statusBase .. "  [" .. pct .. "%" .. (S.renderEvery > 1 and (", drawing 1 in " .. S.renderEvery) or "") .. "]"
+            end
+            if now - S.lastSave > 5 then saveNow() end
+        end)
+        table.insert(conns, loop)
+    end
+    local function stopLoop()
+        if loop then loop:Disconnect(); loop = nil end
+    end
+
+    f:GetPropertyChangedSignal("Visible"):Connect(function()
+        if f.Visible then
+            bind(true)
+            startLoop()
+        else
+            if S.running then setRunning(false) end
             saveNow()
             bind(false)
             stopLoop()
@@ -11633,6 +11989,7 @@ local function buildPanels(screenGui)
     B.performance = function() buildPerformancePanel(screenGui) end
     B.games = function() buildGamesPanel(screenGui) end
     B.gameboy = function() UIAPI.buildGameBoyPanel(screenGui) end
+    B.gba = function() UIAPI.buildGbaPanel(screenGui) end
     B.doom = function() UIAPI.buildDoomPanel(screenGui) end
     B.finder = function() UIAPI.buildFinderPanel(screenGui) end
 end
@@ -11974,13 +12331,15 @@ local function createUI()
     end)
 
     -- third row: more windows, then the anti-AFK switch
-    for i, p in ipairs({ { "Finder", "finder" }, { "Game Boy", "gameboy" }, { "Doom", "doom" } }) do
-        actionButton(settingsFrame, p[1], UDim2.new(0, 15 + (i - 1) * 66, 0, 234), UDim2.new(0, 62, 0, 28)).MouseButton1Click:Connect(function()
+    for i, p in ipairs({ { "Finder", "finder" }, { "Game Boy", "gameboy" }, { "GBA", "gba" }, { "Doom", "doom" } }) do
+        local b = actionButton(settingsFrame, p[1], UDim2.new(0, 15 + (i - 1) * 58, 0, 234), UDim2.new(0, 54, 0, 28))
+        b.TextSize = 11
+        b.MouseButton1Click:Connect(function()
             local fn = H[p[2]]
             if type(fn) == "function" then fn({}) end
         end)
     end
-    local afkBtn = actionButton(settingsFrame, "", UDim2.new(0, 15 + 3 * 66, 0, 234), UDim2.new(0, 128, 0, 28))
+    local afkBtn = actionButton(settingsFrame, "", UDim2.new(0, 15 + 4 * 58, 0, 234), UDim2.new(0, 98, 0, 28))
     afkBtn.TextSize = 11
     local function afkText()
         afkBtn.Text = UIAPI.antiAfk.on and "Anti-AFK: on" or "Anti-AFK: off"
