@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.21-41" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.21-42" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -3079,6 +3079,7 @@ function Pup.boot()
     end
     Perf.since("Engine start (first reanim / movement command)", loadStart)
     Pup.booted, Pup.gui, Pup.cmds, Pup.pupL, Pup.init = true, res.gui, res.cmds, res.pupL, res.init
+    if UIAPI.hookSuperfly then pcall(UIAPI.hookSuperfly) end
     if Pup.gui then
         Pup.gui.Enabled = not Hide.uiHidden
         -- the engine's palette is the default theme's, so theme presets and
@@ -4995,6 +4996,14 @@ function H.performance() UIAPI.togglePanel("performance") end
 function H.games() UIAPI.togglePanel("games") end
 function H.gameboy() UIAPI.togglePanel("gameboy") end
 function H.gba() UIAPI.togglePanel("gba") end
+-- superfly [speed]: the Superfly window (the engine's own panel needs UI kits it does not ship)
+function H.superfly(a)
+    if not Pup.boot() then return end
+    UIAPI.hookSuperfly()
+    local v = tonumber(a and a[1])
+    if v then Pup.state.setFlySpeed(v) end
+    UIAPI.togglePanel("superfly")
+end
 function H.doom() UIAPI.togglePanel("doom") end
 
 
@@ -6472,7 +6481,7 @@ function buildMovementPanel(screenGui)
     sectionTitle(body, add, "Flight")
     local S = Pup.state
     switch("Fly", function() return S.flying() and not S.superfly() and not S.on("helicopter") end, function(on) H[on and "fly" or "unfly"]({}) end)
-    switch("Superfly (opens the Fly panel)", function() return S.superfly() end, function(on) H[on and "superfly" or "unsuperfly"]({}) end)
+    switch("Superfly (hold the mouse to fly)", function() return S.superfly() end, function(on) UIAPI.superflySet(on) end)
     switch("Helicopter", function() return S.on("helicopter") end, function(on) H[on and "helicopter" or "unhelicopter"]({}) end)
     switch("HatFly", function() return S.on("hatfly") end, function(on) H[on and "hatfly" or "unhatfly"]({}) end)
     local sp = uiSlider(body, "Fly speed", UDim2.fromOffset(12, add(48)), IW, {
@@ -6489,6 +6498,100 @@ function buildMovementPanel(screenGui)
         for _, fn in ipairs(syncers) do pcall(fn) end
     end
     f:GetPropertyChangedSignal("Visible"):Connect(function() if f.Visible then UIAPI.syncFns.move() end end)
+end
+
+------------------------------------------------------------------------
+-- Superfly window (`superfly`). The flight is the engine's (sFLY with its
+-- superfly mode: hold the left mouse button / the screen to fly where the
+-- camera looks); this window replaces the engine's own Superfly panel, which
+-- is built with UI kits the engine does not include. The engine finds it
+-- through the same hooks it used for its panel (_G._flyPanel,
+-- _G._flyToggleSet, _G._flySlider, _G._pupPanelEnable.superfly).
+------------------------------------------------------------------------
+
+function UIAPI.superflySet(on)
+    if not Pup.boot() then return end
+    UIAPI.hookSuperfly()
+    if not on then
+        Pup.run("unsuperfly", {})
+        return
+    end
+    Pup.active.superfly = true
+    task.spawn(function()
+        local L = Pup.pupL
+        local ok, err = pcall(function()
+            L.NOFLY()
+            task.wait()
+            L.sFLY()
+            if _G._pupSuperflyStart then _G._pupSuperflyStart() end
+        end)
+        if ok then
+            note("Superfly", UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+                and "On: hold the screen to fly" or "On: hold the left mouse button to fly")
+        else
+            note("Superfly", tostring(err):sub(1, 80), RED)
+        end
+        if _G._pupMarkCmdToggle then pcall(_G._pupMarkCmdToggle, "superfly", ok) end
+        UIAPI.sync()
+    end)
+end
+
+function UIAPI.hookSuperfly()
+    if not Pup.booted then return end
+    local function panel() return UIAPI.panels.superfly end
+    _G._initFlyPanel = function() _G._flyPanel = panel() end
+    -- a half-built engine panel (from an earlier failed open) goes away
+    local ours = rawget(UIAPI.panels, "superfly")
+    if _G._flyPanel and _G._flyPanel ~= ours then
+        pcall(function() if _G._flyPanel.Name == "SuperflyPanel" then _G._flyPanel:Destroy() end end)
+    end
+    _G._flyPanel = ours
+    -- the engine calls this when superfly stops (unsuperfly, unfly, death): only show it
+    _G._flyToggleSet = function(on, fire)
+        if UIAPI.superflySwitch then UIAPI.superflySwitch.set(on) end
+        if fire and on and not Pup.state.superfly() then UIAPI.superflySet(true) end
+        if not on then Pup.active.superfly = nil end
+    end
+    _G._flySlider = { setValue = function(v)
+        local sl = UIAPI.superflySlider
+        if sl and not sl.isDragging() then sl.set(tonumber(v) or 1) end
+    end }
+    _G._pupPanelEnable = _G._pupPanelEnable or {}
+    _G._pupPanelEnable.superfly = {
+        ensure = function()
+            local p = panel()
+            _G._flyPanel = p
+            if p then p.Visible = true; UIAPI.sync() end
+        end,
+        setOn = function(on, fire) _G._flyToggleSet(on, fire ~= false) end,
+    }
+end
+
+function UIAPI.buildSuperflyPanel(screenGui)
+    local W, HGT = 300, 214
+    local f = uiWindow(screenGui, "superfly", "Superfly", UDim2.fromOffset(W, HGT), UDim2.new(0.5, 30, 0.5, -HGT / 2))
+    local touch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+    label(f, {
+        Position = UDim2.fromOffset(16, 44), Size = UDim2.fromOffset(W - 32, 58), TextWrapped = true, TextSize = 12,
+        TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = PAL.DIM,
+        Text = touch and "Turn it on, then hold the screen to fly where the camera looks. Let go to hover."
+            or "Turn it on, then hold the left mouse button to fly where the camera looks. W A S D, Space and Ctrl steer too; let go to hover.",
+    })
+    local S = Pup.state
+    UIAPI.superflySwitch = uiSwitch(f, "Superfly", UDim2.fromOffset(16, 106), W - 32, S.superfly(), function(on)
+        UIAPI.superflySet(on)
+    end)
+    UIAPI.superflySlider = uiSlider(f, "Speed", UDim2.fromOffset(16, 144), W - 32, {
+        min = 0.5, max = 20, step = 0.5, value = S.flySpeed(), format = function(v) return string.format("%.1f", v) end,
+        onChange = function(v) S.setFlySpeed(v) end,
+    })
+    UIAPI.syncFns.superfly = function()
+        if not f.Visible then return end
+        UIAPI.superflySwitch.set(S.superfly())
+        if not UIAPI.superflySlider.isDragging() then UIAPI.superflySlider.set(S.flySpeed()) end
+    end
+    f:GetPropertyChangedSignal("Visible"):Connect(function() if f.Visible then UIAPI.syncFns.superfly() end end)
+    _G._flyPanel = f
 end
 
 ------------------------------------------------------------------------
@@ -12220,6 +12323,7 @@ local function buildPanels(screenGui)
     B.games = function() buildGamesPanel(screenGui) end
     B.gameboy = function() UIAPI.buildGameBoyPanel(screenGui) end
     B.gba = function() UIAPI.buildGbaPanel(screenGui) end
+    B.superfly = function() UIAPI.buildSuperflyPanel(screenGui) end
     B.doom = function() UIAPI.buildDoomPanel(screenGui) end
     B.finder = function() UIAPI.buildFinderPanel(screenGui) end
 end
