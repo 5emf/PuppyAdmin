@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.20-34" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.20-35" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -8927,40 +8927,59 @@ do
     function StarPup.hud(g) return "Score " .. g.score .. "   Lives " .. g.lives .. "   Wave " .. g.waveNo end
 
 
+
     -- Puppy Fighter (one-on-one fighting) ------------------------------------
-    -- Biscuit (you) against Shadow (computer): best of three rounds, 60 s each.
-    -- Punch (high: crouching dodges it), kick (hits low too), hold back to
-    -- block, down + punch for a Bark Blast. Each match won makes Shadow
-    -- sharper; losing a match ends the run. Positions are in cells; y is the
-    -- feet, growing downwards.
+    -- Biscuit (you) against Shadow (computer): best of three 60 s rounds.
+    -- Normals chain (punch > punch > kick) and cancel into specials when they
+    -- connect; air punch > air kick; Moon Flip launches and cancels into air
+    -- attacks for juggles (3 max).
+    -- Attack heights: high (crouching ducks it), mid, low (crouch-block only),
+    -- overhead (standing block only). Blocking drains the guard meter; at zero
+    -- the guard breaks (dizzy). Hitting an attack's startup is a counter hit.
+    -- Each match won makes Shadow sharper and moves to the next stage; losing a
+    -- match ends the run. Positions are in cells; y is the feet, growing down.
     local Fighter = {
         id = "fighter", title = "Puppy Fighter", tab = "Fighter", cols = 26, rows = 18, sprites = true, hold = true,
-        sheet = "assets/games/puppy_fighter.png",
-        -- painted stage behind rows 2..18, and the VS card shown before each match
-        backdrop = "assets/games/puppy_fighter_stage.png", splash = "assets/games/puppy_fighter_vs.png",
+        sheet = "assets/games/puppy_fighter_v2.png",
+        -- painted stages behind rows 2..18 (one per level, in turn), and the VS card before each match
+        backdrop = { "assets/games/puppy_fighter_stage.png", "assets/games/puppy_fighter_stage_beach.png", "assets/games/puppy_fighter_stage_snow.png" },
+        splash = "assets/games/puppy_fighter_vs.png",
         -- original synthesised effects in assets/sfx/fighter (.ogg, .mp3 fallback)
-        sfx = { base = "assets/sfx/fighter/", names = { "punch", "kick", "swing", "block", "jump", "bark", "zap", "ko", "round", "fight", "win", "lose" } },
+        sfx = { base = "assets/sfx/fighter/", names = { "punch", "kick", "swing", "block", "jump", "bark", "zap", "ko", "round", "fight", "win", "lose",
+            "counter", "guardbreak", "dash", "knockdown" } },
         pads = { up = "Jump", down = "Crouch", rotate = "Kick", drop = "Punch" },
-        help = "Left / right move, Up jumps, Down crouches, hold back to block. Space or J punches, R or K kicks, Down + punch fires a Bark Blast.",
+        help = "Move left / right, Up jumps, Down crouches, hold back to block. Space/J punch, R/K kick. Down+punch Bark Blast, "
+            .. "Down+kick Tail Sweep, Forward+punch Pounce Dash, Forward+kick Moon Flip, air Down+kick Dive. Chain punch, punch, kick.",
     }
     MiniGames.fighter = Fighter
-    local FK = {
-        floor = 15, left = 2, right = 24, walk = 6.5, jump = 17, gravity = 46, roundTime = 60,
-        MOVES = {
-            punch = { startup = 0.07, active = 0.09, recover = 0.16, range = 2.7, dmg = 6, stun = 0.28, push = 5, high = true },
-            kick = { startup = 0.13, active = 0.10, recover = 0.26, range = 3.3, dmg = 9, stun = 0.38, push = 7 },
-            special = { startup = 0.22, active = 0, recover = 0.35, dmg = 10, stun = 0.4, push = 6, speed = 12, cooldown = 1.6 },
-        },
-        NAMES = { "Biscuit", "Shadow" },
-    }
+    local FK = { floor = 15, left = 2, right = 24, walk = 6.5, jump = 17, gravity = 46, roundTime = 60, guardMax = 100, guardRegen = 25 }
     Fighter.FK = FK
+    -- startup / active / recover (s), range (cells), dmg, stun (s), push (cells/s), guard (taken when blocked)
+    local MOVES = {
+        punch = { startup = 0.07, active = 0.09, recover = 0.16, range = 2.7, dmg = 6, stun = 0.30, push = 4, guard = 16, level = "high", normal = true, pose = 6, chain = { punch2 = true, kick = true } },
+        punch2 = { startup = 0.06, active = 0.08, recover = 0.18, range = 2.8, dmg = 5, stun = 0.32, push = 4, guard = 14, level = "high", normal = true, pose = 16, chain = { kick = true } },
+        kick = { startup = 0.13, active = 0.10, recover = 0.26, range = 3.3, dmg = 9, stun = 0.38, push = 7, guard = 22, level = "mid", normal = true, pose = 7 },
+        airpunch = { startup = 0.05, active = 0.16, recover = 0.08, range = 2.6, dmg = 6, stun = 0.36, push = 3, guard = 14, level = "overhead", air = true, normal = true, pose = 17, chain = { airkick = true } },
+        airkick = { startup = 0.08, active = 0.22, recover = 0.08, range = 3.0, dmg = 8, stun = 0.40, push = 4, guard = 18, level = "overhead", air = true, normal = true, pose = 14 },
+        bark = { startup = 0.22, active = 0, recover = 0.35, dmg = 10, stun = 0.40, push = 6, guard = 30, level = "mid", special = true, pose = 11, speed = 12, cooldown = 1.6 },
+        dash = { startup = 0.10, active = 0.22, recover = 0.30, range = 2.4, dmg = 11, stun = 0.45, push = 8, guard = 26, level = "mid", special = true, pose = 16, vx = 14 },
+        flip = { startup = 0.04, active = 0.24, recover = 0.42, range = 2.6, dmg = 12, stun = 0.50, push = 3, guard = 24, level = "mid", special = true, pose = 13, rise = 15, invuln = 0.22, launch = true, tall = true,
+            chain = { airpunch = true, airkick = true } }, -- on hit, carry on in the air
+        sweep = { startup = 0.12, active = 0.14, recover = 0.36, range = 3.4, dmg = 9, stun = 0.50, push = 4, guard = 22, level = "low", special = true, pose = 12, vx = 6, knockdown = true },
+        dive = { startup = 0.06, active = 1.0, recover = 0.18, range = 2.2, dmg = 9, stun = 0.42, push = 5, guard = 20, level = "overhead", special = true, pose = 14, air = true, dive = true },
+    }
+    Fighter.MOVES = MOVES
     local NOCMD = { move = 0 }
     -- sounds for the window to play (g.events, emptied by the window every frame)
     local function sfx(g, name) g.events[#g.events + 1] = name end
+    local function popup(g, x, y, text, life)
+        g.popups[#g.popups + 1] = { x = x, y = y, text = text, t = life or 0.9, life = life or 0.9 }
+    end
 
     local function newFighter(x, facing, index)
-        return { x = x, y = FK.floor, vx = 0, vy = 0, facing = facing, hp = 100, state = "idle", t = 0, stun = 0,
-            move = nil, hitDone = false, fired = false, cool = 0, index = index, blocking = false }
+        return { x = x, y = FK.floor, vx = 0, vy = 0, facing = facing, hp = 100, guard = FK.guardMax, guardIdle = 9, state = "idle", t = 0, stun = 0,
+            move = nil, hitDone = false, connected = false, fired = false, cool = 0, index = index, inv = 0, combo = 0, juggles = 0,
+            blockHigh = false, blockLow = false, buffer = nil, bufferT = 0 }
     end
 
     local function startRound(g)
@@ -8976,7 +8995,7 @@ do
     end
 
     function Fighter.new(rng)
-        local g = { rng = rng, score = 0, over = false, level = 1, round = 1, pWins = 0, cWins = 0, clock = 0, popups = {},
+        local g = { rng = rng, score = 0, over = false, level = 1, stage = 1, round = 1, pWins = 0, cWins = 0, clock = 0, popups = {},
             inp = { left = false, right = false, up = false, down = false }, events = {}, splash = 2.4 }
         startRound(g)
         return g
@@ -8994,10 +9013,7 @@ do
     function Fighter.releaseAll(g) for k in pairs(g.inp) do g.inp[k] = false end end
 
     local function grounded(f) return f.y >= FK.floor - 0.001 end
-
-    local function spark(g, x, y, kind)
-        g.sparks[#g.sparks + 1] = { x = x, y = y, kind = kind, t = 0.18 }
-    end
+    local function spark(g, x, y, kind) g.sparks[#g.sparks + 1] = { x = x, y = y, kind = kind, t = 0.2 } end
 
     local function endRound(g, msg)
         if g.roundEnd then return end
@@ -9005,22 +9021,100 @@ do
         g.roundMsg = msg
     end
 
-    local function applyHit(g, o, dir, m, sx, sy, byPlayer)
+    -- which move a button press means, from the direction held and whether the fighter is in the air
+    local function resolve(f, raw, cmd, onGround)
+        if not onGround then
+            if raw == "kick" and cmd.crouch then return "dive" end
+            return raw == "punch" and "airpunch" or "airkick"
+        end
+        if cmd.crouch then return raw == "punch" and "bark" or "sweep" end
+        if (cmd.move or 0) == f.facing then return raw == "punch" and "dash" or "flip" end
+        return raw
+    end
+
+    local function startMove(g, f, name)
+        local m = MOVES[name]
+        f.move, f.state, f.t = name, name, 0
+        f.hitDone, f.connected, f.fired, f.rose, f.dove, f.landT = false, false, false, false, false, nil
+        f.buffer, f.bufferT = nil, 0
+        if m.invuln then f.inv = m.invuln end
+        if name == "bark" then f.cool = m.cooldown end
+        if grounded(f) and not m.vx then f.vx = 0 end
+        if name == "dash" or name == "flip" then sfx(g, "dash")
+        elseif name ~= "bark" then sfx(g, "swing") end
+    end
+
+    -- hitbox heights by attack level (relative to the attacker's feet)
+    local function hitBand(f, m)
+        if m.tall then return f.y - 8, f.y end
+        if m.level == "high" then return f.y - 5.2, f.y - 3.4 end
+        if m.level == "low" then return f.y - 1.6, f.y end
+        if m.level == "overhead" then return f.y - 4.2, f.y + 0.8 end
+        return f.y - 4.6, f.y - 1.2
+    end
+    local function hurtTop(o)
+        local low = o.state == "crouch" or o.state == "sweep" or (o.state == "blockstun" and o.blockKind == "low")
+        return o.y - (low and 3 or 5.2)
+    end
+
+    local function applyHit(g, o, a, dir, m, sx, sy)
         if o.state == "ko" then return end
-        if o.blocking then
+        local blocked = (o.blockHigh and m.level ~= "low") or (o.blockLow and m.level ~= "overhead" and m.level ~= "high")
+        if blocked then
+            o.guard, o.guardIdle = o.guard - m.guard, 0
             o.hp = o.hp - math.max(1, math.floor(m.dmg / 5))
-            o.state, o.t, o.stun, o.move = "blockstun", 0, 0.18, nil
-            o.vx = dir * 3
-            spark(g, sx, sy, "blockspark")
-            sfx(g, "block")
+            if a then a.combo = 0 end
+            if o.guard <= 0 then
+                o.guard = 50
+                o.state, o.t, o.stun, o.move = "dizzy", 0, 1.0, nil
+                o.vx = dir * 2
+                spark(g, sx, sy, "bigspark")
+                popup(g, o.x, o.y - 6.5, "GUARD BREAK!", 1.2)
+                sfx(g, "guardbreak")
+            else
+                o.blockKind = o.blockLow and "low" or "high"
+                o.state, o.t, o.stun, o.move = "blockstun", 0, 0.18, nil
+                o.vx = dir * 3
+                spark(g, sx, sy, "blockspark")
+                sfx(g, "block")
+            end
         else
-            o.hp = o.hp - m.dmg
-            o.state, o.t, o.stun, o.move = "hit", 0, m.stun, nil
-            o.vx = dir * m.push
-            if not grounded(o) then o.vy = -6 end
-            spark(g, sx, sy, "spark")
-            sfx(g, m == FK.MOVES.special and "zap" or (m.high and "punch" or "kick"))
-            if byPlayer then g.score = g.score + m.dmg * 10 end
+            local om = o.move and MOVES[o.move]
+            local counter = om ~= nil and o.t <= om.startup + om.active
+            local wasHurt = o.state == "hit" or o.state == "juggle" or o.state == "dizzy"
+            local combo = 1
+            if a then
+                a.combo = wasHurt and (a.combo + 1) or 1
+                combo = a.combo
+            end
+            local dmg = m.dmg * math.max(0.5, 1 - 0.12 * (combo - 1))
+            local stun = m.stun
+            if counter then
+                dmg, stun = dmg * 1.4, stun + 0.15
+                popup(g, o.x, o.y - 6.5, "COUNTER!", 0.9)
+                sfx(g, "counter")
+            end
+            dmg = math.max(1, math.floor(dmg + 0.5))
+            o.hp = o.hp - dmg
+            o.move = nil
+            if a and a.index == 1 then g.score = g.score + dmg * 10 + (combo - 1) * 50 end
+            if combo >= 2 then
+                for i = #g.popups, 1, -1 do if g.popups[i].combo then table.remove(g.popups, i) end end
+                g.popups[#g.popups + 1] = { x = a.index == 1 and 5 or 21, y = 4, text = combo .. " HITS", t = 1.1, life = 1.1, combo = true }
+            end
+            if m.launch then
+                o.state, o.vy, o.vx, o.juggles = "juggle", -16, dir * 2, 1
+            elseif o.state == "juggle" or not grounded(o) then
+                o.state, o.vy, o.vx = "juggle", -7, dir * 2.5
+                o.juggles = (o.juggles or 0) + 1
+            elseif m.knockdown then
+                o.state, o.t, o.stun, o.vx = "down", 0, 0.8, dir * 3
+                sfx(g, "knockdown")
+            else
+                o.state, o.t, o.stun, o.vx = "hit", 0, stun, dir * m.push
+            end
+            spark(g, sx, sy, counter and "bigspark" or "spark")
+            if m == MOVES.bark then sfx(g, "zap") elseif m.level == "high" or m == MOVES.punch2 or m == MOVES.airpunch then sfx(g, "punch") else sfx(g, "kick") end
         end
         if o.hp <= 0 then
             o.hp = 0
@@ -9032,44 +9126,84 @@ do
     end
 
     local function tryHit(g, f, o, m)
-        local dx = (o.x - f.x) * f.facing
-        if dx <= 0 or dx > m.range or math.abs(o.y - f.y) >= 3.5 then return end
-        if m.high and o.state == "crouch" and grounded(o) then return end -- ducked under a punch
-        f.hitDone = true
-        applyHit(g, o, f.facing, m, f.x + f.facing * (dx - 0.6), f.y - (m.high and 3.6 or 2.6), f.index == 1)
+        if o.state == "ko" or o.state == "down" or o.inv > 0 then return end
+        if o.state == "juggle" and (o.juggles or 0) >= 4 then return end -- after three juggle hits they drop
+        local reach = f.x + f.facing * m.range
+        local x1, x2 = math.min(f.x, reach), math.max(f.x, reach)
+        if o.x < x1 - 0.6 or o.x > x2 + 0.6 then return end
+        local top, bottom = hitBand(f, m)
+        if bottom < hurtTop(o) or top > o.y then return end
+        f.hitDone, f.connected = true, true
+        local sy = math.max(top, hurtTop(o)) + 0.8
+        applyHit(g, o, f, f.facing, m, o.x - f.facing * 0.5, sy)
     end
 
-    -- one fighter's turn: cmd = { move = -1/0/1, jump, crouch, attack }
+    -- one fighter's turn: cmd = { move = -1/0/1, jump, crouch, attack = "punch" | "kick" (the button) }
     local function act(g, f, o, cmd, dt)
         f.cool = math.max(0, f.cool - dt)
+        f.inv = math.max(0, f.inv - dt)
         f.t = f.t + dt
+        f.guardIdle = f.guardIdle + dt
+        if f.guardIdle > 1 and f.state ~= "dizzy" then f.guard = math.min(FK.guardMax, f.guard + FK.guardRegen * dt) end
+        if f.bufferT > 0 then f.bufferT = f.bufferT - dt; if f.bufferT <= 0 then f.buffer = nil end end
         local onGround = grounded(f)
-        if f.state == "ko" then return end
-        if f.state == "hit" or f.state == "blockstun" then
+        if cmd.attack then f.buffer, f.bufferT = resolve(f, cmd.attack, cmd, onGround), 0.25 end
+        if f.state == "ko" or f.state == "juggle" then return end
+        if f.state == "down" then
+            if f.t >= f.stun then f.state, f.inv = "idle", 0.3 end
+            return
+        end
+        if f.state == "hit" or f.state == "blockstun" or f.state == "dizzy" then
             if f.t >= f.stun then f.state = onGround and "idle" or "jump" end
-        elseif f.move then
-            local m = FK.MOVES[f.move]
-            if f.move == "special" then
+            f.blockHigh = f.state == "blockstun" and f.blockKind == "high"
+            f.blockLow = f.state == "blockstun" and f.blockKind == "low"
+            return
+        end
+        if f.move then
+            local m = MOVES[f.move]
+            local activeEnd = m.startup + m.active
+            if m.vx then
+                if f.t >= m.startup and f.t <= activeEnd then f.vx = f.facing * m.vx elseif onGround then f.vx = 0 end
+            end
+            if m.rise and not f.rose and f.t >= m.startup then f.rose, f.vy, f.vx = true, -m.rise, f.facing * 2 end
+            if m.dive and not f.dove and f.t >= m.startup then f.dove, f.vx, f.vy = true, f.facing * 10, 12 end
+            if f.move == "bark" then
                 if not f.fired and f.t >= m.startup then
                     f.fired = true
                     g.shots[#g.shots + 1] = { x = f.x + f.facing * 1.4, y = f.y - 3.2, dir = f.facing, owner = f }
                     sfx(g, "bark")
                 end
-            elseif not f.hitDone and f.t >= m.startup and f.t <= m.startup + m.active then
+            elseif not f.hitDone and f.t >= m.startup and (f.t <= activeEnd or (m.dive and not onGround)) then
                 tryHit(g, f, o, m)
             end
-            if f.t >= m.startup + m.active + m.recover then
+            -- chains and special cancels, only after the move connected
+            local nxt = f.buffer
+            if nxt and f.connected then
+                if f.move == "punch" and nxt == "punch" then nxt = "punch2" end
+                local nm = MOVES[nxt]
+                if nm and ((m.chain and m.chain[nxt]) or (m.normal and nm.special and (nm.air == true) == not onGround)) then
+                    if nxt ~= "bark" or f.cool <= 0 then startMove(g, f, nxt); return end
+                end
+            end
+            local done
+            if m.dive then
+                if onGround and f.dove then
+                    f.landT = f.landT or f.t
+                    done = f.t - f.landT >= m.recover
+                    f.vx = 0
+                end
+            else
+                done = f.t >= activeEnd + m.recover
+            end
+            if done then
                 f.move = nil
                 f.state = onGround and "idle" or "jump"
             end
         else
             if onGround then f.facing = (o.x >= f.x) and 1 or -1 end
-            local attack = cmd.attack
-            if attack == "special" and (f.cool > 0 or not onGround) then attack = onGround and nil or "kick" end
-            if attack then
-                f.move, f.state, f.t, f.hitDone, f.fired = attack, attack, 0, false, false
-                if attack == "special" then f.cool = FK.MOVES.special.cooldown else sfx(g, "swing") end
-                if onGround then f.vx = 0 end
+            local want = f.buffer
+            if want and (MOVES[want].air == true) == not onGround and (want ~= "bark" or f.cool <= 0) then
+                startMove(g, f, want)
             elseif onGround then
                 if cmd.jump then
                     f.vy, f.vx, f.state = -FK.jump, (cmd.move or 0) * FK.walk, "jump"
@@ -9084,18 +9218,31 @@ do
                 end
             end
         end
-        -- holding away from the opponent on the ground blocks (standing or crouching)
-        f.blocking = onGround and not f.move and f.state ~= "hit" and f.state ~= "ko"
-            and (f.state == "back" or f.state == "blockstun" or (f.state == "crouch" and (cmd.move or 0) == -f.facing))
+        -- holding away from the opponent on the ground blocks: standing (high / mid / overhead) or crouching (low / mid)
+        local free = onGround and not f.move
+        f.blockHigh = free and f.state == "back"
+        f.blockLow = free and f.state == "crouch" and (cmd.move or 0) == -f.facing
     end
 
-    local function physics(f, dt)
-        if f.state == "hit" or f.state == "blockstun" or f.state == "ko" then f.vx = f.vx * math.max(0, 1 - 5 * dt) end
+    local function physics(g, f, dt)
+        local wasAir = not grounded(f)
+        if f.state == "hit" or f.state == "blockstun" or f.state == "ko" or f.state == "dizzy" or f.state == "down" then
+            f.vx = f.vx * math.max(0, 1 - 5 * dt)
+        end
         f.vy = f.vy + FK.gravity * dt
         f.y = f.y + f.vy * dt
         if f.y >= FK.floor then
             f.y, f.vy = FK.floor, 0
-            if f.state == "jump" then f.state, f.vx = "idle", 0 end
+            if wasAir then
+                if f.state == "juggle" then
+                    f.state, f.t, f.stun, f.juggles = "down", 0, 0.6, 0
+                    sfx(g, "knockdown")
+                elseif f.state == "jump" then
+                    f.state, f.vx = "idle", 0
+                elseif f.move and MOVES[f.move].air and not MOVES[f.move].dive then
+                    f.move, f.state, f.vx = nil, "idle", 0 -- landing ends air attacks
+                end
+            end
         end
         f.x = math.clamp(f.x + f.vx * dt, FK.left, FK.right)
     end
@@ -9103,7 +9250,6 @@ do
     local function playerCmd(g)
         local inp = g.inp
         local cmd = { move = (inp.right and 1 or 0) - (inp.left and 1 or 0), jump = g.wantJump, crouch = inp.down, attack = g.wantAttack }
-        if cmd.attack == "punch" and inp.down then cmd.attack = "special" end
         g.wantJump, g.wantAttack = false, nil
         return cmd
     end
@@ -9115,23 +9261,43 @@ do
         local lvl = g.level
         local r = g.rng(100)
         local cmd = { move = 0 }
-        local threat = p.move and p.move ~= "special" and p.t < 0.2 and dist < 4.2
+        local cAir, pAir = not grounded(c), not grounded(p)
+        -- keep a combo going
+        if c.move and c.connected and r <= 30 + lvl * 12 then
+            cmd.attack = (c.move == "punch" or c.move == "punch2") and (g.rng(2) == 1 and "punch" or "kick") or "punch"
+            if c.move == "kick" and g.rng(2) == 1 then cmd.attack, cmd.crouch = "kick", true end
+            return cmd
+        end
+        if cAir then
+            if dist < 3.6 then cmd.attack = g.rng(3) == 1 and "punch" or "kick" end
+            if dist < 5 and r <= 20 then cmd.attack, cmd.crouch = "kick", true end
+            return cmd
+        end
+        local threat = p.move and MOVES[p.move] and not MOVES[p.move].special and p.t < 0.2 and dist < 4.2
+        local lowThreat = threat and MOVES[p.move].level == "low"
         for _, s in ipairs(g.shots) do
             if s.owner == p and (c.x - s.x) * s.dir > 0 and math.abs(s.x - c.x) < 7 then threat = "shot" end
         end
-        if threat and r <= 20 + lvl * 12 then
+        if pAir and dist < 5 and r <= 25 + lvl * 10 then
+            cmd.move, cmd.attack = toward, "kick" -- Moon Flip against the jump-in
+        elseif threat and r <= 20 + lvl * 12 then
             if threat == "shot" and g.rng(2) == 1 then cmd.jump, cmd.move = true, toward
-            else cmd.move = -toward end -- hold back: block
+            else
+                cmd.move = -toward -- block; crouching against lows
+                if lowThreat or g.rng(3) == 1 then cmd.crouch = true end
+            end
         elseif dist > 9 then
-            if c.cool <= 0 and r <= 25 + lvl * 5 then cmd.attack = "special" else cmd.move = toward end
+            if c.cool <= 0 and r <= 25 + lvl * 5 then cmd.attack, cmd.crouch = "punch", true else cmd.move = toward end
         elseif dist > 3.2 then
-            if r <= 14 then cmd.jump, cmd.move = true, toward
-            elseif r <= 26 and c.cool <= 0 then cmd.attack = "special"
+            if r <= 12 then cmd.jump, cmd.move = true, toward
+            elseif r <= 24 then cmd.move, cmd.attack = toward, "punch" -- Pounce Dash
+            elseif r <= 32 and c.cool <= 0 then cmd.attack, cmd.crouch = "punch", true
             else cmd.move = toward end
         else
-            if r <= 40 then cmd.attack = "punch"
-            elseif r <= 70 then cmd.attack = "kick"
-            elseif r <= 82 then cmd.crouch = true
+            if r <= 34 then cmd.attack = "punch"
+            elseif r <= 54 then cmd.attack = "kick"
+            elseif r <= 64 then cmd.attack, cmd.crouch = "kick", true -- Tail Sweep
+            elseif r <= 76 then cmd.move, cmd.crouch = -toward, true -- crouch block
             else cmd.move = -toward end
         end
         return cmd
@@ -9150,10 +9316,11 @@ do
         if g.pWins >= 2 then
             sfx(g, "win")
             g.level = g.level + 1
+            g.stage = (g.level - 1) % #Fighter.backdrop + 1
             g.score = g.score + 2000
             g.pWins, g.cWins, g.round = 0, 0, 1
             g.splash = 2.4 -- VS card before the next match
-            g.popups[#g.popups + 1] = { x = 13, y = 8, text = "Shadow gets tougher!", t = 1.6, life = 1.6 }
+            popup(g, 13, 8, "Shadow gets tougher!", 1.6)
         elseif g.cWins >= 2 then
             sfx(g, "lose")
             g.over = true
@@ -9191,17 +9358,18 @@ do
             g.cpuT = g.cpuT - dt
             if g.cpuT <= 0 then
                 g.cpuPlan = cpuThink(g, c, p)
-                g.cpuT = math.max(0.12, 0.38 - g.level * 0.04) * (0.7 + g.rng(60) / 100)
+                g.cpuT = math.max(0.1, 0.36 - g.level * 0.04) * (0.7 + g.rng(60) / 100)
             end
             ccmd = g.cpuPlan
         end
         act(g, p, c, pcmd, dt)
         act(g, c, p, ccmd, dt)
         if g.cpuPlan then g.cpuPlan.attack, g.cpuPlan.jump = nil, nil end
-        physics(p, dt)
-        physics(c, dt)
-        -- bodies do not overlap
-        if p.state ~= "ko" and c.state ~= "ko" and math.abs(p.y - c.y) < 3 then
+        physics(g, p, dt)
+        physics(g, c, dt)
+        -- bodies do not overlap (except someone on the floor)
+        local solid = function(f) return f.state ~= "ko" and f.state ~= "down" end
+        if solid(p) and solid(c) and math.abs(p.y - c.y) < 3 then
             local gap = c.x - p.x
             if math.abs(gap) < 1.8 then
                 local push = (1.8 - math.abs(gap)) / 2 * (gap >= 0 and 1 or -1)
@@ -9210,14 +9378,15 @@ do
             end
         end
         -- Bark Blasts
-        local m = FK.MOVES.special
+        local bm = MOVES.bark
         for i = #g.shots, 1, -1 do
             local s = g.shots[i]
-            s.x = s.x + s.dir * m.speed * dt
+            s.x = s.x + s.dir * bm.speed * dt
             local target = s.owner == p and c or p
             local gone = s.x < 0 or s.x > Fighter.cols
-            if not gone and math.abs(target.x - s.x) < 1.1 and math.abs((target.y - 3) - s.y) < 2.4 and target.state ~= "ko" then
-                applyHit(g, target, s.dir, m, s.x, s.y, s.owner == p)
+            if not gone and math.abs(target.x - s.x) < 1.1 and s.y >= hurtTop(target) - 0.5 and s.y <= target.y
+                and target.state ~= "ko" and target.state ~= "down" and target.inv <= 0 then
+                applyHit(g, target, s.owner, s.dir, bm, s.x, s.y)
                 gone = true
             end
             for j = #g.shots, 1, -1 do
@@ -9239,7 +9408,7 @@ do
         end
     end
 
-    -- stage and HUD in the grid: health bars and round stars on the top row
+    -- HUD in the grid: health (row 1), guard (row 2, over the stage); the stage itself is a picture
     function Fighter.draw(g, put, sprites)
         local cols = Fighter.cols
         local pBar = math.ceil(g.p.hp / 100 * 11)
@@ -9250,22 +9419,32 @@ do
         put(13, 1, g.pWins >= 2 and "winOn" or "winOff")
         put(14, 1, g.cWins >= 2 and "winOn" or "winOff")
         put(15, 1, g.cWins >= 1 and "winOn" or "winOff")
+        local pG = math.ceil(g.p.guard / FK.guardMax * 8)
+        local cG = math.ceil(g.c.guard / FK.guardMax * 8)
+        local flashP = g.p.state == "dizzy" and math.floor(g.clock * 8) % 2 == 0
+        local flashC = g.c.state == "dizzy" and math.floor(g.clock * 8) % 2 == 0
+        for x = 1, 8 do put(x, 2, (x <= pG and not flashP) and "gd" or "gdEmpty") end
+        for x = 1, 8 do put(cols + 1 - x, 2, (x <= cG and not flashC) and "gd" or "gdEmpty") end
         if g.backdropShown then return end -- the painted stage is behind the board
         for y = 2, Fighter.rows do
             local kind = y <= 5 and "sky1" or (y <= 9 and "sky2" or (y <= 11 and "sky3" or (y <= 15 and "fence" or (y == 16 and "groundTop" or "dirt"))))
-            for x = 1, cols do put(x, y, kind) end
+            for x = 1, cols do
+                if not (y == 2 and (x <= 8 or x > cols - 8)) then put(x, y, kind) end
+            end
         end
         if sprites then return end
         for _, f in ipairs({ g.p, g.c }) do
-            put(math.floor(f.x) + 1, math.floor(f.y - 1) + 1, "f" .. f.index)
-            put(math.floor(f.x) + 1, math.floor(f.y - 3) + 1, "f" .. f.index)
+            put(math.floor(f.x) + 1, math.max(1, math.floor(f.y - 1) + 1), "f" .. f.index)
+            put(math.floor(f.x) + 1, math.max(1, math.floor(f.y - 3) + 1), "f" .. f.index)
         end
         for _, s in ipairs(g.shots) do
-            if s.x >= 0 and s.x < Fighter.cols then put(math.floor(s.x) + 1, math.floor(s.y) + 1, "bark") end
+            if s.x >= 0 and s.x < cols then put(math.floor(s.x) + 1, math.floor(s.y) + 1, "bark") end
         end
     end
 
-    local POSE = { idle = 0, walk = 2, back = 2, jump = 4, crouch = 5, punch = 6, kick = 7, block = 8, blockstun = 8, hit = 9, ko = 10, special = 11 }
+    -- poses: 0 idle, 1 idle, 2 walk, 3 walk, 4 jump, 5 crouch, 6 punch, 7 kick, 8 block, 9 hit, 10 down / KO,
+    -- 11 bark, 12 sweep, 13 flip, 14 air kick / dive, 15 dizzy, 16 lunge (punch 2, dash), 17 air punch
+    local STATE_POSE = { idle = 0, walk = 2, back = 2, jump = 4, crouch = 5, hit = 9, juggle = 9, down = 10, ko = 10, dizzy = 15 }
     local FIGHTER_SCALE = 4.6 -- sprite height about 6.2 cells
     function Fighter.actors(g)
         local list = {}
@@ -9274,11 +9453,20 @@ do
             list[#list + 1] = { kind = "shadow", x = f.x + 0.5, y = FK.floor + 0.3, scale = 1.8 }
         end
         for _, f in ipairs({ g.p, g.c }) do
-            local pose = POSE[f.state] or 0
+            local pose
+            if f.move then pose = MOVES[f.move].pose
+            elseif f.state == "blockstun" then pose = f.blockKind == "low" and 5 or 8
+            else pose = STATE_POSE[f.state] or 0 end
             if f.state == "idle" then pose = math.floor(g.clock * 3) % 2
-            elseif f.state == "walk" or f.state == "back" then pose = 2 + math.floor(g.clock * 8) % 2 end
-            if f.blocking and f.state == "back" then pose = 8 end
-            list[#list + 1] = { kind = "f" .. f.index, frame = pose, dir = f.facing, x = f.x + 0.5, y = f.y - half + 0.5, scale = FIGHTER_SCALE }
+            elseif f.state == "walk" or (f.state == "back" and not f.blockHigh) then pose = 2 + math.floor(g.clock * 8) % 2
+            elseif f.state == "back" then pose = 8 end
+            local blink = f.inv > 0 and f.state ~= "down" and math.floor(g.clock * 20) % 2 == 0
+            if not blink then
+                list[#list + 1] = { kind = "f" .. f.index, frame = pose, dir = f.facing, x = f.x + 0.5, y = f.y - half + 0.5, scale = FIGHTER_SCALE }
+            end
+            if f.state == "dizzy" then
+                list[#list + 1] = { kind = "stars", x = f.x + 0.5, y = f.y - 6.2 + 0.5, scale = 1.6 }
+            end
         end
         for _, s in ipairs(g.shots) do
             -- (a shot cancelled by another one waits off-screen for its removal)
@@ -9287,26 +9475,27 @@ do
             end
         end
         for _, s in ipairs(g.sparks) do
-            list[#list + 1] = { kind = s.kind, x = s.x + 0.5, y = s.y + 0.5, scale = 1.4 + (0.18 - s.t) * 4 }
+            list[#list + 1] = { kind = s.kind, x = s.x + 0.5, y = s.y + 0.5, scale = (s.kind == "bigspark" and 2.2 or 1.4) + (0.2 - s.t) * 4 }
         end
         return list
     end
 
-    -- sheet (64 px cells, 8 columns): fighter i, facing (right / left) -> 12 poses each,
-    -- starting at cell ((i - 1) * 2 + facingIndex) * 12; then effects and stage tiles
-    local FX = { barkR = { 0, 6 }, barkL = { 1, 6 }, spark = { 2, 6 }, blockspark = { 3, 6 }, shadow = { 4, 6 } }
+    -- sheet (64 px cells, 8 columns): fighter i, facing (right / left) -> 18 poses from cell ((i - 1) * 2 + facing) * 18;
+    -- effects on row 9, stage / HUD tiles on rows 10-11
+    local POSES_PER = 18
+    local FX = { barkR = { 0, 9 }, barkL = { 1, 9 }, spark = { 2, 9 }, blockspark = { 3, 9 }, shadow = { 4, 9 }, bigspark = { 5, 9 }, stars = { 6, 9 } }
     function Fighter.spriteCell(a)
         if a.kind == "f1" or a.kind == "f2" then
             local i = a.kind == "f1" and 0 or 1
-            local idx = (i * 2 + (a.dir == -1 and 1 or 0)) * 12 + (a.frame or 0)
+            local idx = (i * 2 + (a.dir == -1 and 1 or 0)) * POSES_PER + (a.frame or 0)
             return idx % 8, math.floor(idx / 8)
         end
         local c = FX[a.kind] or FX.spark
         return c[1], c[2]
     end
     local FIGHT_TILES = {
-        sky1 = { 0, 7 }, sky2 = { 1, 7 }, sky3 = { 2, 7 }, fence = { 3, 7 }, groundTop = { 4, 7 }, dirt = { 5, 7 },
-        hp1 = { 6, 7 }, hp2 = { 7, 7 }, hpEmpty = { 0, 8 }, winOn = { 1, 8 }, winOff = { 2, 8 },
+        sky1 = { 0, 10 }, sky2 = { 1, 10 }, sky3 = { 2, 10 }, fence = { 3, 10 }, groundTop = { 4, 10 }, dirt = { 5, 10 },
+        hp1 = { 6, 10 }, hp2 = { 7, 10 }, hpEmpty = { 0, 11 }, winOn = { 1, 11 }, winOff = { 2, 11 }, gd = { 3, 11 }, gdEmpty = { 4, 11 },
     }
     function Fighter.cellSprite(kind) local t = FIGHT_TILES[kind]; if t then return t[1], t[2] end end
 
@@ -9345,8 +9534,13 @@ local function buildGamesPanel(screenGui)
     local held = {}
     -- sprite layer (games with actors, e.g. Treat Chase): pooled images over the board
     local sheets, spriteLayer, cellSize = {}, nil, 1 -- game id -> sprite sheet content id
-    local backdrops, splashes = {}, {}                 -- game id -> background picture / intro card
+    local backdrops, splashes = {}, {}                 -- game id -> background pictures (by stage) / intro card
     local backdropImg, splashImg
+    local function backdropPic()
+        local set = backdrops[mg.id]
+        if not set then return nil end
+        return set[(state and state.stage) or 1] or set[1]
+    end
     local sprites, popLbls = {}, {}
 
     local PIECE = {
@@ -9358,7 +9552,7 @@ local function buildGamesPanel(screenGui)
     local function style(kind)
         -- maze paths stay faint so the walls and pieces stand out
         if kind == "empty" then
-            if mg.backdrop and backdrops[mg.id] then return PAL.ELEVATED, 1 end -- the painted stage shows through
+            if mg.backdrop and backdropPic() then return PAL.ELEVATED, 1 end -- the painted stage shows through
             return PAL.ELEVATED, mg.sprites and 0.88 or 0.55
         end
         if kind:sub(1, 5) == "head_" then return PAL.ACCENT, 0 end
@@ -9557,8 +9751,8 @@ local function buildGamesPanel(screenGui)
     local function render()
         local n = cols * rows
         for i = 1, n do nextK[i] = "empty" end
+        local pic = backdropPic()
         if backdropImg then
-            local pic = backdrops[mg.id]
             backdropImg.Visible = pic ~= nil
             if pic and backdropImg.Image ~= pic then backdropImg.Image = pic end
         end
@@ -9570,7 +9764,10 @@ local function buildGamesPanel(screenGui)
                 splashImg.ImageTransparency = t < 0.4 and (1 - t / 0.4) or 0 -- fades out at the end
             end
         end
-        if state then state.backdropShown = backdrops[mg.id] ~= nil end
+        if state then
+            if state.backdropShown ~= (pic ~= nil) then cur = {} end -- the stage picture appeared / changed: repaint the grid
+            state.backdropShown = pic ~= nil
+        end
         if state then
             mg.draw(state, function(x, y, k)
                 if x >= 1 and x <= cols and y >= 1 and y <= rows then nextK[(y - 1) * cols + x] = k end
@@ -9854,8 +10051,11 @@ local function buildGamesPanel(screenGui)
                 end
             end
             if g.backdrop then
-                local a = urlImageAsset(SETTINGS.Auras.assetBase .. g.backdrop, "games")
-                if a then backdrops[g.id] = a; if mg == g then cur = {}; render() end end
+                local list = type(g.backdrop) == "table" and g.backdrop or { g.backdrop }
+                local got = {}
+                for k, path in ipairs(list) do got[k] = urlImageAsset(SETTINGS.Auras.assetBase .. path, "games") end
+                backdrops[g.id] = got
+                if mg == g then cur = {}; render() end
             end
             if g.splash then
                 local a = urlImageAsset(SETTINGS.Auras.assetBase .. g.splash, "games")
