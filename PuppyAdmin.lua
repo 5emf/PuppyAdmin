@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.21-42" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.22-43" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -357,6 +357,7 @@ local Cfg = {
     tags = {},         -- old format (one look per UserId); moved into tagDefs on load
     tagDefs = {},      -- named tags shared by several players (see Tags below)
     tagClickTp = true, -- clicking someone else's tag teleports you to them
+    tagsHidden = false, -- hide every nametag on your own screen (others still see theirs)
     skipIntro = false, -- start without the brand intro
     uiFont = "Default", -- Settings > Font (UIFont.choices())
     uiTextScale = 1,    -- Settings > Text size (0.5 - 2)
@@ -1692,6 +1693,7 @@ function Tags.build(player, char)
         Name = "PuppyAdminTag", Adornee = head, AlwaysOnTop = true, Active = true,
         Size = UDim2.fromOffset(cardW, cardH), StudsOffset = Vector3.new(0, tonumber(def.offset) or 3, 0),
         MaxDistance = SETTINGS.TagView.renderDistance, LightInfluence = 0, ResetOnSpawn = false,
+        Enabled = not Cfg.tagsHidden and Hide.map[player.UserId] == nil,
     }, nil)
     pcall(function() g.ClipsDescendants = false end)
 
@@ -1812,9 +1814,11 @@ function Tags.setCompact(v, on)
 end
 
 function Tags.step(t)
-    -- `hide <player>` hides their tag too (the billboard is not under their head any more)
+    -- `hide <player>` hides their tag too (the billboard is not under their head any more);
+    -- Cfg.tagsHidden (hidetags / Settings) hides them all, on your screen only
+    local all = not Cfg.tagsHidden
     for uid, g in pairs(Tags.gui) do
-        local show = Hide.map[uid] == nil
+        local show = all and Hide.map[uid] == nil
         if g.Enabled ~= show then g.Enabled = show end
     end
     -- far from your camera or your character: picture only (2 studs of slack so it does not flicker at the edge)
@@ -4525,14 +4529,14 @@ local cmds = {
     "hide", "unhide", "mute", "unmute",
     "tp",
     "aura", "unaura", "auras",
-    "tagui", "taglist", "tagsync", "tagrefresh", "perf", "performance", "games", "gameboy", "gba", "doom", "finder", "shmost", "shlowest", "antiafk", "unantiafk", "owner", "kick", "ban", "unban", "bans", "blacklist", "antikick", "unantikick", "antivcban",
+    "tagui", "taglist", "tagsync", "tagrefresh", "hidetags", "showtags", "toggletags", "perf", "performance", "games", "gameboy", "gba", "doom", "finder", "shmost", "shlowest", "antiafk", "unantiafk", "owner", "kick", "ban", "unban", "bans", "blacklist", "antikick", "unantikick", "antivcban",
     "reanim",
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
 
 -- Movement aliases come from the engine's own registrations (PUP_MOVE).
 local ALIASES = {
-    anim = "reanim", reanimui = "reanim", boost = "performance", fpsboost = "performance", minigames = "games", arcade = "games", gb = "gameboy", emulator = "gameboy", gameboyadvance = "gba", advance = "gba", servers = "finder", serverbrowser = "finder", puppyfinder = "finder", bl = "blacklist", banlist = "blacklist",
+    anim = "reanim", reanimui = "reanim", boost = "performance", fpsboost = "performance", minigames = "games", arcade = "games", gb = "gameboy", emulator = "gameboy", notags = "hidetags", tagsoff = "hidetags", tagson = "showtags", tags = "toggletags", gameboyadvance = "gba", advance = "gba", servers = "finder", serverbrowser = "finder", puppyfinder = "finder", bl = "blacklist", banlist = "blacklist",
     wh = "esp", wallhack = "esp", unwh = "unesp", noesp = "unesp", ibp = "infbaseplate",
 }
 
@@ -4568,6 +4572,9 @@ local cmdDocs = {
     performance = "performance - Performance panel: FPS unlock, anti-lag, low graphics, no fog / shadows / effects (also: boost)",
     perf = "perf - How long start-up and first-time actions took (for tuning the script)",
     tagrefresh = "tagrefresh - Load tags, auras and bans from the repository again and redraw every tag (running the script again does the same)",
+    hidetags = "hidetags - Hide every nametag, only on your screen; showtags brings them back (also: notags, tagsoff)",
+    showtags = "showtags - Show nametags again after hidetags (also: tagson)",
+    toggletags = "toggletags - Hide or show every nametag on your screen (also: tags)",
     tagsync = "tagsync [pull|push] - Shared tags in the repository (token goes in Settings, never in chat)",
     taglist = "taglist [add|remove <tag> <users...>] [new|delete <name>] - All tags and their members; add many players at once",
     antikick = "antikick - Block client-side Kick calls on you",
@@ -5022,6 +5029,18 @@ end
 function H.tagrefresh()
     Tags.refreshFromRepo(false)
 end
+
+-- Nametag visibility on your own screen (the tags stay as they are for everyone else)
+function UIAPI.setTagsHidden(on, quiet)
+    Cfg.tagsHidden = on and true or false
+    cfgSave()
+    Tags.step(os.clock())
+    if UIAPI.tagsVisChanged then pcall(UIAPI.tagsVisChanged) end
+    if not quiet then note("Nametags", Cfg.tagsHidden and "Hidden on your screen" or "Shown", LIGHT) end
+end
+function H.hidetags() UIAPI.setTagsHidden(true) end
+function H.showtags() UIAPI.setTagsHidden(false) end
+function H.toggletags() UIAPI.setTagsHidden(not Cfg.tagsHidden) end
 
 -- tagsync          status
 -- tagsync pull     load the repository's tags now
@@ -12614,7 +12633,7 @@ local function createUI()
         return b
     end
 
-    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 876), "SETTINGS  -  build " .. tostring(genv.PuppyAdminBuild))
+    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 912), "SETTINGS  -  build " .. tostring(genv.PuppyAdminBuild))
 
     fieldLabel(settingsFrame, "Chat command prefixes (comma separated, 1-3 symbols)", 45)
     local prefixBox = fieldBox(settingsFrame, 65, table.concat(Cfg.prefixes, ", "))
@@ -12797,6 +12816,17 @@ local function createUI()
         local ok, msg = UIFont.setScale(1)
         note("Text size", msg, ok and LIGHT or RED)
     end)
+
+    -- nametags on your screen only (hidetags / showtags do the same)
+    local tagVisBtn = actionButton(settingsFrame, "", UDim2.new(0, 15, 0, 830), UDim2.new(1, -30, 0, 28))
+    tagVisBtn.TextSize = 12
+    local function tagVisText()
+        tagVisBtn.Text = Cfg.tagsHidden and "Nametags: hidden on your screen (click to show)" or "Nametags: shown (click to hide on your screen)"
+        tagVisBtn.TextColor3 = Cfg.tagsHidden and Color3.fromRGB(255, 190, 120) or Color3.new(1, 1, 1)
+    end
+    tagVisText()
+    UIAPI.tagsVisChanged = tagVisText
+    tagVisBtn.MouseButton1Click:Connect(function() UIAPI.setTagsHidden(not Cfg.tagsHidden) end)
 
     local killBtn = actionButton(settingsFrame, "KILL SCRIPT", UDim2.new(0, 15, 1, -45), UDim2.new(1, -30, 0, 32), Color3.fromRGB(130, 35, 35))
     killBtn.MouseButton1Click:Connect(function() shutdown(false) end)
