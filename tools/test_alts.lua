@@ -171,22 +171,26 @@ local RunService = { Heartbeat = Heartbeat, Stepped = Stepped }
 local function part(name)
     return { Name = name, CanCollide = true, CFrame = CFrame.new(0, 3, 0), AssemblyLinearVelocity = vec(), AssemblyAngularVelocity = vec(),
         IsA = function(self, c) return c == "BasePart" end,
+        IsDescendantOf = function() return true end,
         Position = nil, Parent = "character" }
 end
-local function motor(name)
-    return { Name = name, Enabled = true, IsA = function(_, c) return c == "Motor6D" or c == "JointInstance" end }
+local function motor(name, p0, p1)
+    return { Name = name, Enabled = true, Part0 = p0, Part1 = p1,
+        IsA = function(_, c) return c == "Motor6D" or c == "JointInstance" end }
 end
 local function character(pos)
     local root = part("HumanoidRootPart")
     root.CFrame = CFrame.new(pos)
     local parts = { root, part("Head"), part("UpperTorso") }  -- 3 free parts for the limb tests
-    local motors = { motor("Neck"), motor("Waist") }
+    local motors = { motor("Neck", parts[3], parts[2]), motor("Waist", root, parts[3]) }
+    local socket = { Enabled = true, IsA = function(_, c) return c == "BallSocketConstraint" end }
     local hum = { Health = 100, PlatformStand = false,
         SetStateEnabled = function() end, BreakJointsOnDeath = true }
     local descendants = {}
     for _, p in ipairs(parts) do descendants[#descendants + 1] = p end
     for _, m in ipairs(motors) do descendants[#descendants + 1] = m end
-    return { root = root, hum = hum, parts = parts, motors = motors,
+    descendants[#descendants + 1] = socket
+    return { root = root, hum = hum, parts = parts, motors = motors, socket = socket,
         FindFirstChild = function(_, n) if n == "HumanoidRootPart" then return root end end,
         FindFirstChildOfClass = function(_, c) if c == "Humanoid" then return hum end end,
         GetDescendants = function() return descendants end }
@@ -210,7 +214,11 @@ local task = {
 local function runTasks() for _, co in ipairs(tasks) do if coroutine.status(co) == "suspended" then assert(coroutine.resume(co)) end end end
 local function runDelays() local d = delays; delays = {}; for _, fn in ipairs(d) do fn() end end
 
-local game = { PlaceId = 1818, JobId = "job-A" }
+-- ReplicatedStorage holds whatever ragdoll remote a test puts in REMOTES
+REMOTES = {}
+local repStorage = { FindFirstChild = function(_, n) return REMOTES[n] end }
+local game = { PlaceId = 1818, GameId = 77, JobId = "job-A",
+    GetService = function(_, n) if n == "ReplicatedStorage" then return repStorage end end }
 local os2 = { time = function() return NOW end, clock = function() return CLOCK end }
 
 ------------------------------------------------------------------ one Puppy Admin copy per account
@@ -454,52 +462,101 @@ do
     for f = 1, 40 do Heartbeat:fire(1 / 60) end
 end
 
--- broken-up look (no death): bodies stay whole and alive but tumble
+-- separate limbs, no ragdoll in this game, no death allowed: bodies stay whole and tumble
 do
     main.Cfg.altForm.limbs = true
     main.H.alt({ "orbit1" })
     runTasks()
     local oc = json.decode(FS["PuppyAdmin/companion/altcmd.json"])
-    check(oc.cmd == "orbit" and oc.params.limbs == true and oc.params.limbsDeath == false, "tumble flag is sent, death off")
+    check(oc.cmd == "orbit" and oc.params.limbs == true and oc.params.limbsDeath == false, "limbs flag is sent, death off")
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    CLOCK = CLOCK + 3 -- past the settle time
     for f = 1, 6 do Heartbeat:fire(1 / 60) end
     local ch = PLAYERS[2].Character
-    check(ch.hum.Health == 100, "the broken-up look never kills the alt")
-    check(ch.motors[1].Enabled == true and alts[1].UIAPI.Alts.limbState == nil, "joints untouched without the death switch")
+    check(alts[1].UIAPI.Alts.limbState and alts[1].UIAPI.Alts.limbState.phase == "whole", "no ragdoll and no death: stays whole")
+    check(ch.hum.Health == 100 and ch.motors[1].Enabled == true, "never killed, joints untouched")
     local look = ch.root.CFrame.LookVector
     for f = 1, 20 do Heartbeat:fire(1 / 60) end
-    check((ch.root.CFrame.LookVector - look).Magnitude > 0.05, "the body tumbles")
+    check((ch.root.CFrame.LookVector - look).Magnitude > 0.05, "the whole body tumbles instead")
     main.Cfg.altForm.limbs = false
     main.H.unform(); runTasks()
 end
 
--- real separated limbs: only with the opt-in death switch
+-- separate limbs through the game's ragdoll (the reanimation engine's remote names): no death
 do
+    local fired = 0
+    REMOTES.RagdollEvent = { IsA = function(_, c) return c == "RemoteEvent" end,
+        FireServer = function()
+            fired = fired + 1
+            -- the server ragdolls: Motor6Ds off (replicated to the client)
+            for _, p in pairs(PLAYERS) do
+                if p.Character and p.Character.motors then
+                    for _, m in ipairs(p.Character.motors) do m.Enabled = (fired % 2 == 0) end
+                end
+            end
+        end }
+    PLAYERS[2].Character = character(Vector3.new(0, 3, 0)) -- fresh body
+    main.Cfg.altForm.limbs = true
+    main.H.alt({ "orbit1" }); runTasks()
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    check(fired == 0, "a fresh body settles before it is ragdolled")
+    CLOCK = CLOCK + 3
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    local ch = PLAYERS[2].Character
+    local ls = alts[1].UIAPI.Alts.limbState
+    check(fired >= 1 and ls and ls.method == "ragdoll" and ls.phase == "free", "the game's ragdoll remote separated the body")
+    check(ch.hum.Health == 100, "ragdoll separation never kills")
+    check(ch.socket.Enabled == false, "ragdoll constraints switched off locally (limbs move freely)")
+    check(ls and #ls.parts == #ch.parts - 1, "every part but the root is driven")
+    check(ls and (ls.parts[1].CFrame.Position - ls.parts[2].CFrame.Position).Magnitude > 0.1, "limbs sit at different orbit points")
+    check(ls and ls.parts[1].AssemblyLinearVelocity.Y > 100, "loose limbs get the netless push")
+    local before = fired
+    main.H.unform(); runTasks()
+    check(fired > before and ch.socket.Enabled == true, "stopping asks the game to stand the alt up again")
+    main.Cfg.altForm.limbs = false
+    REMOTES.RagdollEvent = nil
+    for _, p in pairs(PLAYERS) do
+        if p.Character and p.Character.motors then for _, m in ipairs(p.Character.motors) do m.Enabled = true end end
+    end
+end
+
+-- no ragdoll, death allowed: the alt dies to separate; a respawned body settles first
+do
+    PLAYERS[2].Character = character(Vector3.new(0, 3, 0))
+    main.Cfg.altForm.limbs = true
     main.Cfg.altForm.limbsDeath = true
     main.H.alt({ "orbit1" })
     runTasks()
     local oc = json.decode(FS["PuppyAdmin/companion/altcmd.json"])
     check(oc.cmd == "orbit" and oc.params.limbsDeath == true, "death-mode flag is sent with the command")
     for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    check(PLAYERS[2].Character.hum.Health == 100, "not killed before the body settles")
+    CLOCK = CLOCK + 3
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
     local ch = PLAYERS[2].Character
-    check(ch.hum.Health == 0 and ch.hum.BreakJointsOnDeath == true,
-        "alt dies with BreakJointsOnDeath so the server breaks the joints (seen by everyone)")
-    check(ch.motors[1].Enabled == false and ch.motors[2].Enabled == false, "local joints match the server's break")
+    check(ch.hum.Health == 0 and ch.hum.BreakJointsOnDeath == true, "no ragdoll: the alt dies with BreakJointsOnDeath")
+    check(ch.motors[1].Enabled == false, "local joints match the server's break")
     local ls = alts[1].UIAPI.Alts.limbState
-    check(ls and #ls.parts == #ch.parts - 1 and ls.root == ch.root, "every part but the root is driven")
-    check(ls and ls.holders == nil and ls.folder == nil, "no client-only anchored holders (they never replicate)")
-    check(ls and (ls.parts[1].CFrame.Position - ls.parts[2].CFrame.Position).Magnitude > 0.1, "limbs sit at different orbit points")
-    check(ls and ls.parts[1].AssemblyLinearVelocity.Y > 100, "loose limbs get the netless push")
+    check(ls and ls.method == "death" and ls.phase == "free" and #ls.parts == #ch.parts - 1, "dead body's parts are driven")
+    check(ls and (ls.parts[1].CFrame.Position - ls.parts[2].CFrame.Position).Magnitude > 0.1, "limbs orbit apart")
     for f = 1, 6 do Heartbeat:fire(1 / 60) end
     check(alts[1].UIAPI.Alts.limbState == ls, "a dead, separated body is not killed again")
-    -- the game respawns the alt: the new body is separated the same way
+    -- the game respawns the alt: it keeps moving as a whole body, then separates once settled
     PLAYERS[2].Character = character(Vector3.new(0, 3, 0))
-    for f = 1, 6 do Heartbeat:fire(1 / 60) end
     local ch2 = PLAYERS[2].Character
-    check(ch2.hum.Health == 0 and alts[1].UIAPI.Alts.limbState.char == ch2, "after a respawn the new body separates too")
+    local p0 = ch2.root.CFrame.Position
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    check(ch2.hum.Health == 100, "a respawned body is not killed at once")
+    check((ch2.root.CFrame.Position - p0).Magnitude > 0.5, "after a respawn the alt moves again (whole body)")
+    CLOCK = CLOCK + 3
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    check(ch2.hum.Health == 0 and alts[1].UIAPI.Alts.limbState.char == ch2, "then the new body separates too")
     main.H.unform()
     runTasks()
     check(alts[1].UIAPI.Alts.limbState == nil, "stopping releases the limbs (the game respawns the alt whole)")
+    main.Cfg.altForm.limbs = false
     main.Cfg.altForm.limbsDeath = false
+    PLAYERS[2].Character = character(Vector3.new(0, 3, 0))
     main.H.form({ "wings" }); runTasks()
     for f = 1, 40 do Heartbeat:fire(1 / 60) end
 end

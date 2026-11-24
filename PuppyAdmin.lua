@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-53" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-54" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -13592,9 +13592,12 @@ function UIAPI.altsSetup()
         if os.time() - st.cmdTime > STALE then Alts.stopFollowing(); return end
         local root, hum = selfRoot()
         local mode = st.mode or "pin"
-        -- real separated limbs need the alt to die (opt-in "limbsDeath"); plain "limbs" tumbles whole bodies
-        local limbMode = st.limbsDeath and mode == "pin" and st.center ~= "self"
-        if not (root and hum) or (hum.Health <= 0 and not limbMode) then return end
+        -- separated limbs: the game's ragdoll (no death) or, with the death switch, a death;
+        -- until the body is actually loose the whole body is placed (and tumbles)
+        local limbMode = st.limbs and mode == "pin" and st.center ~= "self"
+        local ls = limbMode and Alts.shatter(st) or nil
+        local loose = ls and ls.phase == "free"
+        if not loose and (not (root and hum) or hum.Health <= 0) then return end
         st.t = st.t + dt * st.params.speed
         if Alts.lite then -- weak machines: place the body ~30 times a second, not every frame
             st.acc = (st.acc or 0) + dt
@@ -13607,11 +13610,9 @@ function UIAPI.altsSetup()
         end
         -- separated limbs: the alt's parts each take a point on the orbit, so one alt
         -- makes several orbiting pieces (the whole set of alts' limbs form the ring)
-        if limbMode then
+        if loose then
             local lc = resolveCenter(st)
             if not lc then return end
-            local ls = Alts.shatter()
-            if not ls then return end
             local lbase = levelFrame(lc, st.lead or 0.1)
             local drivers = ls.parts
             local per = #drivers
@@ -13652,8 +13653,9 @@ function UIAPI.altsSetup()
             end
             cf = Alts.target(st, center, dt)
         end
-        if st.limbs and not st.limbsDeath and mode == "pin" then
-            -- broken-up look without dying: each body tumbles on its own axes at its own rate
+        if st.limbs and mode == "pin" then
+            -- broken-up look while the body is whole (no ragdoll here, or waiting to separate):
+            -- each body tumbles on its own axes at its own rate
             local k = (st.index or 0) + 1
             local t = st.clock
             cf = cf * CFrame.Angles(t * (1.3 + 0.37 * k), t * (0.9 + 0.23 * k), t * (1.7 - 0.19 * (k % 5)))
@@ -13729,50 +13731,173 @@ function UIAPI.altsSetup()
         if Alts.liteOn() then Alts.applyLowGraphics() end
     end
 
-    -- Separated limbs, visible to everyone. Disabling Motor6Ds on this client never
-    -- reaches the server (the body stays whole for other players), so the joints are
-    -- broken the one way a client can make the server do it: the character dies with
-    -- BreakJointsOnDeath on, and the server breaks every joint. The loose parts stay
-    -- owned by this client until the game respawns the character (Players.RespawnTime),
-    -- and step() keeps placing them with the netless push so their positions replicate.
-    -- After a respawn the next step separates the new body the same way.
-    function Alts.shatter()
-        local char = plr.Character
-        if not char then return nil end
-        local ls = Alts.limbState
-        if ls and ls.char == char then return ls end
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hum then return nil end
-        pcall(function() settings().Physics.AllowSleep = false end)
-        if sethiddenproperty then pcall(function() sethiddenproperty(plr, "SimulationRadius", math.huge) end) end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        local parts = {}
+    -- Separated limbs, visible to everyone. A client cannot break its character's joints
+    -- for other players (Motor6D changes here only change this screen), so the server has
+    -- to do it. Two ways, as the reanimation engine does it:
+    --   ragdoll: the game's own ragdoll remote (the engine's list of known games, then the
+    --            common remote names). The server swaps the Motor6Ds for constraints; the
+    --            alt stays alive. Constraints do not merge parts into one body, so after
+    --            switching them off on this client (the owner simulates them) every limb
+    --            is its own piece whose position replicates.
+    --   death:   only with the "alts DIE" switch, when the game has no ragdoll: the alt
+    --            dies with BreakJointsOnDeath and the server breaks every joint.
+    -- A fresh body (just spawned / respawned) is first left to settle until this client
+    -- owns it; separating it straight away left parts the client could not move.
+    Alts.SETTLE = 2 -- seconds a new body waits before it is separated
+    Alts.RAGDOLL_WAIT = 2.5 -- seconds to wait for the server's ragdoll before giving up
+
+    -- The game's ragdoll remote, args and whether it is a local BindableEvent.
+    -- Same games, names and args as get_game_ragdoll_info in the reanimation engine.
+    function Alts.ragdollRemote(enable)
+        local rep = game:GetService("ReplicatedStorage")
+        local pid = game.PlaceId
+        local function at(path)
+            local cur = rep
+            for part in path:gmatch("[^/]+") do
+                if not cur then return nil end
+                cur = cur:FindFirstChild(part)
+            end
+            return cur
+        end
+        if pid == 15546218972 or pid == 6884319169 then
+            local r = at("event_rag"); if r then return r, { "Ball" }, false end
+        elseif pid == 5991163185 then
+            local r = at("Remotes/Physics/Ragdoll"); if r then return r, {}, false end
+        elseif pid == 5683833663 then
+            local r = at("LocalRagdollEvent"); if r then return r, { enable }, true end
+        elseif pid == 86382196724726 or game.GameId == 10581310106 then
+            local r = at("Remotes/RagdollToggle"); if r then return r, { enable and "Ball" or false }, false end
+            return nil
+        end
+        for _, path in ipairs({ "Ragdoll", "RagdollEvent", "event_rag", "Rag", "Ragdolled", "Remotes/Ragdoll",
+            "Events/Ragdoll", "Remotes/Physics/Ragdoll", "RemoteEvents/Ragdoll", "RemoteEvents/RagdollEvent" }) do
+            local r = at(path)
+            if r then
+                if r:IsA("BindableEvent") then return r, { enable }, true end
+                if r:IsA("RemoteEvent") or r:IsA("RemoteFunction") then return r, {}, false end
+            end
+        end
+        return nil
+    end
+
+    function Alts.fireRagdoll(enable)
+        local r, args, isLocal = Alts.ragdollRemote(enable)
+        if not r then return false end
+        return pcall(function()
+            if isLocal then r:Fire(table.unpack(args))
+            elseif r:IsA("RemoteEvent") then r:FireServer(table.unpack(args))
+            else task.spawn(function() pcall(function() r:InvokeServer(table.unpack(args)) end) end) end
+        end)
+    end
+
+    -- true when no working Motor6D holds the body together any more (the server's
+    -- ragdoll disabled them, or a death broke them; both replicate here)
+    local function jointsLoose(char)
+        for _, d in ipairs(char:GetDescendants()) do
+            if d:IsA("Motor6D") and d.Enabled and d.Part0 and d.Part1
+                and d.Part0:IsDescendantOf(char) and d.Part1:IsDescendantOf(char) then
+                return false
+            end
+        end
+        return true
+    end
+
+    local function ownsBody(root)
+        if not root then return false end
+        if type(isnetworkowner) ~= "function" then return true end -- cannot ask: rely on the settle time
+        local ok, mine = pcall(isnetworkowner, root)
+        return not ok or mine == true
+    end
+
+    local function freeParts(ls)
+        local char, root = ls.char, ls.root
+        ls.parts, ls.constraints = {}, {}
         for _, d in ipairs(char:GetDescendants()) do
             if d:IsA("BasePart") and d ~= root then
                 pcall(function() d.CanCollide = false end)
-                table.insert(parts, d)
-            end
-        end
-        if hum.Health > 0 then
-            pcall(function() hum.BreakJointsOnDeath = true end)
-            pcall(function() hum.RequiresNeck = true end)
-            pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true) end)
-            hum.Health = 0
-        end
-        -- match the server at once on this screen too (the server's break arrives a moment later)
-        for _, d in ipairs(char:GetDescendants()) do
-            if d:IsA("JointInstance") or d:IsA("WeldConstraint") or d:IsA("RigidConstraint") then
+                table.insert(ls.parts, d)
+            elseif d:IsA("BallSocketConstraint") or d:IsA("HingeConstraint") or d:IsA("RopeConstraint")
+                or d:IsA("RodConstraint") or d:IsA("SpringConstraint") or d:IsA("AnimationConstraint") then
+                if d.Enabled then
+                    pcall(function() d.Enabled = false end) -- the owner simulates them: off here = loose for everyone
+                    table.insert(ls.constraints, d)
+                end
+            elseif d:IsA("JointInstance") or d:IsA("WeldConstraint") or d:IsA("RigidConstraint") then
                 pcall(function() d.Enabled = false end)
             end
         end
-        Alts.limbState = { char = char, parts = parts, root = (root and root:IsA("BasePart")) and root or nil, at = os.clock() }
-        return Alts.limbState
+        pcall(function() settings().Physics.AllowSleep = false end)
+        if sethiddenproperty then pcall(function() sethiddenproperty(plr, "SimulationRadius", math.huge) end) end
+        ls.phase = "free"
     end
 
-    -- A body whose joints the server broke cannot be put back together; the game
-    -- respawns it (after Players.RespawnTime) and the alt comes back whole.
+    -- Advances the separation of the current body; returns the state (phase "free" = loose
+    -- parts to place). st carries the switches (st.limbsDeath allows the death fallback).
+    function Alts.shatter(st)
+        local char = plr.Character
+        if not char then return nil end
+        local ls = Alts.limbState
+        if not ls or ls.char ~= char then
+            if ls then Alts.reassemble() end
+            local root = char:FindFirstChild("HumanoidRootPart")
+            ls = { char = char, root = (root and root:IsA("BasePart")) and root or nil, born = os.clock(),
+                phase = "settle", parts = {} }
+            Alts.limbState = ls
+        end
+        if ls.phase == "free" or ls.phase == "whole" then return ls end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return ls end
+        local now = os.clock()
+        if ls.phase == "settle" then
+            if hum.Health <= 0 then -- already dead (killed elsewhere): its joints are broken
+                if jointsLoose(char) then ls.method = "death"; freeParts(ls) end
+                return ls
+            end
+            if now - ls.born < Alts.SETTLE or not ownsBody(ls.root) then return ls end
+            if Alts.fireRagdoll(true) then
+                ls.phase, ls.method, ls.asked = "ragdoll", "ragdoll", now
+            else
+                ls.phase = "nodoll"
+            end
+        end
+        if ls.phase == "ragdoll" then
+            if jointsLoose(char) then freeParts(ls); return ls end
+            if now - ls.asked < Alts.RAGDOLL_WAIT then return ls end
+            Alts.fireRagdoll(false) -- the game did not ragdoll us: undo the request
+            ls.method = nil
+            ls.phase = "nodoll"
+        end
+        if ls.phase == "nodoll" then
+            if st and st.limbsDeath then
+                pcall(function() hum.BreakJointsOnDeath = true end)
+                pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true) end)
+                hum.Health = 0
+                ls.method = "death"
+                freeParts(ls) -- the server's break follows a moment later; this screen matches at once
+            else
+                ls.phase = "whole" -- no ragdoll here and no death allowed: bodies tumble instead
+                if not Alts.noDollNoted then
+                    Alts.noDollNoted = true
+                    note("Alts", "This game has no ragdoll, so limbs stay on (bodies tumble). The 'alts DIE' switch separates them by respawning.", LIGHT)
+                end
+            end
+        end
+        return ls
+    end
+
+    -- Ends the separation: a ragdolled body asks the game to stand up again (its loose
+    -- constraints come back on); a body broken by death waits for its respawn.
     function Alts.reassemble()
+        local ls = Alts.limbState
         Alts.limbState = nil
+        if not ls then return end
+        for _, c in ipairs(ls.constraints or {}) do pcall(function() c.Enabled = true end) end
+        if ls.method == "ragdoll" and ls.char == plr.Character then
+            for _, d in ipairs(ls.char:GetDescendants()) do
+                if d:IsA("JointInstance") then pcall(function() d.Enabled = true end) end
+            end
+            Alts.fireRagdoll(false)
+        end
     end
 
     local function num(v, lo, hi, default)
@@ -13796,7 +13921,7 @@ function UIAPI.altsSetup()
         local st = Alts.state
         if st and st.form == form and st.index == index and st.count == count and st.main == c.main then
             st.params, st.cmdTime, st.slot, st.limbs, st.limbsDeath = cleanParams(c), c.time, slot, limbs, limbsDeath
-            if not limbsDeath then Alts.reassemble() end
+            if not limbs then Alts.reassemble() end
             return
         end
         local root = selfRoot()
@@ -13807,7 +13932,7 @@ function UIAPI.altsSetup()
             t = 0, clock = 0, hist = {}, rng = Random.new(plr.UserId % 2147483647 + index * 7919),
             from = root and root.CFrame or nil, blend = root and 0 or 1,
         }
-        if not limbsDeath then Alts.reassemble() end
+        if not limbs then Alts.reassemble() end
         Alts.ensureLoop(); Alts.capFps()
         if fresh then note("Alts", "Following the main: " .. form, LIGHT) end
     end
@@ -13821,7 +13946,7 @@ function UIAPI.altsSetup()
         if st and st.cmd == name and st.index == index and st.count == count
             and st.main == c.main and st.target == (c.target or 0) then
             st.params, st.cmdTime, st.slot, st.cmdParams, st.limbs, st.limbsDeath = cleanParams(c), c.time, slot, c.params or {}, limbs, limbsDeath
-            if not limbsDeath then Alts.reassemble() end
+            if not limbs then Alts.reassemble() end
             return
         end
         local root = selfRoot()
@@ -13835,7 +13960,7 @@ function UIAPI.altsSetup()
             rng = Random.new(plr.UserId % 2147483647 + index * 7919 + (name:byte(1) or 0)),
             from = root and root.CFrame or nil, blend = root and 0 or 1,
         }
-        if not limbsDeath then Alts.reassemble() end
+        if not limbs then Alts.reassemble() end
         if spec.center == "self" and root then Alts.state.selfBase = levelFrame(root, 0) end
         Alts.ensureLoop(); Alts.capFps()
         if spec.onBegin then pcall(spec.onBegin, Alts.state) end
@@ -14772,8 +14897,8 @@ function UIAPI.altsSetup()
         switch("Glitch: random jumps and twists", 186, "glitch")
         switch("Spin: bodies turn in place", 214, "spin")
         switch("Pulse: the shape breathes", 242, "pulse")
-        switch("Broken-up look: bodies tumble (no death)", 270, "limbs")
-        switch("Real separate limbs: alts DIE and respawn", 298, "limbsDeath")
+        switch("Separate limbs (game's ragdoll, no death)", 270, "limbs")
+        switch("No ragdoll? Let alts DIE to separate", 298, "limbsDeath")
         local bwF = (IW - 8) / 2
         local startBtn = uiButton(fp, "Start", UDim2.fromOffset(bwF, 32), UDim2.fromOffset(0, 334), function()
             Alts.start((Alts.PRESETS[S.preset] or Alts.PRESETS[1]).key)
