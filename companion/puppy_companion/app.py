@@ -130,6 +130,7 @@ class CompanionApp:
         self._check_update = check_update
         self.ui = queue.Queue()
         self.statuses = {}
+        self.script_latest = None  # newest Puppy Admin SCRIPT_BUILD on GitHub, once known
         self._last_refresh = 0.0
         self._closing = False
         self.update_ready = None       # version string once a newer package is downloaded
@@ -407,12 +408,39 @@ class CompanionApp:
             self.update_lbl.configure(text="Checking GitHub for a newer version...", style="Dim.TLabel")
 
         def work():
+            try:
+                build = update.latest_script_build(opener=self._http_opener())
+            except update.UpdateError:
+                build = None
+            self.ui.put(("call", (self._script_build_known, (build,))))
             manifest = update.check(opener=self._http_opener())
             if not manifest:
                 return None
             return update.download(manifest, opener=self._http_opener())
 
         self.run_bg(work, lambda version, err: self._update_done(version, err, manual))
+
+    def _script_build_known(self, build):
+        if not build:
+            return
+        changed = build != self.script_latest
+        self.script_latest = build
+        self.refresh_status()
+        old = self.outdated_windows()
+        if changed:
+            self.log("Latest Puppy Admin on GitHub: build %s." % build)
+            if old:
+                self.log("%d window%s still run%s an older Puppy Admin: execute it again there (or rejoin) to update."
+                         % (len(old), "" if len(old) == 1 else "s", "s" if len(old) == 1 else ""))
+
+    def outdated_windows(self):
+        """User ids whose running Puppy Admin is older than the newest build on GitHub."""
+        if not self.script_latest:
+            return []
+        latest = update.build_tuple(self.script_latest)
+        return [uid for uid, st in self.statuses.items()
+                if st.get("fresh") and st.get("online") and st.get("build")
+                and update.build_tuple(st["build"]) < latest]
 
     def _http_opener(self):
         # None -> update.py uses real urllib; a fake opener is injected only in tests
@@ -427,10 +455,12 @@ class CompanionApp:
                 self.update_lbl.configure(text="Update check failed: %s" % err, style="Bad.TLabel")
                 self.log("Update check failed: %s" % err)
             return
+        script = (" Puppy Admin's latest build is %s; it updates itself when you execute it again in game."
+                  % self.script_latest) if self.script_latest else ""
         if not version:
             if manual:
-                self.update_lbl.configure(text="You are on the latest version (%s)." % update.running_version(),
-                                          style="Good.TLabel")
+                self.update_lbl.configure(text="The app is on the latest version (%s).%s"
+                                          % (update.running_version(), script), style="Good.TLabel")
                 self.log("No update: already on %s." % update.running_version())
             return
         self.update_ready = version
@@ -472,6 +502,9 @@ class CompanionApp:
         text = "In game, place %d" % st["placeId"] if st["placeId"] else "In game"
         if acc.role == "alt" and main_job and st["jobId"] == main_job:
             text += " (main's server)"
+        if (self.script_latest and st.get("build")
+                and update.build_tuple(st["build"]) < update.build_tuple(self.script_latest)):
+            text += " - old Puppy Admin, execute again"
         return text, "online"
 
     def refresh_status(self, force=False):

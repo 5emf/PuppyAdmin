@@ -94,6 +94,15 @@ class WindowTest(unittest.TestCase):
     def log_text(self):
         return self.app.log_text.get("1.0", "end")
 
+    def test_old_script_build_flagged(self):
+        with open(os.path.join(self.ws, "PuppyAdmin", "companion", "2.json"), "w", encoding="utf-8") as f:
+            json.dump({"userId": 2, "placeId": 1818, "jobId": JOB, "online": True, "time": time.time(),
+                       "build": "2026.11.24-40"}, f)
+        self.app._script_build_known("2026.11.24-50")
+        self.assertIn("old Puppy Admin", self.app.tree.set("2", "status"))
+        self.assertEqual(self.app.outdated_windows(), [2])
+        self.assertIn("2026.11.24-50", self.log_text())
+
     def test_rows_and_status(self):
         self.root.update()
         self.assertEqual(list(self.app.tree.get_children()), ["1", "2", "3"])  # main first

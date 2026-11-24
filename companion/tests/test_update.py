@@ -142,6 +142,20 @@ class UpdateTest(unittest.TestCase):
         self.assertEqual(getattr(puppy_companion, "SENTINEL", None), "updated-package")
         self.assertEqual(puppy_companion.__version__, "9.9.9")
 
+    def test_latest_script_build(self):
+        url = _payload.raw_base() + "PuppyAdmin.lua"
+        head = b'-- Puppy Admin\nlocal SCRIPT_BUILD = "2026.11.24-50"\n'
+        self.assertEqual(self.update.latest_script_build(opener=opener_for({url: head})), "2026.11.24-50")
+        self.assertIsNone(self.update.latest_script_build(opener=opener_for({url: b"-- nothing"})))
+        with self.assertRaises(self.update.UpdateError):
+            self.update.latest_script_build(opener=opener_for({}))
+
+    def test_build_order(self):
+        bt = self.update.build_tuple
+        self.assertGreater(bt("2026.11.24-50"), bt("2026.11.24-9"))
+        self.assertGreater(bt("2026.11.25-1"), bt("2026.11.24-50"))
+        self.assertEqual(bt(""), (0,))
+
 
 if __name__ == "__main__":
     unittest.main()

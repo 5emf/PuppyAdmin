@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import py_compile
+import re
 import shutil
 
 import tempfile
@@ -187,3 +188,31 @@ def clear_active():
         os.remove(os.path.join(code_root(), ACTIVE_MARKER))
     except OSError:
         pass
+
+
+# --- Puppy Admin (the in-game script) -----------------------------------------
+# The companion only updates its own code; Puppy Admin updates itself whenever it is
+# (re-)executed. These let the companion show the latest script build and which
+# windows still run an older one.
+SCRIPT_PATH = "PuppyAdmin.lua"
+_BUILD_RE = re.compile(r'SCRIPT_BUILD\s*=\s*"([^"]+)"')
+
+
+def build_tuple(build):
+    """'2026.11.24-50' -> (2026, 11, 24, 50); compares builds correctly."""
+    return tuple(int(x) for x in re.findall(r"\d+", str(build or ""))) or (0,)
+
+
+def latest_script_build(opener=None):
+    """The SCRIPT_BUILD of PuppyAdmin.lua on GitHub (reads only the first few KB)."""
+    opener = opener or _default_opener
+    request = urllib.request.Request(_payload.raw_base() + SCRIPT_PATH, headers={
+        "User-Agent": "PuppyCompanion", "Range": "bytes=0-8191", "Cache-Control": "no-cache"})
+    try:
+        with opener(request, 20) as response:
+            head = response.read(16384).decode("utf-8", "replace")
+    except Exception as e:
+        raise UpdateError("could not read Puppy Admin's version (%s)" % e)
+    m = _BUILD_RE.search(head)
+    return m.group(1) if m else None
+
