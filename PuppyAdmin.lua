@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-44" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-45" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -369,6 +369,7 @@ local Cfg = {
     floor = {},        -- infinite baseplate: { preset = name, color = { r, g, b } }
     antiAfk = false,   -- keep Roblox from disconnecting you for being idle
     windowScales = {}, -- window name -> size set with the corner grip (1 = normal)
+    altForm = {},      -- alt formations window: shape, size, speed, height, glitch, spin, pulse
 }
 
 local function cfgSave()
@@ -4530,7 +4531,7 @@ local cmds = {
     "tp",
     "aura", "unaura", "auras",
     "tagui", "taglist", "tagsync", "tagrefresh", "hidetags", "showtags", "toggletags", "perf", "performance", "games", "gameboy", "gba", "doom", "finder", "shmost", "shlowest", "antiafk", "unantiafk", "owner", "kick", "ban", "unban", "bans", "blacklist", "antikick", "unantikick", "antivcban",
-    "reanim",
+    "reanim", "alts", "form", "unform",
     "prefix", "uikey", "settings", "theme", "kill", "stop", "help",
 }
 
@@ -4538,6 +4539,7 @@ local cmds = {
 local ALIASES = {
     anim = "reanim", reanimui = "reanim", boost = "performance", fpsboost = "performance", minigames = "games", arcade = "games", gb = "gameboy", emulator = "gameboy", notags = "hidetags", tagsoff = "hidetags", tagson = "showtags", tags = "toggletags", gameboyadvance = "gba", advance = "gba", servers = "finder", serverbrowser = "finder", puppyfinder = "finder", bl = "blacklist", banlist = "blacklist",
     wh = "esp", wallhack = "esp", unwh = "unesp", noesp = "unesp", ibp = "infbaseplate",
+    altui = "alts", formation = "form", altform = "form", altstop = "unform", unformation = "unform",
 }
 
 local cmdDocs = {
@@ -4583,6 +4585,9 @@ local cmdDocs = {
     aura = "aura [name] [players] [color] - Give an aura everyone using the script sees (tag managers only)",
     unaura = "unaura [name|all] [players] - Take auras away (tag managers only)",
     auras = "auras - List auras and who has them",
+    alts = "alts - Alt formations: your alts (from Puppy Companion) take a shape around you that everyone sees (also: altui)",
+    form = "form [wings|halo|ring|star|spiral|tower|wall|trail|scatter|wingshalo|starring] [size] - Main account: your alts in this server form that shape around you (also: formation)",
+    unform = "unform - Your alts leave the formation and land beside you (also: altstop)",
     reanim = "reanim [on|off | import <ID or keyframe link>] - Reanimation panel for your own imported animations; on/off toggles reanimation. Also: anim, reanimui",
     prefix = "prefix [add|remove|set] [chars] - Chat command prefixes",
     uikey = "uikey [key] - Key that shows/hides the script UI",
@@ -12345,6 +12350,7 @@ local function buildPanels(screenGui)
     B.superfly = function() UIAPI.buildSuperflyPanel(screenGui) end
     B.doom = function() UIAPI.buildDoomPanel(screenGui) end
     B.finder = function() UIAPI.buildFinderPanel(screenGui) end
+    B.alts = function() UIAPI.buildAltsPanel(screenGui) end
 end
 
 ------------------------------------------------------------------------
@@ -12633,7 +12639,7 @@ local function createUI()
         return b
     end
 
-    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 912), "SETTINGS  -  build " .. tostring(genv.PuppyAdminBuild))
+    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 948), "SETTINGS  -  build " .. tostring(genv.PuppyAdminBuild))
 
     fieldLabel(settingsFrame, "Chat command prefixes (comma separated, 1-3 symbols)", 45)
     local prefixBox = fieldBox(settingsFrame, 65, table.concat(Cfg.prefixes, ", "))
@@ -12827,6 +12833,11 @@ local function createUI()
     tagVisText()
     UIAPI.tagsVisChanged = tagVisText
     tagVisBtn.MouseButton1Click:Connect(function() UIAPI.setTagsHidden(not Cfg.tagsHidden) end)
+
+    -- alt formations (Puppy Companion's main and alts)
+    local altsBtn = actionButton(settingsFrame, "Alt formations (your Puppy Companion alts)", UDim2.new(0, 15, 0, 866), UDim2.new(1, -30, 0, 28))
+    altsBtn.TextSize = 12
+    altsBtn.MouseButton1Click:Connect(function() if H.alts then H.alts({}) end end)
 
     local killBtn = actionButton(settingsFrame, "KILL SCRIPT", UDim2.new(0, 15, 1, -45), UDim2.new(1, -30, 0, 32), Color3.fromRGB(130, 35, 35))
     killBtn.MouseButton1Click:Connect(function() shutdown(false) end)
@@ -13164,6 +13175,718 @@ function UIAPI.companionStart()
 end
 
 ------------------------------------------------------------------------
+-- Alt formations. Puppy Companion's roster.json says which account is the
+-- main and which are alts. The main's Alts window writes altcmd.json in the
+-- executor workspace; every alt on this PC reads it four times a second and,
+-- while it is in the main's server, moves its own character to its place in
+-- the shape around the main every frame. Characters replicate, so everyone
+-- in the server sees the shape. No parts are created.
+------------------------------------------------------------------------
+
+function UIAPI.altsSetup()
+    if UIAPI.Alts then return end
+    local Alts = { roster = nil, rosterAt = -100, alive = true }
+    UIAPI.Alts = Alts
+    local DIR = "PuppyAdmin/companion"
+    local ROSTER_FILE = DIR .. "/roster.json"
+    local CMD_FILE = DIR .. "/altcmd.json"
+    local STALE = 25 -- seconds: alts stop when the main's command is older (the main refreshes it every 5 s)
+    local TAU = math.pi * 2
+    local V3, CF = Vector3.new, CFrame.new
+
+    local defaults = { preset = 1, size = 1, speed = 1, height = 0, glitch = false, spin = false, pulse = false }
+    for k, v in pairs(defaults) do
+        if type(Cfg.altForm[k]) ~= type(v) then Cfg.altForm[k] = v end
+    end
+
+    local function readJson(path)
+        if not (isfile and readfile) then return nil end
+        local ok, data = pcall(function()
+            if isfile(path) then return HttpService:JSONDecode(readfile(path)) end
+            return nil
+        end)
+        if ok and type(data) == "table" then return data end
+        return nil
+    end
+
+    local function writeText(path, text)
+        if not (writefile and isfolder and makefolder) then return false end
+        return pcall(function()
+            if not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
+            if not isfolder(DIR) then makefolder(DIR) end
+            writefile(path, text)
+        end)
+    end
+
+    -- roster.json: { main = { userId, name }, alts = { { userId, name }, ... } }, re-read every 5 s
+    function Alts.loadRoster(force)
+        local now = os.clock()
+        if Alts.roster and not force and now - Alts.rosterAt < 5 then return Alts.roster end
+        Alts.rosterAt = now
+        local data = readJson(ROSTER_FILE)
+        local r = { main = nil, alts = {}, isAlt = {}, names = {}, found = data ~= nil }
+        if data then
+            if type(data.main) == "table" then
+                r.main = tonumber(data.main.userId)
+                if r.main then r.names[r.main] = tostring(data.main.name or r.main) end
+            end
+            if type(data.alts) == "table" then
+                for i = 1, math.min(#data.alts, 50) do
+                    local a = data.alts[i]
+                    local id = type(a) == "table" and tonumber(a.userId) or nil
+                    if id and id ~= r.main and not r.isAlt[id] then
+                        table.insert(r.alts, id)
+                        r.isAlt[id] = true
+                        r.names[id] = tostring(a.name or id)
+                    end
+                end
+            end
+        end
+        Alts.roster = r
+        return r
+    end
+
+    function Alts.role()
+        local r = Alts.loadRoster()
+        if r.main and r.main == plr.UserId then return "main" end
+        if r.isAlt[plr.UserId] then return "alt" end
+        return nil
+    end
+
+    ------------------------------------------------------------------
+    -- Shapes. Each gives alt i (0-based) of n its place relative to the
+    -- main: +X right, +Y up, -Z forward (the main's facing, kept level).
+    -- A body is about 5 studs long; the main's feet are about 3 studs
+    -- under its root part. t is the shape's clock (Speed scales it).
+    ------------------------------------------------------------------
+
+    -- a body at pos whose head points along up and whose front faces look
+    local function orient(pos, up, look)
+        up = up.Unit
+        local right = look:Cross(up)
+        if right.Magnitude < 1e-3 then right = up:Cross(V3(0, 0, 1)) end
+        if right.Magnitude < 1e-3 then right = V3(1, 0, 0) end
+        return CFrame.fromMatrix(pos, right.Unit, up)
+    end
+    Alts.orient = orient
+
+    local SHAPES = {}
+    Alts.SHAPES = SHAPES
+    -- two fans behind the shoulders, heads outward, flapping
+    function SHAPES.wings(i, n, t, s)
+        local side = (i % 2 == 0) and 1 or -1
+        local k = math.floor(i / 2)
+        local per = math.ceil(n / 2) -- bodies per wing
+        -- the fan opens from 14 to at most 78 degrees above level, so the two tips never meet overhead
+        local a = math.rad(14 + (per > 1 and k / (per - 1) or 0) * math.min(64, 16 * (per - 1)))
+        a = math.max(math.rad(5), math.min(math.rad(84), a + math.sin(t * 2.4) * 0.12 * (1 + k * 0.15)))
+        local dir = V3(side * math.cos(a), math.sin(a), 0.22).Unit
+        local pos = V3(side * 0.8, 1.3, 1.4) + dir * ((3.4 + 2.5 * k) * s)
+        return orient(pos, dir, V3(0, 0, -1))
+    end
+    -- a wheel lying above the head, heads outward, turning
+    function SHAPES.halo(i, n, t, s)
+        local th = i / n * TAU + t * 0.9
+        local u = V3(math.cos(th), 0, math.sin(th))
+        local r = math.max(3, 0.45 * n + 1.6) * s
+        return orient(V3(0, 5.6 + math.sin(t * 1.7) * 0.25, 0) + u * r, u, V3(0, 1, 0))
+    end
+    -- standing bodies running round the main
+    function SHAPES.ring(i, n, t, s)
+        local th = i / n * TAU + t * 1.6
+        local r = math.max(4.2, 0.55 * n + 2.6) * s
+        local pos = V3(math.cos(th) * r, 0.6 + math.sin(t * 2 + i) * 0.4, math.sin(th) * r)
+        return orient(pos, V3(0, 1, 0), V3(-math.sin(th), 0, math.cos(th)))
+    end
+    -- an upright sunburst behind the back, heads outward, turning slowly
+    function SHAPES.star(i, n, t, s)
+        local th = i / n * TAU + t * 0.5
+        local u = V3(math.cos(th), math.sin(th), 0)
+        local r = math.max(3.2, 0.45 * n + 1.8) * s
+        local centre = V3(0, math.max(2.2, r - 0.5), 3.2)
+        return orient(centre + u * r, u, V3(0, 0, -1))
+    end
+    -- a rising helix round the main
+    function SHAPES.spiral(i, n, t, s)
+        local f = n > 1 and i / (n - 1) or 0.5
+        local th = f * TAU * 1.25 + t * 1.3
+        local r = 3.8 * s
+        local pos = V3(math.cos(th) * r, 0.4 + f * (3.2 + 0.9 * n) * s + math.sin(t * 1.4 + i) * 0.4, math.sin(th) * r)
+        return orient(pos, V3(0, 1, 0), V3(-math.sin(th), 0, math.cos(th)))
+    end
+    -- a stack on the head, every other body turning the other way
+    function SHAPES.tower(i, n, t, s)
+        return CF(0, (5.2 + i * 5) * math.max(1, s), 0) * CFrame.Angles(0, (i % 2 == 0 and 1 or -1) * t * 0.6, 0)
+    end
+    -- a line in front, facing the way the main faces
+    function SHAPES.wall(i, n, t, s)
+        return CF((i - (n - 1) / 2) * 3.2 * s, 0.3 + math.sin(t * 2 + i * 0.6) * 0.3, -5.5 * s)
+    end
+    -- a line behind (until the main has walked far enough to lay a path to follow)
+    function SHAPES.trail(i, n, t, s)
+        return CF(math.sin(t * 2.2 - i * 0.8) * 1.4 * s, 0.3 + math.sin(t * 1.6 - i * 0.6) * 0.3, (4.5 + i * 3.6) * s)
+    end
+    -- jumps between random spots round the main, at random angles
+    function SHAPES.scatter(i, n, t, s, st)
+        local g = st.scatter
+        if not g or t >= g.hold then
+            local rng = st.rng
+            local dir = V3(rng:NextNumber(-1, 1), rng:NextNumber(0.05, 1), rng:NextNumber(-1, 1))
+            if dir.Magnitude < 0.1 then dir = V3(0, 1, 0) end
+            g = {
+                hold = t + rng:NextNumber(0.15, 0.6),
+                cf = CF(V3(0, 1, 0) + dir.Unit * (rng:NextNumber(5, 9) * s))
+                    * CFrame.Angles(rng:NextNumber(-3.1, 3.1), rng:NextNumber(-3.1, 3.1), rng:NextNumber(-3.1, 3.1)),
+            }
+            st.scatter = g
+        end
+        return g.cf
+    end
+
+    -- layers: { shape, count (nil = every alt left), needs (only used with at least this many alts) }
+    Alts.PRESETS = {
+        { name = "Wings", key = "wings", layers = { { "wings" } } },
+        { name = "Halo", key = "halo", layers = { { "halo" } } },
+        { name = "Ring", key = "ring", layers = { { "ring" } } },
+        { name = "Star", key = "star", layers = { { "star" } } },
+        { name = "Spiral", key = "spiral", layers = { { "spiral" } } },
+        { name = "Tower", key = "tower", layers = { { "tower" } } },
+        { name = "Wall", key = "wall", layers = { { "wall" } } },
+        { name = "Trail", key = "trail", layers = { { "trail" } } },
+        { name = "Scatter", key = "scatter", layers = { { "scatter" } } },
+        { name = "Wings + halo", key = "wingshalo", layers = { { "halo", 2, 4 }, { "wings" } } },
+        { name = "Star + ring", key = "starring", layers = { { "ring", 3, 5 }, { "star" } } },
+    }
+
+    function Alts.findPreset(key)
+        if type(key) ~= "string" or key == "" then return nil end
+        key = key:lower():gsub("[^%a]", "")
+        local hit
+        for _, p in ipairs(Alts.PRESETS) do
+            if p.key == key then return p end
+            if p.key:sub(1, #key) == key then
+                if hit then return nil end -- more than one starts like that
+                hit = p
+            end
+        end
+        return hit
+    end
+
+    function Alts.keyList()
+        local keys = {}
+        for _, p in ipairs(Alts.PRESETS) do table.insert(keys, p.key) end
+        return table.concat(keys, ", ")
+    end
+
+    -- splits the alts (roster order) between the preset's layers
+    function Alts.assign(preset, ids)
+        local layers, at, total = {}, 1, #ids
+        for _, L in ipairs(preset.layers) do
+            local count = L[2]
+            if count and total < (L[3] or 0) then count = 0 end
+            local left = total - at + 1
+            local take = count and math.min(count, left) or left
+            if take > 0 then
+                local part = {}
+                for j = at, at + take - 1 do table.insert(part, ids[j]) end
+                table.insert(layers, { form = L[1], ids = part })
+                at = at + take
+            end
+        end
+        return layers
+    end
+
+    ------------------------------------------------------------------
+    -- Alt side: follow the main's command
+    ------------------------------------------------------------------
+
+    -- the main's position (a little ahead: the alts see it late), facing kept level
+    local function levelFrame(root, lead)
+        local cf = root.CFrame
+        local pos = cf.Position
+        if lead > 0 then
+            local v = root.AssemblyLinearVelocity
+            if v.Magnitude < 150 then pos = pos + v * lead end
+        end
+        local look = cf.LookVector
+        local flat = V3(look.X, 0, look.Z)
+        if flat.Magnitude < 0.05 then flat = V3(0, 0, -1) end
+        return CFrame.lookAt(pos, pos + flat.Unit)
+    end
+    Alts.levelFrame = levelFrame
+
+    -- the point dist studs back along the main's recent path, facing the way it went (nil: path too short)
+    local function alongPath(hist, head, dist)
+        local prev = head
+        for j = #hist, 1, -1 do
+            local p = hist[j]
+            local d = prev - p
+            local seg = d.Magnitude
+            if seg > 1e-3 and seg >= dist then
+                local at = prev - d * (dist / seg)
+                local flat = V3(d.X, 0, d.Z)
+                if flat.Magnitude > 0.05 then d = flat end
+                return CFrame.lookAt(at, at + d.Unit)
+            end
+            dist = dist - seg
+            prev = p
+        end
+        return nil
+    end
+
+    -- a short random jump and twist now and then (real time, so it also runs at Speed 0)
+    local function glitchAt(st)
+        local g = st.glitch
+        local now = st.clock
+        if not g or now >= g.nextAt then
+            local rng = st.rng
+            g = {
+                to = now + rng:NextNumber(0.06, 0.2), nextAt = now + rng:NextNumber(0.4, 1.6),
+                move = V3(rng:NextNumber(-2.5, 2.5), rng:NextNumber(-1, 2), rng:NextNumber(-2.5, 2.5)),
+                turn = CFrame.Angles(rng:NextNumber(-1.2, 1.2), rng:NextNumber(-3.1, 3.1), rng:NextNumber(-1.2, 1.2)),
+            }
+            st.glitch = g
+        end
+        if now < g.to then return g.move, g.turn end
+        return nil, nil
+    end
+
+    -- where this alt's root part goes this frame
+    function Alts.target(st, mroot, dt)
+        local p = st.params
+        local base = levelFrame(mroot, 0.1)
+        local t = st.t
+        local off
+        if st.form == "trail" then
+            local hist, mpos = st.hist, mroot.Position
+            if #hist == 0 or (hist[#hist] - mpos).Magnitude >= 0.35 then
+                table.insert(hist, mpos)
+                if #hist > 600 then table.remove(hist, 1) end
+            end
+            local cf = alongPath(hist, mpos, (4.5 + st.index * 3.6) * p.size)
+            if cf then off = base:ToObjectSpace(cf * CF(0, 0.3, 0)) end
+        end
+        if not off then off = SHAPES[st.form](st.index, st.count, t, p.size, st) end
+        if p.pulse then off = CF(off.Position * (1 + 0.14 * math.sin(t * 3.2))) * off.Rotation end
+        if p.spin then off = off * CFrame.Angles(0, t * 5 + st.index, 0) end
+        if p.glitch then
+            local move, turn = glitchAt(st)
+            if move then off = CF(move) * off * turn end
+        end
+        local world = base * CF(0, p.height, 0) * off
+        if st.blend < 1 then -- glide from where the body was into the shape
+            st.blend = math.min(1, st.blend + dt / 0.45)
+            world = st.from:Lerp(world, 1 - (1 - st.blend) ^ 3)
+        end
+        return world
+    end
+
+    local function step(dt)
+        local st = Alts.state
+        if not st then return end
+        st.clock = st.clock + dt
+        if os.time() - st.cmdTime > STALE then
+            Alts.stopFollowing()
+            return
+        end
+        local mp = Players:GetPlayerByUserId(st.main)
+        local mchar = mp and mp.Character
+        local mroot = mchar and mchar:FindFirstChild("HumanoidRootPart")
+        local char = plr.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not (mroot and root and hum) or hum.Health <= 0 then return end -- main away or respawning: wait
+        st.t = st.t + dt * st.params.speed
+        local cf = Alts.target(st, mroot, dt)
+        if not hum.PlatformStand then hum.PlatformStand = true end
+        root.CFrame = cf
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+    end
+
+    -- the body passes through everything while it is placed by hand
+    local function noclip()
+        local char = plr.Character
+        if not char then return end
+        if Alts.partsOf ~= char then
+            Alts.partsOf, Alts.parts = char, {}
+            for _, d in ipairs(char:GetDescendants()) do
+                if d:IsA("BasePart") then table.insert(Alts.parts, d) end
+            end
+        end
+        for _, part in ipairs(Alts.parts) do part.CanCollide = false end
+    end
+
+    local function num(v, lo, hi, default)
+        v = tonumber(v)
+        if not v or v ~= v then return default end
+        return math.max(lo, math.min(hi, v))
+    end
+
+    local function cleanParams(c)
+        return {
+            size = num(c.size, 0.3, 4, 1), speed = num(c.speed, 0, 4, 1), height = num(c.height, -10, 30, 0),
+            glitch = c.glitch == true, spin = c.spin == true, pulse = c.pulse == true,
+        }
+    end
+
+    function Alts.follow(c, form, index, count, slot)
+        local st = Alts.state
+        if st and st.form == form and st.index == index and st.count == count and st.main == c.main then
+            st.params, st.cmdTime, st.slot = cleanParams(c), c.time, slot -- same place in the same shape: new settings only
+            return
+        end
+        local char = plr.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local fresh = st == nil
+        Alts.state = {
+            main = c.main, form = form, index = index, count = count, slot = slot,
+            params = cleanParams(c), cmdTime = c.time, t = 0, clock = 0, hist = {},
+            rng = Random.new(plr.UserId % 2147483647 + index * 7919),
+            from = root and root.CFrame or nil, blend = root and 0 or 1,
+        }
+        if not Alts.hb then
+            Alts.hb = RunService.Heartbeat:Connect(function(dt) pcall(step, dt) end)
+            Alts.nc = RunService.Stepped:Connect(function() pcall(noclip) end)
+        end
+        if fresh then note("Alts", "Following the main: " .. form, LIGHT) end
+    end
+
+    function Alts.stopFollowing()
+        local st = Alts.state
+        Alts.state = nil
+        if Alts.hb then Alts.hb:Disconnect(); Alts.hb = nil end
+        if Alts.nc then Alts.nc:Disconnect(); Alts.nc = nil end
+        Alts.partsOf, Alts.parts = nil, nil
+        if not st then return end
+        local char = plr.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if hum then pcall(function() hum.PlatformStand = false end) end
+        -- land beside the main instead of dropping from wherever the shape was
+        local mp = Players:GetPlayerByUserId(st.main)
+        local mroot = mp and mp.Character and mp.Character:FindFirstChild("HumanoidRootPart")
+        if root and mroot then
+            pcall(function()
+                local side = (st.slot % 2 == 0) and 1 or -1
+                local row = math.floor(st.slot / 2)
+                root.CFrame = levelFrame(mroot, 0) * CF(side * (3 + row * 2.5), 0, 3 + row)
+                root.AssemblyLinearVelocity = Vector3.zero
+            end)
+        end
+    end
+
+    -- altcmd.json from the main: { main, jobId, time, action = "form" | "stop", layers = { { form, ids } }, size, ... }
+    function Alts.onCommand(raw)
+        local ok, c = pcall(function() return HttpService:JSONDecode(raw) end)
+        if not ok or type(c) ~= "table" then return end
+        local r = Alts.loadRoster()
+        if not r.main or tonumber(c.main) ~= r.main then return end
+        c.main, c.time = r.main, tonumber(c.time) or 0
+        if c.action ~= "form" or c.jobId ~= game.JobId or type(c.layers) ~= "table" or os.time() - c.time > STALE then
+            Alts.stopFollowing()
+            return
+        end
+        local slot = 0
+        for li = 1, math.min(#c.layers, 8) do
+            local L = c.layers[li]
+            if type(L) == "table" and type(L.form) == "string" and SHAPES[L.form] and type(L.ids) == "table" then
+                local n = math.min(#L.ids, 50)
+                for k = 1, n do
+                    if tonumber(L.ids[k]) == plr.UserId then
+                        Alts.follow(c, L.form, k - 1, n, slot + k - 1)
+                        return
+                    end
+                end
+                slot = slot + n
+            end
+        end
+        Alts.stopFollowing() -- not part of this shape
+    end
+
+    ------------------------------------------------------------------
+    -- Main side: send the command, keep it fresh, keep alts out of your physics
+    ------------------------------------------------------------------
+
+    -- an alt's Puppy Admin is running in this server (its status file, written every 10 s); cached 2 s
+    local liveCache = {}
+    function Alts.isLive(id)
+        local c = liveCache[id]
+        if c and os.clock() - c.at < 2 then return c.live, c.elsewhere end
+        local st = readJson(DIR .. "/" .. tostring(id) .. ".json")
+        local t = st and tonumber(st.time)
+        local fresh = t ~= nil and os.time() - t <= 35 and st.online ~= false
+        local here = fresh and (st.jobId == nil or st.jobId == game.JobId)
+        liveCache[id] = { at = os.clock(), live = here, elsewhere = fresh and not here }
+        return here, fresh and not here
+    end
+
+    -- alts that are in this server with Puppy Admin running (the others would leave holes in the shape)
+    function Alts.present()
+        local ids = {}
+        for _, id in ipairs(Alts.loadRoster().alts) do
+            if Players:GetPlayerByUserId(id) and Alts.isLive(id) then table.insert(ids, id) end
+        end
+        return ids
+    end
+
+    function Alts.send()
+        if Alts.role() ~= "main" then return false end
+        local c = { v = 1, main = plr.UserId, placeId = game.PlaceId, jobId = game.JobId, time = os.time(), action = "stop" }
+        local A = Alts.active
+        if A then
+            local s = Cfg.altForm
+            c.action, c.preset, c.layers = "form", A.preset.key, A.layers
+            c.size, c.speed, c.height = s.size, s.speed, s.height
+            c.glitch, c.spin, c.pulse = s.glitch, s.spin, s.pulse
+        end
+        local ok = writeText(CMD_FILE, HttpService:JSONEncode(c))
+        Alts.sentAt = os.clock()
+        return ok
+    end
+
+    local function mainLoop()
+        if Alts.mainRunning then return end
+        Alts.mainRunning = true
+        task.spawn(function()
+            while Alts.alive and Alts.active and genv.PuppyAdminActive == true do
+                task.wait(0.5)
+                local A = Alts.active
+                if not A then break end
+                local ids = Alts.present()
+                local key = table.concat(ids, ",")
+                if key ~= A.ids then -- an alt joined or left: everyone gets a new place
+                    A.ids, A.layers = key, Alts.assign(A.preset, ids)
+                    Alts.send()
+                elseif os.clock() - (Alts.sentAt or 0) > 5 then
+                    Alts.send()
+                end
+                -- on your screen the alts never touch you (your own physics would push you around)
+                for _, id in ipairs(ids) do
+                    local p = Players:GetPlayerByUserId(id)
+                    local c = p and p.Character
+                    if c then
+                        for _, d in ipairs(c:GetDescendants()) do
+                            if d:IsA("BasePart") then d.CanCollide = false end
+                        end
+                    end
+                end
+            end
+            Alts.mainRunning = false
+        end)
+    end
+
+    function Alts.start(key)
+        local r = Alts.loadRoster(true)
+        if not r.main or r.main ~= plr.UserId then
+            note("Alts", r.main and "Only your main account leads formations (set it in Puppy Companion)"
+                or "No account list yet: add your accounts in Puppy Companion and set its executor folder", RED)
+            return false
+        end
+        local preset = Alts.findPreset(key) or Alts.PRESETS[Cfg.altForm.preset] or Alts.PRESETS[1]
+        for i, p in ipairs(Alts.PRESETS) do
+            if p == preset then Cfg.altForm.preset = i end
+        end
+        cfgSave()
+        local ids = Alts.present()
+        if #ids == 0 then
+            note("Alts", "No alt with Puppy Admin running is in this server yet (Puppy Companion: Send alts to main's server)", RED)
+            return false
+        end
+        Alts.active = { preset = preset, layers = Alts.assign(preset, ids), ids = table.concat(ids, ",") }
+        if not Alts.send() then
+            Alts.active = nil
+            note("Alts", "This executor cannot write files, so it cannot reach your alts", RED)
+            return false
+        end
+        mainLoop()
+        note("Alts", preset.name .. " with " .. #ids .. " alt" .. (#ids == 1 and "" or "s"), LIGHT)
+        if UIAPI.sync then UIAPI.sync() end
+        return true
+    end
+
+    function Alts.stop(quiet)
+        local was = Alts.active ~= nil
+        Alts.active = nil
+        if Alts.role() == "main" then Alts.send() end
+        if was and not quiet then note("Alts", "Formation stopped: your alts land beside you", LIGHT) end
+        if UIAPI.sync then UIAPI.sync() end
+    end
+
+    -- sliders and switches: save and resend at most five times a second
+    function Alts.settingsChanged()
+        if Alts.pending then return end
+        Alts.pending = true
+        task.delay(0.2, function()
+            Alts.pending = false
+            cfgSave()
+            if Alts.active then Alts.send() end
+        end)
+    end
+
+    -- one alt as the main sees it: here / here without Puppy Admin / elsewhere / not playing
+    function Alts.describe(id)
+        local here = Players:GetPlayerByUserId(id) ~= nil
+        local live, elsewhere = Alts.isLive(id)
+        if here and live then return "ready, in this server", PAL.GOOD end
+        if here then return "here, Puppy Admin not running", Color3.fromRGB(255, 190, 120) end
+        if elsewhere then return "in another server", PAL.DIM end
+        return "not playing", PAL.DIM
+    end
+
+    ------------------------------------------------------------------
+    -- Commands, window, background loop
+    ------------------------------------------------------------------
+
+    function H.alts() UIAPI.togglePanel("alts") end
+
+    function H.form(a)
+        local key = a and a[1]
+        if key and not Alts.findPreset(key) then
+            note("Alts", "Shapes: " .. Alts.keyList(), RED)
+            return
+        end
+        local size = tonumber(a and a[2])
+        if size then Cfg.altForm.size = math.max(0.5, math.min(3, size)) end
+        Alts.start(key)
+    end
+
+    function H.unform() Alts.stop() end
+
+    function UIAPI.buildAltsPanel(screenGui)
+        local W, HGT = 320, 560
+        local f = uiWindow(screenGui, "alts", "Alt formations", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2 - 190, 0.5, -HGT / 2))
+        local IW = W - 32
+        local S = Cfg.altForm
+        local status = label(f, {
+            Position = UDim2.fromOffset(16, 42), Size = UDim2.fromOffset(IW, 34), TextWrapped = true, TextSize = 12,
+            TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = PAL.DIM, Text = "",
+        })
+        local list = make("ScrollingFrame", {
+            Position = UDim2.fromOffset(16, 80), Size = UDim2.fromOffset(IW, 104), BackgroundColor3 = PAL.CARD,
+            BackgroundTransparency = 0.3, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = PAL.DIM,
+            CanvasSize = UDim2.fromOffset(0, 0),
+        }, f)
+        corner(list, 8)
+        local names = {}
+        for i, p in ipairs(Alts.PRESETS) do names[i] = p.name end
+        if not Alts.PRESETS[S.preset] then S.preset = 1 end
+        local dd = uiDropdown(f, "Shape: ", UDim2.fromOffset(IW, 28), UDim2.fromOffset(16, 194), names, S.preset, function(i)
+            S.preset = i
+            cfgSave()
+            if Alts.active then Alts.start(Alts.PRESETS[i].key) end
+        end)
+        local sliders = {}
+        local function slider(text, y, key, min, max, step, fmt)
+            local s = uiSlider(f, text, UDim2.fromOffset(16, y), IW, {
+                min = min, max = max, step = step, value = S[key], format = fmt,
+                onChange = function(v) S[key] = v; Alts.settingsChanged() end,
+            })
+            sliders[key] = s
+        end
+        slider("Size", 230, "size", 0.5, 3, 0.1, function(v) return string.format("%.1fx", v) end)
+        slider("Speed", 276, "speed", 0, 3, 0.1, function(v) return string.format("%.1fx", v) end)
+        slider("Height", 322, "height", -3, 15, 0.5, function(v) return string.format("%+.1f", v) end)
+        local switches = {}
+        local function switch(text, y, key)
+            switches[key] = uiSwitch(f, text, UDim2.fromOffset(16, y), IW, S[key], function(on)
+                S[key] = on
+                Alts.settingsChanged()
+            end)
+        end
+        switch("Glitch: random jumps and twists", 374, "glitch")
+        switch("Spin: bodies turn in place", 404, "spin")
+        switch("Pulse: the shape breathes", 434, "pulse")
+        local bw = (IW - 8) / 2
+        local startBtn = uiButton(f, "Start", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16, 472), function()
+            Alts.start((Alts.PRESETS[S.preset] or Alts.PRESETS[1]).key)
+        end)
+        uiButton(f, "Stop", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16 + bw + 8, 472), function() Alts.stop() end)
+        label(f, {
+            Position = UDim2.fromOffset(16, 510), Size = UDim2.fromOffset(IW, 44), TextWrapped = true, TextSize = 10,
+            TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = PAL.DIM,
+            Text = "Everyone in the server sees the shape: it is made of your alts' own characters. Each alt needs Puppy Admin running (auto-execute) and must be in this server. Puppy Companion's list says which accounts are alts.",
+        })
+
+        local function refresh()
+            local r = Alts.loadRoster(true)
+            local role = Alts.role()
+            for _, c in ipairs(list:GetChildren()) do
+                if c:IsA("GuiObject") then c:Destroy() end
+            end
+            for i, id in ipairs(r.alts) do
+                local text, color = Alts.describe(id)
+                local y = (i - 1) * 22 + 4
+                label(list, { Position = UDim2.fromOffset(8, y), Size = UDim2.new(0.5, -8, 0, 20), TextSize = 12,
+                    Text = r.names[id] or tostring(id), TextTruncate = Enum.TextTruncate.AtEnd })
+                label(list, { Position = UDim2.new(0.5, 0, 0, y), Size = UDim2.new(0.5, -8, 0, 20), TextSize = 11,
+                    Text = text, TextColor3 = color, TextXAlignment = Enum.TextXAlignment.Right })
+            end
+            list.CanvasSize = UDim2.fromOffset(0, #r.alts * 22 + 8)
+            if not r.found then
+                status.Text = "No account list yet. In Puppy Companion: add your accounts, make one the main and set the executor folder."
+            elseif role == "alt" then
+                status.Text = "This account is an alt: it follows " .. tostring(r.names[r.main] or "the main") .. "'s formations by itself."
+            elseif role ~= "main" then
+                status.Text = "This account is not in Puppy Companion's list, so it cannot lead your alts."
+            else
+                status.Text = string.format("You lead. %d of %d alt%s ready in this server.%s", #Alts.present(), #r.alts,
+                    #r.alts == 1 and "" or "s", Alts.active and (" Formation: " .. Alts.active.preset.name .. ".") or "")
+            end
+            startBtn.Text = Alts.active and "Restart" or "Start"
+        end
+
+        UIAPI.syncFns.alts = function()
+            if not f.Visible then return end
+            dd.set(S.preset)
+            for key, s in pairs(sliders) do
+                if not s.isDragging() then s.set(S[key]) end
+            end
+            for key, s in pairs(switches) do s.set(S[key]) end
+            pcall(refresh)
+        end
+        f:GetPropertyChangedSignal("Visible"):Connect(function()
+            if f.Visible then UIAPI.syncFns.alts() end
+        end)
+        task.spawn(function() -- who is here changes on its own
+            while f.Parent and Alts.alive do
+                task.wait(2)
+                if f.Visible then pcall(refresh) end
+            end
+        end)
+    end
+
+    -- every copy watches the command file while it is an alt (the roster can change while it runs)
+    task.spawn(function()
+        while Alts.alive and genv.PuppyAdminActive == true do
+            if Alts.role() == "alt" then
+                local ok, raw = pcall(function()
+                    if isfile and readfile and isfile(CMD_FILE) then return readfile(CMD_FILE) end
+                    return nil
+                end)
+                if ok and raw and raw ~= Alts.lastRaw then
+                    Alts.lastRaw = raw
+                    Alts.onCommand(raw)
+                end
+                task.wait(0.25)
+            else
+                if Alts.state then Alts.stopFollowing() end
+                task.wait(2)
+            end
+        end
+    end)
+
+    table.insert(cleanups, function()
+        Alts.alive = false
+        if Alts.active then
+            Alts.active = nil
+            pcall(Alts.send) -- the alts land when the main's script stops
+        end
+        Alts.stopFollowing()
+    end)
+end
+
+------------------------------------------------------------------------
 -- Runtime
 ------------------------------------------------------------------------
 
@@ -13179,6 +13902,7 @@ do
 end
 Watch.start()
 pcall(UIAPI.companionStart)
+pcall(UIAPI.altsSetup)
 -- fetch the engine file in the background once per version, so the first reanim / movement command does not wait for it
 task.spawn(function()
     task.wait(3)

@@ -37,6 +37,20 @@ Accounts start one after another, 8 seconds apart by default, so each Roblox win
 
 Roblox lets one window run at a time by holding a named lock. The companion takes that lock first and keeps it while it runs, so more windows can open. Start the companion before any Roblox window. If Roblox was already open, the header says so: close every Roblox window and press *Apply* in Settings. The lock names are in Settings in case Roblox changes them.
 
+## Alt formations (in game)
+
+Your alts can take a shape around your main that **everyone in the server sees**: the shape is made of the alts' own characters, so nothing extra has to replicate.
+
+1. Get the alts into your main's server (Launch tab: *Send alts to main's server*). Each alt needs Puppy Admin running (auto-execute).
+2. On your main, open **Alt formations**: the `alts` command, or the button at the bottom of Puppy Admin's Settings. It lists your alts as *ready*, *here, Puppy Admin not running*, *in another server* or *not playing*.
+3. Pick a shape and press **Start**. Size, Speed and Height sliders, plus the Glitch, Spin and Pulse switches, change the shape live. **Stop** (or `unform`) lands the alts beside you.
+
+Shapes: Wings, Halo, Ring, Star, Spiral, Tower, Wall, Trail (follows the path you walk), Scatter, and two mixes: Wings + halo (4 or more alts) and Star + ring (5 or more). From chat or the terminal: `form wings`, `form halo 1.5` (with a size), `unform`.
+
+![Formations with 8 alts](assets/formations.png)
+
+How it works: your main writes `PuppyAdmin/companion/altcmd.json` in the executor folder, and every alt on this PC reads it four times a second. An alt in the same server then places its own character every frame (it passes through walls and other players while it does), aiming slightly ahead of where it sees your main so it keeps up while you move. On your screen the alts never push you. Alts stop when your main's script stops, when the command is more than 25 seconds old (your main refreshes it every 5 seconds), or when they are not in your server. Alts on another PC cannot read this file, so formations need every account on the same PC.
+
 ## How status works
 
 Puppy Admin (build `2026.11.24-44` or newer) writes `PuppyAdmin/companion/<UserId>.json` in the executor's workspace every 10 seconds: user ID and name, place ID, server ID, player count, and its build. `stop` and `kill` mark it offline. A window that has not written for 35 seconds counts as not running. The companion writes `PuppyAdmin/companion/roster.json` next to them: the user IDs and names of the main and the alts, never a cookie.
@@ -80,5 +94,6 @@ If a launch fails, the log line says what Roblox answered.
 | `puppy_companion/launch_queue.py` | Launches one after another on a worker thread. |
 | `puppy_companion/workspace.py` | Status files, roster, auto-execute, finding the executor folder. |
 | `puppy_companion/selftest.py` | The built-in checks. |
+| `../tools/test_alts.lua` | Tests Puppy Admin's alt formations (shapes, command file, window) under Lua 5.4: `lua5.4 tools/test_alts.lua PuppyAdmin.lua` from the repository root. |
 | `tools/make_icon.py` | Draws the icon (`assets/PuppyCompanion.ico`, `puppy_companion/icon_data.py`). |
 | `tests/` | `python -m unittest discover -s tests` (window tests need a display and are skipped without one). |
