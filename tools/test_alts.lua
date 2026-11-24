@@ -454,13 +454,31 @@ do
     for f = 1, 40 do Heartbeat:fire(1 / 60) end
 end
 
--- separated limbs: an orbit distributes each alt's limbs as its own orbiting piece
+-- broken-up look (no death): bodies stay whole and alive but tumble
 do
     main.Cfg.altForm.limbs = true
     main.H.alt({ "orbit1" })
     runTasks()
     local oc = json.decode(FS["PuppyAdmin/companion/altcmd.json"])
-    check(oc.cmd == "orbit" and oc.params.limbs == true, "limbs flag is sent with the command")
+    check(oc.cmd == "orbit" and oc.params.limbs == true and oc.params.limbsDeath == false, "tumble flag is sent, death off")
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    local ch = PLAYERS[2].Character
+    check(ch.hum.Health == 100, "the broken-up look never kills the alt")
+    check(ch.motors[1].Enabled == true and alts[1].UIAPI.Alts.limbState == nil, "joints untouched without the death switch")
+    local look = ch.root.CFrame.LookVector
+    for f = 1, 20 do Heartbeat:fire(1 / 60) end
+    check((ch.root.CFrame.LookVector - look).Magnitude > 0.05, "the body tumbles")
+    main.Cfg.altForm.limbs = false
+    main.H.unform(); runTasks()
+end
+
+-- real separated limbs: only with the opt-in death switch
+do
+    main.Cfg.altForm.limbsDeath = true
+    main.H.alt({ "orbit1" })
+    runTasks()
+    local oc = json.decode(FS["PuppyAdmin/companion/altcmd.json"])
+    check(oc.cmd == "orbit" and oc.params.limbsDeath == true, "death-mode flag is sent with the command")
     for f = 1, 6 do Heartbeat:fire(1 / 60) end
     local ch = PLAYERS[2].Character
     check(ch.hum.Health == 0 and ch.hum.BreakJointsOnDeath == true,
@@ -481,7 +499,7 @@ do
     main.H.unform()
     runTasks()
     check(alts[1].UIAPI.Alts.limbState == nil, "stopping releases the limbs (the game respawns the alt whole)")
-    main.Cfg.altForm.limbs = false
+    main.Cfg.altForm.limbsDeath = false
     main.H.form({ "wings" }); runTasks()
     for f = 1, 40 do Heartbeat:fire(1 / 60) end
 end

@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-52" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-53" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -13236,7 +13236,7 @@ function UIAPI.altsSetup()
     local TAU = math.pi * 2
     local V3, CF = Vector3.new, CFrame.new
 
-    local defaults = { preset = 1, size = 1, speed = 1, height = 0, glitch = false, spin = false, pulse = false, limbs = false }
+    local defaults = { preset = 1, size = 1, speed = 1, height = 0, glitch = false, spin = false, pulse = false, limbs = false, limbsDeath = false }
     for k, v in pairs(defaults) do
         if type(Cfg.altForm[k]) ~= type(v) then Cfg.altForm[k] = v end
     end
@@ -13592,7 +13592,8 @@ function UIAPI.altsSetup()
         if os.time() - st.cmdTime > STALE then Alts.stopFollowing(); return end
         local root, hum = selfRoot()
         local mode = st.mode or "pin"
-        local limbMode = st.limbs and mode == "pin" and st.center ~= "self"
+        -- real separated limbs need the alt to die (opt-in "limbsDeath"); plain "limbs" tumbles whole bodies
+        local limbMode = st.limbsDeath and mode == "pin" and st.center ~= "self"
         if not (root and hum) or (hum.Health <= 0 and not limbMode) then return end
         st.t = st.t + dt * st.params.speed
         if Alts.lite then -- weak machines: place the body ~30 times a second, not every frame
@@ -13650,6 +13651,12 @@ function UIAPI.altsSetup()
                 return
             end
             cf = Alts.target(st, center, dt)
+        end
+        if st.limbs and not st.limbsDeath and mode == "pin" then
+            -- broken-up look without dying: each body tumbles on its own axes at its own rate
+            local k = (st.index or 0) + 1
+            local t = st.clock
+            cf = cf * CFrame.Angles(t * (1.3 + 0.37 * k), t * (0.9 + 0.23 * k), t * (1.7 - 0.19 * (k % 5)))
         end
         if not hum.PlatformStand then hum.PlatformStand = true end
         root.CFrame = cf
@@ -13784,40 +13791,43 @@ function UIAPI.altsSetup()
 
     -- formations (shape path, unchanged behaviour)
     function Alts.follow(c, form, index, count, slot)
-        local limbs = (c.params or c).limbs == true
+        local limbsDeath = (c.params or c).limbsDeath == true
+        local limbs = (c.params or c).limbs == true or limbsDeath
         local st = Alts.state
         if st and st.form == form and st.index == index and st.count == count and st.main == c.main then
-            st.params, st.cmdTime, st.slot, st.limbs = cleanParams(c), c.time, slot, limbs
-            if not limbs then Alts.reassemble() end
+            st.params, st.cmdTime, st.slot, st.limbs, st.limbsDeath = cleanParams(c), c.time, slot, limbs, limbsDeath
+            if not limbsDeath then Alts.reassemble() end
             return
         end
         local root = selfRoot()
         local fresh = st == nil
         Alts.state = {
-            main = c.main, form = form, center = "main", mode = "pin", noclip = true, lead = 0.1, limbs = limbs,
+            main = c.main, form = form, center = "main", mode = "pin", noclip = true, lead = 0.1, limbs = limbs, limbsDeath = limbsDeath,
             index = index, count = count, slot = slot, params = cleanParams(c), cmdTime = c.time,
             t = 0, clock = 0, hist = {}, rng = Random.new(plr.UserId % 2147483647 + index * 7919),
             from = root and root.CFrame or nil, blend = root and 0 or 1,
         }
-        if not limbs then Alts.reassemble() end
+        if not limbsDeath then Alts.reassemble() end
         Alts.ensureLoop(); Alts.capFps()
         if fresh then note("Alts", "Following the main: " .. form, LIGHT) end
     end
 
     -- a continuous command (orbit, circle, lines, stalk, spin, mirror, carpet, firework, nuke, ...)
     function Alts.beginCmd(c, name, spec, index, count, slot)
-        local limbs = (c.params or {}).limbs == true and (spec.mode or "pin") == "pin" and (c.center or spec.center) ~= "self"
+        local pinned = (spec.mode or "pin") == "pin" and (c.center or spec.center) ~= "self"
+        local limbsDeath = (c.params or {}).limbsDeath == true and pinned
+        local limbs = ((c.params or {}).limbs == true and pinned) or limbsDeath
         local st = Alts.state
         if st and st.cmd == name and st.index == index and st.count == count
             and st.main == c.main and st.target == (c.target or 0) then
-            st.params, st.cmdTime, st.slot, st.cmdParams, st.limbs = cleanParams(c), c.time, slot, c.params or {}, limbs
-            if not limbs then Alts.reassemble() end
+            st.params, st.cmdTime, st.slot, st.cmdParams, st.limbs, st.limbsDeath = cleanParams(c), c.time, slot, c.params or {}, limbs, limbsDeath
+            if not limbsDeath then Alts.reassemble() end
             return
         end
         local root = selfRoot()
         local mode = spec.mode or "pin"
         Alts.state = {
-            cmd = name, behav = spec, center = c.center or spec.center or "main", mode = mode, limbs = limbs,
+            cmd = name, behav = spec, center = c.center or spec.center or "main", mode = mode, limbs = limbs, limbsDeath = limbsDeath,
             noclip = (spec.noclip ~= false) and mode == "pin" and name ~= "fling" and name ~= "carpet",
             fling = name == "fling", index = index, count = count, slot = slot,
             main = c.main, target = c.target or 0, params = cleanParams(c), cmdParams = c.params or {},
@@ -13825,7 +13835,7 @@ function UIAPI.altsSetup()
             rng = Random.new(plr.UserId % 2147483647 + index * 7919 + (name:byte(1) or 0)),
             from = root and root.CFrame or nil, blend = root and 0 or 1,
         }
-        if not limbs then Alts.reassemble() end
+        if not limbsDeath then Alts.reassemble() end
         if spec.center == "self" and root then Alts.state.selfBase = levelFrame(root, 0) end
         Alts.ensureLoop(); Alts.capFps()
         if spec.onBegin then pcall(spec.onBegin, Alts.state) end
@@ -14282,7 +14292,8 @@ function UIAPI.altsSetup()
     function Alts.paramsFromCfg()
         local s = Cfg.altForm
         return { size = s.size, speed = s.speed, height = s.height, glitch = s.glitch,
-            spin = s.spin, pulse = s.pulse, limbs = s.limbs == true, lite = Cfg.altLite == true }
+            spin = s.spin, pulse = s.pulse, limbs = s.limbs == true, limbsDeath = s.limbsDeath == true,
+            lite = Cfg.altLite == true }
     end
 
     -- an alt's Puppy Admin is running in this server (its status file, written every 10 s); cached 2 s
@@ -14470,7 +14481,7 @@ function UIAPI.altsSetup()
                 local s, p = Cfg.altForm, Alts.active.params
                 p.size, p.speed, p.height = s.size, s.speed, s.height
                 p.glitch, p.spin, p.pulse, p.lite = s.glitch, s.spin, s.pulse, Cfg.altLite == true
-                p.limbs = s.limbs == true
+                p.limbs, p.limbsDeath = s.limbs == true, s.limbsDeath == true
                 Alts.send()
             end
         end)
@@ -14761,12 +14772,13 @@ function UIAPI.altsSetup()
         switch("Glitch: random jumps and twists", 186, "glitch")
         switch("Spin: bodies turn in place", 214, "spin")
         switch("Pulse: the shape breathes", 242, "pulse")
-        switch("Separate limbs (alts break apart, everyone sees it)", 270, "limbs")
+        switch("Broken-up look: bodies tumble (no death)", 270, "limbs")
+        switch("Real separate limbs: alts DIE and respawn", 298, "limbsDeath")
         local bwF = (IW - 8) / 2
-        local startBtn = uiButton(fp, "Start", UDim2.fromOffset(bwF, 32), UDim2.fromOffset(0, 306), function()
+        local startBtn = uiButton(fp, "Start", UDim2.fromOffset(bwF, 32), UDim2.fromOffset(0, 334), function()
             Alts.start((Alts.PRESETS[S.preset] or Alts.PRESETS[1]).key)
         end)
-        uiButton(fp, "Stop", UDim2.fromOffset(bwF, 32), UDim2.fromOffset(bwF + 8, 306), function() Alts.stop() end)
+        uiButton(fp, "Stop", UDim2.fromOffset(bwF, 32), UDim2.fromOffset(bwF + 8, 334), function() Alts.stop() end)
 
         -- Commands ----------------------------------------------------------
         local cp = pages.Commands
