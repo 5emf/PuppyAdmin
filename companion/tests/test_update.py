@@ -156,6 +156,25 @@ class UpdateTest(unittest.TestCase):
         self.assertGreater(bt("2026.11.25-1"), bt("2026.11.24-50"))
         self.assertEqual(bt(""), (0,))
 
+    def test_files_come_from_one_commit(self):
+        # the branch URLs are stale (old cached content); the commit URLs are current
+        sha = "a" * 40
+        urls, manifest = _repo(self.files)
+        pinned = {}
+        for url, data in urls.items():
+            pinned[url.replace("/" + _payload.REPO_BRANCH + "/", "/" + sha + "/")] = data
+        stale = {url: b"stale" for url in urls if url != _payload.manifest_url()}
+        stale[_payload.manifest_url()] = urls[_payload.manifest_url()]
+        api = "https://api.github.com/repos/%s/%s/commits/%s" % (
+            _payload.REPO_OWNER, _payload.REPO_NAME, _payload.REPO_BRANCH)
+        all_urls = dict(stale)
+        all_urls.update(pinned)
+        all_urls[api] = sha.encode()
+        op = opener_for(all_urls)
+        got = self.update.check(opener=op)
+        self.assertEqual(got["_ref"], sha)
+        self.assertEqual(self.update.download(got, opener=op), "9.9.9")
+
 
 if __name__ == "__main__":
     unittest.main()
