@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-55" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-56" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -361,6 +361,9 @@ local Cfg = {
     skipIntro = false, -- start without the brand intro
     uiFont = "Default", -- Settings > Font (UIFont.choices())
     uiTextScale = 1,    -- Settings > Text size (0.5 - 2)
+    cursor = "Default", -- Settings > Look > Cursor: Default, Glove, Light, Keyblade or Custom
+    cursorImage = "",   -- Custom cursor: image id or URL
+    cursorSize = 40,    -- cursor size in pixels (16 - 128)
     games = {},        -- mini game best scores: game id -> number
     fpsCounter = { on = false }, -- Performance > FPS counter: on, x, y (pixels)
     gbVolume = 1,      -- Game Boy sound level (0 = off)
@@ -5204,7 +5207,7 @@ end
 function H.theme(a)
     local first = a[1]
     if not first then
-        if settingsFrame then settingsFrame.Visible = true end
+        if UIAPI.settingsTab then UIAPI.settingsTab("Look") elseif settingsFrame then settingsFrame.Visible = true end
         local names = {}
         for _, p in ipairs(Theme.presets) do table.insert(names, p.name) end
         note("Theme", "Presets: " .. table.concat(names, ", "))
@@ -5235,6 +5238,31 @@ end
 function H.settings()
     if settingsFrame then settingsFrame.Visible = not settingsFrame.Visible end
 end
+
+-- cursor [default|glove|light|keyblade|<image id or URL>] [size]
+function H.cursor(a)
+    local C = UIAPI.Cursor
+    local first = a[1]
+    if not first then
+        if UIAPI.settingsTab then UIAPI.settingsTab("Look") end
+        note("Cursor", "Now: " .. tostring(Cfg.cursor) .. " - choices: default, glove, light, keyblade, or an image id/URL", LIGHT)
+        return
+    end
+    local size = tonumber(a[2])
+    if tonumber(first) and not a[2] and tonumber(first) <= 128 then -- "cursor 48" = size only
+        C.setSize(first); note("Cursor", "Size " .. Cfg.cursorSize .. " px", LIGHT); return
+    end
+    if size then C.setSize(size) end
+    local name
+    for _, n in ipairs(C.CHOICES) do if n:lower() == first:lower() then name = n end end
+    if not name then Cfg.cursorImage = first; name = "Custom" end
+    task.spawn(function()
+        local ok, msg = C.set(name)
+        note("Cursor", msg, ok and LIGHT or RED)
+    end)
+end
+table.insert(cmds, "cursor")
+cmdDocs.cursor = "cursor [default|glove|light|keyblade|image id/URL] [size] - Mouse cursor image (also in Settings > Look)"
 
 function H.help()
     if helpFrame then helpFrame.Visible = not helpFrame.Visible end
@@ -12389,6 +12417,146 @@ local function buildPanels(screenGui)
     B.alts = function() UIAPI.buildAltsPanel(screenGui) end
 end
 
+-- Custom mouse cursor (Settings > Look). The image follows the mouse in its own
+-- ScreenGui above everything and Roblox's own pointer is hidden; "hot" is the point
+-- of the image that sits on the mouse position (fraction of its size). Images live
+-- in assets/cursors (new file name when one changes: they are cached by URL).
+do
+    local C = { gui = nil, img = nil, conn = nil }
+    UIAPI.Cursor = C
+    C.BUILTIN = {
+        Glove = { file = "glove_v1.png", hot = Vector2.new(0.992, 0.391) },
+        Light = { file = "light_v1.png", hot = Vector2.new(0.5, 0.5) },
+        Keyblade = { file = "keyblade_v1.png", hot = Vector2.new(0.836, 0.008) },
+    }
+    C.CHOICES = { "Default", "Glove", "Light", "Keyblade", "Custom" }
+
+    function C.off()
+        if C.conn then C.conn:Disconnect(); C.conn = nil end
+        if C.gui then pcall(function() C.gui:Destroy() end); C.gui, C.img = nil, nil end
+        pcall(function() UserInputService.MouseIconEnabled = true end)
+    end
+
+    local function place()
+        if not (C.img and C.img.Parent) then return end
+        local locked = UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
+        C.img.Visible = not locked -- first person / shift lock: no pointer, like Roblox's own
+        pcall(function() UserInputService.MouseIconEnabled = locked end)
+        local m = UserInputService:GetMouseLocation()
+        local size = C.img.AbsoluteSize
+        C.img.Position = UDim2.fromOffset(m.X - size.X * C.hot.X, m.Y - size.Y * C.hot.Y)
+    end
+
+    -- name: one of C.CHOICES; returns ok, message. Yields while an image downloads.
+    function C.set(name, quiet)
+        name = table.find(C.CHOICES, name) and name or "Default"
+        Cfg.cursor = name
+        if not quiet then cfgSave() end
+        if name == "Default" then C.off(); return true, "Cursor: Roblox's own" end
+        local src, hot
+        if name == "Custom" then
+            local reason
+            src, reason = resolveImageSource(Cfg.cursorImage, "cursor")
+            if not src then C.off(); return false, "Custom cursor: " .. tostring(reason) end
+            hot = Vector2.new(0, 0) -- a custom image points with its top-left corner, like an arrow
+        else
+            local b = C.BUILTIN[name]
+            src = urlImageAsset(SETTINGS.Auras.assetBase .. "assets/cursors/" .. b.file, "cursor")
+            if not src then C.off(); return false, "Cursor image could not be loaded (needs getcustomasset + writefile)" end
+            hot = b.hot
+        end
+        if not C.gui then
+            C.gui = Instance.new("ScreenGui")
+            C.gui.Name = "PuppyAdminCursor"
+            C.gui.IgnoreGuiInset = true
+            C.gui.DisplayOrder = 2147483000
+            C.gui.ResetOnSpawn = false
+            parentGui(C.gui)
+            C.img = make("ImageLabel", { BackgroundTransparency = 1, Active = false, ZIndex = 10,
+                ScaleType = Enum.ScaleType.Fit }, C.gui)
+            C.conn = RunService.RenderStepped:Connect(function() pcall(place) end)
+        end
+        C.hot = hot
+        C.img.Image = src
+        C.img.Size = UDim2.fromOffset(Cfg.cursorSize or 40, Cfg.cursorSize or 40)
+        place()
+        return true, "Cursor: " .. name
+    end
+
+    function C.setSize(px)
+        Cfg.cursorSize = math.clamp(math.floor(tonumber(px) or 40), 16, 128)
+        if C.img then C.img.Size = UDim2.fromOffset(Cfg.cursorSize, Cfg.cursorSize) end
+        cfgSave()
+    end
+
+    table.insert(cleanups, C.off)
+end
+
+-- Command directory tabs: every command has one category (explicit list first,
+-- then the engine's movement / performance groups, then words in its help line).
+do
+    UIAPI.CMD_CATEGORIES = { "Windows", "Movement", "Reanim", "Character", "Players", "Tools & auras", "Alts",
+        "Tags", "Games", "Server", "Performance", "Owner", "Settings", "Other" }
+    local EXPLICIT = {
+        Movement = { "moveui", "infbaseplate", "uninfbaseplate", "tp", "superfly", "clicktp" },
+        Reanim = { "reanim", "anim" },
+        Players = { "esp", "unesp", "hide", "unhide", "mute", "unmute" },
+        ["Tools & auras"] = { "tools", "aura", "unaura", "auras" },
+        Alts = { "alts", "alt", "altcmds", "form", "unform" },
+        Tags = { "tagui", "taglist", "tagsync", "tagrefresh", "hidetags", "showtags", "toggletags" },
+        Games = { "games", "gameboy", "gba", "doom" },
+        Server = { "finder", "shmost", "shlowest", "serverhop", "rejoin", "antiafk", "unantiafk", "antikick", "unantikick", "antivcban" },
+        Performance = { "perf", "performance" },
+        Owner = { "owner", "kick", "ban", "unban", "bans", "blacklist" },
+        Settings = { "prefix", "uikey", "settings", "theme", "help", "kill", "stop", "cursor", "font" },
+    }
+    local byName = {}
+    for cat, names in pairs(EXPLICIT) do for _, n in ipairs(names) do byName[n] = cat end end
+    local WORDS = {
+        { "Movement", { "fly", "speed", "walk", "jump", "noclip", "teleport", "swim", "float", "gravity", "airwalk", "spin" } },
+        { "Character", { "animation", "emote", "dance", "sit", "character", "avatar", "rig", "limb", "body" } },
+        { "Players", { "player", "spectate", "view", "follow" } },
+        { "Performance", { "fps", "graphics", "lag", "shadow", "light" } },
+        { "Server", { "server", "rejoin", "hop" } },
+    }
+    function UIAPI.cmdCategory(name)
+        if byName[name] then return byName[name] end
+        for _, c in ipairs(PUP_MOVE) do if c.name == name then return "Movement" end end
+        for _, c in ipairs(PUP_PERF) do if c.name == name then return "Performance" end end
+        local doc = tostring(cmdDocs[name] or ""):lower()
+        for _, w in ipairs(WORDS) do
+            for _, word in ipairs(w[2]) do
+                if doc:find(word, 1, true) then return w[1] end
+            end
+        end
+        return "Other"
+    end
+
+    -- commands that open a window. A string is the panel to show (without the command's
+    -- other effects, e.g. esp / infbaseplate also switch their feature on); true runs the
+    -- command, which opens its own window.
+    UIAPI.CMD_OPENS = {
+        tools = "tools", moveui = "move", infbaseplate = "floor", esp = "esp", superfly = true, reanim = true,
+        tagui = true, taglist = true, owner = true, blacklist = true, performance = true,
+        games = true, gameboy = true, gba = true, doom = true, finder = true, antivcban = true,
+        alts = true, altcmds = true, settings = true, theme = true, help = true,
+    }
+    function UIAPI.cmdOpensWindow(name)
+        local v = UIAPI.CMD_OPENS[name]
+        if v == true then return type(H[name]) == "function" end
+        return type(v) == "string"
+    end
+    function UIAPI.openForCommand(name)
+        local v = UIAPI.CMD_OPENS[name]
+        if type(v) == "string" then
+            local p = UIAPI.panels[v]
+            if p then p.Visible = true; UIAPI.sync() end
+        elseif v == true and type(H[name]) == "function" then
+            task.spawn(function() pcall(H[name], {}) end)
+        end
+    end
+end
+
 ------------------------------------------------------------------------
 -- Interface
 ------------------------------------------------------------------------
@@ -12541,45 +12709,117 @@ local function createUI()
         Text = "",
     }, searchContainer)
 
+    -- Command directory: category tabs, then one row per command. A row that opens a
+    -- window opens it when clicked; any other row puts the command in the command bar
+    -- (so its arguments can be typed). Rebuilt on open, so late commands show up too.
+    local tabBar = make("ScrollingFrame", {
+        Size = UDim2.new(1, -30, 0, 28), Position = UDim2.new(0, 15, 0, 76), BackgroundTransparency = 1,
+        ScrollBarThickness = 2, ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100), ScrollingDirection = Enum.ScrollingDirection.X,
+        CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.X,
+    }, helpFrame)
+    make("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, tabBar)
     local scrollFrame = make("ScrollingFrame", {
-        Size = UDim2.new(1, -20, 1, -90),
-        Position = UDim2.new(0, 10, 0, 80),
+        Size = UDim2.new(1, -20, 1, -120),
+        Position = UDim2.new(0, 10, 0, 112),
         BackgroundTransparency = 1,
         ScrollBarThickness = 2,
         ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100),
         CanvasSize = UDim2.new(0, 0, 0, 0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
     }, helpFrame)
-    make("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, scrollFrame)
+    make("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, scrollFrame)
 
-    for idx, c in ipairs(cmds) do
-        local entry = make("Frame", {
-            Size = UDim2.new(1, -10, 0, 30),
-            BackgroundColor3 = Color3.fromRGB(20, 20, 20),
-            BackgroundTransparency = 0.4,
-            BorderSizePixel = 0,
-            LayoutOrder = idx,
-        }, scrollFrame)
-        make("UICorner", { CornerRadius = UDim.new(0, 6) }, entry)
-        make("TextLabel", {
-            Size = UDim2.new(1, -10, 1, 0),
-            Position = UDim2.new(0, 10, 0, 0),
-            BackgroundTransparency = 1,
-            Text = cmdDocs[c],
-            TextColor3 = Color3.new(1, 1, 1),
-            Font = Enum.Font.Code,
-            TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextTruncate = Enum.TextTruncate.AtEnd,
-        }, entry)
-        helpEntries[c] = entry
+    helpEntries.tab = "All"
+    helpEntries.rows = {}
+    helpEntries.tabs = {}
+    local function filterRows()
+        local query = searchBox.Text:lower()
+        for _, r in ipairs(helpEntries.rows) do
+            local inTab = helpEntries.tab == "All" or r.cat == helpEntries.tab
+            local hit = query == "" or r.name:find(query, 1, true) ~= nil or r.doc:lower():find(query, 1, true) ~= nil
+            -- a search looks through every tab
+            r.frame.Visible = hit and (inTab or query ~= "")
+        end
+        for name, b in pairs(helpEntries.tabs) do
+            local on = name == helpEntries.tab
+            b.BackgroundTransparency = on and 0.1 or 0.6
+            b.TextColor3 = on and Color3.new(1, 1, 1) or Color3.fromRGB(170, 170, 170)
+        end
     end
 
-    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-        local query = searchBox.Text:lower()
-        for c, entry in pairs(helpEntries) do
-            entry.Visible = query == "" or c:find(query, 1, true) ~= nil or cmdDocs[c]:lower():find(query, 1, true) ~= nil
+    function UIAPI.fillHelp()
+        if helpEntries.built == #cmds then filterRows(); return end
+        helpEntries.built = #cmds
+        for _, r in ipairs(helpEntries.rows) do r.frame:Destroy() end
+        for _, b in pairs(helpEntries.tabs) do b:Destroy() end
+        helpEntries.rows, helpEntries.tabs = {}, {}
+        local counts = {}
+        local sorted = {}
+        for _, c in ipairs(cmds) do
+            if cmdDocs[c] then sorted[#sorted + 1] = { name = c, cat = UIAPI.cmdCategory(c), doc = cmdDocs[c] } end
         end
+        local order = {}
+        for i, cat in ipairs(UIAPI.CMD_CATEGORIES) do order[cat] = i end
+        table.sort(sorted, function(a, b)
+            if a.cat ~= b.cat then return (order[a.cat] or 99) < (order[b.cat] or 99) end
+            return a.name < b.name
+        end)
+        for idx, r in ipairs(sorted) do
+            counts[r.cat] = (counts[r.cat] or 0) + 1
+            local opens = UIAPI.cmdOpensWindow(r.name)
+            local row = make("TextButton", {
+                Size = UDim2.new(1, -10, 0, 30), BackgroundColor3 = Color3.fromRGB(20, 20, 20), BackgroundTransparency = 0.4,
+                BorderSizePixel = 0, LayoutOrder = idx, Text = "", AutoButtonColor = true,
+            }, scrollFrame)
+            make("UICorner", { CornerRadius = UDim.new(0, 6) }, row)
+            make("TextLabel", {
+                Size = UDim2.new(1, opens and -78 or -14, 1, 0), Position = UDim2.new(0, 10, 0, 0), BackgroundTransparency = 1,
+                Text = r.doc, TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.Code, TextSize = 12,
+                TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+            }, row)
+            if opens then
+                make("TextLabel", {
+                    Size = UDim2.new(0, 62, 0, 20), Position = UDim2.new(1, -68, 0.5, -10), BackgroundColor3 = PAL.ACCENT or Color3.fromRGB(90, 169, 255),
+                    BackgroundTransparency = 0.55, Text = "Open", TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.GothamBold, TextSize = 11,
+                }, row)
+            end
+            row.MouseButton1Click:Connect(function()
+                if opens then
+                    if r.name == "help" then return end
+                    UIAPI.openForCommand(r.name)
+                else
+                    cmdInput.Text = firstPrefix() .. r.name .. " "
+                    cmdInput:CaptureFocus()
+                    task.defer(function() cmdInput.CursorPosition = #cmdInput.Text + 1 end)
+                end
+            end)
+            r.frame = row
+            helpEntries.rows[#helpEntries.rows + 1] = r
+        end
+        local tabsList = { "All" }
+        for _, cat in ipairs(UIAPI.CMD_CATEGORIES) do if counts[cat] then tabsList[#tabsList + 1] = cat end end
+        for i, name in ipairs(tabsList) do
+            local b = make("TextButton", {
+                AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.new(0, 0, 0, 24), BackgroundColor3 = Color3.fromRGB(40, 40, 52),
+                BorderSizePixel = 0, LayoutOrder = i, Font = Enum.Font.Code, TextSize = 11,
+                Text = "  " .. name .. (name == "All" and "" or (" " .. counts[name])) .. "  ",
+            }, tabBar)
+            make("UICorner", { CornerRadius = UDim.new(0, 6) }, b)
+            b.MouseButton1Click:Connect(function()
+                helpEntries.tab = name
+                searchBox.Text = ""
+                filterRows()
+                scrollFrame.CanvasPosition = Vector2.new(0, 0)
+            end)
+            helpEntries.tabs[name] = b
+        end
+        if not helpEntries.tabs[helpEntries.tab] then helpEntries.tab = "All" end
+        filterRows()
+    end
+
+    searchBox:GetPropertyChangedSignal("Text"):Connect(filterRows)
+    helpFrame:GetPropertyChangedSignal("Visible"):Connect(function()
+        if helpFrame.Visible then pcall(UIAPI.fillHelp) end
     end)
 
     -- Settings window: command prefixes, UI key, kill switch
@@ -12675,11 +12915,38 @@ local function createUI()
         return b
     end
 
-    settingsFrame = windowFrame(UDim2.new(0, 360, 0, 948), "SETTINGS  -  build " .. tostring(genv.PuppyAdminBuild))
+    settingsFrame = windowFrame(UDim2.new(0, 380, 0, 600), "SETTINGS  -  build " .. tostring(genv.PuppyAdminBuild))
+    do
+    -- three tabs: General (commands, keys, switches), Look (theme, image, font, text
+    -- size, cursor), Windows (a button for every window). Each page scrolls.
+    local pages, tabBtns = {}, {}
+    local function showSettingsTab(name)
+        for k, pg in pairs(pages) do pg.Visible = (k == name) end
+        for k, b in pairs(tabBtns) do
+            b.BackgroundTransparency = (k == name) and 0.1 or 0.6
+            b.TextColor3 = (k == name) and Color3.new(1, 1, 1) or Color3.fromRGB(170, 170, 170)
+        end
+    end
+    UIAPI.settingsTab = function(name)
+        settingsFrame.Visible = true
+        showSettingsTab(name)
+    end
+    for i, name in ipairs({ "General", "Look", "Windows" }) do
+        local b = actionButton(settingsFrame, name, UDim2.new((i - 1) / 3, i == 1 and 15 or 4, 0, 40), UDim2.new(1 / 3, i == 2 and -8 or -19, 0, 28))
+        b.MouseButton1Click:Connect(function() showSettingsTab(name) end)
+        tabBtns[name] = b
+        pages[name] = make("ScrollingFrame", {
+            Size = UDim2.new(1, -4, 1, -132), Position = UDim2.new(0, 0, 0, 76), BackgroundTransparency = 1,
+            BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100),
+            CanvasSize = UDim2.new(0, 0, 0, 0), Visible = false,
+        }, settingsFrame)
+    end
 
-    fieldLabel(settingsFrame, "Chat command prefixes (comma separated, 1-3 symbols)", 45)
-    local prefixBox = fieldBox(settingsFrame, 65, table.concat(Cfg.prefixes, ", "))
-    local prefixApply = actionButton(settingsFrame, "Apply", UDim2.new(1, -85, 0, 65), UDim2.new(0, 70, 0, 28))
+    ---------------------------------------------------------------- General
+    local gen = pages.General
+    fieldLabel(gen, "Chat command prefixes (comma separated, 1-3 symbols)", 4)
+    local prefixBox = fieldBox(gen, 24, table.concat(Cfg.prefixes, ", "))
+    local prefixApply = actionButton(gen, "Apply", UDim2.new(1, -85, 0, 24), UDim2.new(0, 70, 0, 28))
     prefixApply.MouseButton1Click:Connect(function()
         local list = parsePrefixList(prefixBox.Text)
         if #list == 0 then note("Prefix", "1-3 symbols, no letters/digits/spaces", RED); return end
@@ -12689,9 +12956,9 @@ local function createUI()
         note("Prefix", table.concat(list, "  "), LIGHT)
     end)
 
-    fieldLabel(settingsFrame, "Show/hide UI key (KeyCode name, e.g. RightControl)", 105)
-    local keyBox = fieldBox(settingsFrame, 125, Cfg.uiKey)
-    local keyApply = actionButton(settingsFrame, "Apply", UDim2.new(1, -85, 0, 125), UDim2.new(0, 70, 0, 28))
+    fieldLabel(gen, "Show/hide UI key (KeyCode name, e.g. RightControl)", 64)
+    local keyBox = fieldBox(gen, 84, Cfg.uiKey)
+    local keyApply = actionButton(gen, "Apply", UDim2.new(1, -85, 0, 84), UDim2.new(0, 70, 0, 28))
     keyApply.MouseButton1Click:Connect(function()
         local kc = resolveKeyCode(keyBox.Text)
         if not kc then note("UI Key", "Unknown key", RED); return end
@@ -12701,22 +12968,9 @@ local function createUI()
         note("UI Key", kc.Name, LIGHT)
     end)
 
-    for i, p in ipairs({ { "Tools", "tools" }, { "Reanim", "reanim" }, { "Move", "move" }, { "ESP", "esp" }, { "Floor", "floor" } }) do
-        actionButton(settingsFrame, p[1], UDim2.new(0, 15 + (i - 1) * 66, 0, 162), UDim2.new(0, 62, 0, 28)).MouseButton1Click:Connect(function()
-            UIAPI.togglePanel(p[2])
-        end)
-    end
-
-    -- second row: owner-only panels check permission inside their commands
-    for i, p in ipairs({ { "Perf", "performance" }, { "Owner", "owner" }, { "Tags", "tagui" }, { "Games", "games" } }) do
-        actionButton(settingsFrame, p[1], UDim2.new(0, 15 + (i - 1) * 66, 0, 198), UDim2.new(0, 62, 0, 28)).MouseButton1Click:Connect(function()
-            local fn = H[p[2]]
-            if type(fn) == "function" then fn({}) end
-        end)
-    end
-    local introBtn = actionButton(settingsFrame, "", UDim2.new(0, 15 + 4 * 66, 0, 198), UDim2.new(0, 62, 0, 28))
+    local introBtn = actionButton(gen, "", UDim2.new(0, 15, 0, 124), UDim2.new(0.5, -19, 0, 28))
     introBtn.TextSize = 11
-    local function introText() introBtn.Text = Cfg.skipIntro and "Intro off" or "Intro on" end
+    local function introText() introBtn.Text = Cfg.skipIntro and "Intro: off" or "Intro: on" end
     introText()
     introBtn.MouseButton1Click:Connect(function()
         Cfg.skipIntro = not Cfg.skipIntro
@@ -12724,17 +12978,7 @@ local function createUI()
         introText()
         note("Intro", Cfg.skipIntro and "Skipped from the next start" or "Shown at the next start", LIGHT)
     end)
-
-    -- third row: more windows, then the anti-AFK switch
-    for i, p in ipairs({ { "Finder", "finder" }, { "Game Boy", "gameboy" }, { "GBA", "gba" }, { "Doom", "doom" } }) do
-        local b = actionButton(settingsFrame, p[1], UDim2.new(0, 15 + (i - 1) * 58, 0, 234), UDim2.new(0, 54, 0, 28))
-        b.TextSize = 11
-        b.MouseButton1Click:Connect(function()
-            local fn = H[p[2]]
-            if type(fn) == "function" then fn({}) end
-        end)
-    end
-    local afkBtn = actionButton(settingsFrame, "", UDim2.new(0, 15 + 4 * 58, 0, 234), UDim2.new(0, 98, 0, 28))
+    local afkBtn = actionButton(gen, "", UDim2.new(0.5, 4, 0, 124), UDim2.new(0.5, -19, 0, 28))
     afkBtn.TextSize = 11
     local function afkText()
         afkBtn.Text = UIAPI.antiAfk.on and "Anti-AFK: on" or "Anti-AFK: off"
@@ -12744,123 +12988,8 @@ local function createUI()
     UIAPI.antiAfkChanged = afkText
     afkBtn.MouseButton1Click:Connect(function() H.antiafk({}) end)
 
-    -- Theme: presets, then one row per colour role (hex, r,g,b or a colour name)
-    fieldLabel(settingsFrame, "UI theme", 272)
-    for i, p in ipairs(Theme.presets) do
-        local b = actionButton(settingsFrame, p.name, UDim2.new(0, 15 + (i - 1) * 56, 0, 292), UDim2.new(0, 52, 0, 26))
-        b.TextSize = 11
-        b.MouseButton1Click:Connect(function()
-            Theme.usePreset(p.name)
-            note("Theme", p.name, LIGHT)
-        end)
-    end
-    fieldLabel(settingsFrame, "Colors: #hex, r,g,b or a name (press Enter to apply)", 328)
-    local themeRows = {}
-    for i, role in ipairs(Theme.roles) do
-        local y = 348 + (i - 1) * 32
-        make("TextLabel", {
-            Size = UDim2.new(0, 110, 0, 26), Position = UDim2.new(0, 15, 0, y), BackgroundTransparency = 1,
-            Text = Theme.labels[role], TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.Code, TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        }, settingsFrame)
-        local sw = make("Frame", {
-            Name = "PuppyAdminSwatch", Size = UDim2.new(0, 26, 0, 26), Position = UDim2.new(0, 130, 0, y),
-            BackgroundColor3 = Theme.current[role], BorderSizePixel = 0,
-        }, settingsFrame)
-        make("UICorner", { CornerRadius = UDim.new(0, 6) }, sw)
-        make("UIStroke", { Color = Color3.fromRGB(100, 100, 100), Transparency = 0.4, Thickness = 1 }, sw)
-        local holder = make("Frame", {
-            Size = UDim2.new(1, -181, 0, 26), Position = UDim2.new(0, 166, 0, y),
-            BackgroundColor3 = Color3.fromRGB(5, 5, 5), BackgroundTransparency = 0.5, BorderSizePixel = 0,
-        }, settingsFrame)
-        make("UICorner", { CornerRadius = UDim.new(0, 6) }, holder)
-        make("UIStroke", { Color = Color3.fromRGB(100, 100, 100), Transparency = 0.7, Thickness = 1 }, holder)
-        local box = make("TextBox", {
-            Size = UDim2.new(1, -16, 1, 0), Position = UDim2.new(0, 8, 0, 0), BackgroundTransparency = 1,
-            TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.Code, TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Left, Text = Theme.hex(Theme.current[role]), ClearTextOnFocus = false,
-        }, holder)
-        box.FocusLost:Connect(function()
-            local r, g, b = parseColorArgs(splitArgs((box.Text:gsub(",%s+", ","))), 1)
-            if not r then
-                note("Theme", "Color: #hex, r,g,b or a name", RED)
-                box.Text = Theme.hex(Theme.current[role])
-                return
-            end
-            Theme.setRole(role, Color3.fromRGB(r, g, b))
-        end)
-        themeRows[role] = { swatch = sw, box = box }
-    end
-    table.insert(Theme.listeners, function()
-        for role, row in pairs(themeRows) do
-            row.swatch.BackgroundColor3 = Theme.current[role]
-            if not row.box:IsFocused() then row.box.Text = Theme.hex(Theme.current[role]) end
-        end
-    end)
-
-    fieldLabel(settingsFrame, "Background image: id, rbxassetid, image URL or off [visibility 0-100]", 572)
-    local imageBox = fieldBox(settingsFrame, 592, Theme.image and Theme.image.src or ((type(Cfg.theme) == "table" and type(Cfg.theme.image) == "table" and Cfg.theme.image.src) or ""))
-    imageBox.PlaceholderText = "e.g. 1234567890 60"
-    local imageApply = actionButton(settingsFrame, "Apply", UDim2.new(1, -85, 0, 592), UDim2.new(0, 70, 0, 28))
-    imageApply.MouseButton1Click:Connect(function()
-        local args = splitArgs(imageBox.Text)
-        task.spawn(function()
-            local ok, msg = Theme.applyImageArgs(args)
-            note("Theme", msg, ok and LIGHT or RED)
-            if Theme.image then imageBox.Text = Theme.image.src elseif ok then imageBox.Text = "" end
-        end)
-    end)
-
-    -- The token only ever goes into a local file; it is never shown again or put in the config.
-    fieldLabel(settingsFrame, "Tag sync: GitHub token (saved only in " .. SETTINGS.TagSync.tokenFile .. ")", 632)
-    local tokenBox = fieldBox(settingsFrame, 652, "")
-    tokenBox.PlaceholderText = TagSync.token() and "token saved - paste a new one, or 'remove'" or "github_pat_... (never type this in chat)"
-    local tokenApply = actionButton(settingsFrame, "Save", UDim2.new(1, -85, 0, 652), UDim2.new(0, 70, 0, 28))
-    tokenApply.MouseButton1Click:Connect(function()
-        local t = tokenBox.Text
-        tokenBox.Text = ""
-        local ok, msg = TagSync.setToken(t:lower() == "remove" and "" or t)
-        note("Tag sync", msg, ok and LIGHT or RED)
-        tokenBox.PlaceholderText = TagSync.token() and "token saved - paste a new one, or 'remove'" or "github_pat_... (never type this in chat)"
-        if ok and TagSync.token() then
-            task.spawn(function()
-                local okPull, status = TagSync.pull(true)
-                note("Tag sync", status, okPull and LIGHT or RED)
-            end)
-        end
-    end)
-
-    fieldLabel(settingsFrame, "Script font (every window; Default = original fonts)", 692)
-    local fontChoices = UIFont.choices()
-    uiDropdown(settingsFrame, "Font: ", UDim2.new(1, -30, 0, 28), UDim2.new(0, 15, 0, 712), fontChoices,
-        table.find(fontChoices, Cfg.uiFont) or 1, function(_, name)
-            task.spawn(function()
-                local ok, msg = UIFont.set(name)
-                note("Font", msg, ok and LIGHT or RED)
-            end)
-        end)
-
-    -- applied a moment after the slider stops, not on every step of a drag
-    local scaleToken = 0
-    local scaleSlider = uiSlider(settingsFrame, "Text size (every window)", UDim2.new(0, 15, 0, 748), 330, {
-        min = 0.5, max = 2, step = 0.05, value = UIFont.scale,
-        format = function(v) return math.floor(v * 100 + 0.5) .. "%" end,
-        onChange = function(v)
-            scaleToken = scaleToken + 1
-            local mine = scaleToken
-            task.delay(0.25, function()
-                if mine == scaleToken then UIFont.setScale(v) end
-            end)
-        end,
-    })
-    actionButton(settingsFrame, "Reset text size", UDim2.new(0, 15, 0, 796), UDim2.new(1, -30, 0, 26)).MouseButton1Click:Connect(function()
-        scaleSlider.set(1)
-        local ok, msg = UIFont.setScale(1)
-        note("Text size", msg, ok and LIGHT or RED)
-    end)
-
     -- nametags on your screen only (hidetags / showtags do the same)
-    local tagVisBtn = actionButton(settingsFrame, "", UDim2.new(0, 15, 0, 830), UDim2.new(1, -30, 0, 28))
+    local tagVisBtn = actionButton(gen, "", UDim2.new(0, 15, 0, 160), UDim2.new(1, -30, 0, 28))
     tagVisBtn.TextSize = 12
     local function tagVisText()
         tagVisBtn.Text = Cfg.tagsHidden and "Nametags: hidden on your screen (click to show)" or "Nametags: shown (click to hide on your screen)"
@@ -12871,7 +13000,7 @@ local function createUI()
     tagVisBtn.MouseButton1Click:Connect(function() UIAPI.setTagsHidden(not Cfg.tagsHidden) end)
 
     -- alt formations (Puppy Companion's main and alts)
-    local altsBtn = actionButton(settingsFrame, "Alts - accounts, formations & commands", UDim2.new(0, 15, 0, 866), UDim2.new(1, -30, 0, 28))
+    local altsBtn = actionButton(gen, "Alts - accounts, formations & commands", UDim2.new(0, 15, 0, 196), UDim2.new(1, -30, 0, 28))
     altsBtn.TextSize = 12
     altsBtn.MouseButton1Click:Connect(function() if H.alts then H.alts({}) end end)
     -- live status on the button, so you can see your alts without opening the window
@@ -12899,8 +13028,192 @@ local function createUI()
         end
     end)
 
+    -- The token only ever goes into a local file; it is never shown again or put in the config.
+    fieldLabel(gen, "Tag sync: GitHub token (saved only in " .. SETTINGS.TagSync.tokenFile .. ")", 236)
+    local tokenBox = fieldBox(gen, 256, "")
+    tokenBox.PlaceholderText = TagSync.token() and "token saved - paste a new one, or 'remove'" or "github_pat_... (never type this in chat)"
+    local tokenApply = actionButton(gen, "Save", UDim2.new(1, -85, 0, 256), UDim2.new(0, 70, 0, 28))
+    tokenApply.MouseButton1Click:Connect(function()
+        local t = tokenBox.Text
+        tokenBox.Text = ""
+        local ok, msg = TagSync.setToken(t:lower() == "remove" and "" or t)
+        note("Tag sync", msg, ok and LIGHT or RED)
+        tokenBox.PlaceholderText = TagSync.token() and "token saved - paste a new one, or 'remove'" or "github_pat_... (never type this in chat)"
+        if ok and TagSync.token() then
+            task.spawn(function()
+                local okPull, status = TagSync.pull(true)
+                note("Tag sync", status, okPull and LIGHT or RED)
+            end)
+        end
+    end)
+    gen.CanvasSize = UDim2.new(0, 0, 0, 300)
+
+    ---------------------------------------------------------------- Look
+    local look = pages.Look
+    -- Theme: presets, then one row per colour role (hex, r,g,b or a colour name)
+    fieldLabel(look, "UI theme", 4)
+    local perRow = 6
+    for i, p in ipairs(Theme.presets) do
+        local col, row = (i - 1) % perRow, math.floor((i - 1) / perRow)
+        local b = actionButton(look, p.name, UDim2.new(0, 15 + col * 56, 0, 24 + row * 30), UDim2.new(0, 52, 0, 26))
+        b.TextSize = 11
+        b.MouseButton1Click:Connect(function()
+            Theme.usePreset(p.name)
+            note("Theme", p.name, LIGHT)
+        end)
+    end
+    local y = 24 + math.ceil(#Theme.presets / perRow) * 30 + 6
+    fieldLabel(look, "Colors: #hex, r,g,b or a name (press Enter to apply)", y)
+    y = y + 20
+    local themeRows = {}
+    for _, role in ipairs(Theme.roles) do
+        make("TextLabel", {
+            Size = UDim2.new(0, 110, 0, 26), Position = UDim2.new(0, 15, 0, y), BackgroundTransparency = 1,
+            Text = Theme.labels[role], TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.Code, TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, look)
+        local sw = make("Frame", {
+            Name = "PuppyAdminSwatch", Size = UDim2.new(0, 26, 0, 26), Position = UDim2.new(0, 130, 0, y),
+            BackgroundColor3 = Theme.current[role], BorderSizePixel = 0,
+        }, look)
+        make("UICorner", { CornerRadius = UDim.new(0, 6) }, sw)
+        make("UIStroke", { Color = Color3.fromRGB(100, 100, 100), Transparency = 0.4, Thickness = 1 }, sw)
+        local holder = make("Frame", {
+            Size = UDim2.new(1, -181, 0, 26), Position = UDim2.new(0, 166, 0, y),
+            BackgroundColor3 = Color3.fromRGB(5, 5, 5), BackgroundTransparency = 0.5, BorderSizePixel = 0,
+        }, look)
+        make("UICorner", { CornerRadius = UDim.new(0, 6) }, holder)
+        make("UIStroke", { Color = Color3.fromRGB(100, 100, 100), Transparency = 0.7, Thickness = 1 }, holder)
+        local box = make("TextBox", {
+            Size = UDim2.new(1, -16, 1, 0), Position = UDim2.new(0, 8, 0, 0), BackgroundTransparency = 1,
+            TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.Code, TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left, Text = Theme.hex(Theme.current[role]), ClearTextOnFocus = false,
+        }, holder)
+        box.FocusLost:Connect(function()
+            local r, g, b = parseColorArgs(splitArgs((box.Text:gsub(",%s+", ","))), 1)
+            if not r then
+                note("Theme", "Color: #hex, r,g,b or a name", RED)
+                box.Text = Theme.hex(Theme.current[role])
+                return
+            end
+            Theme.setRole(role, Color3.fromRGB(r, g, b))
+        end)
+        themeRows[role] = { swatch = sw, box = box }
+        y = y + 32
+    end
+    table.insert(Theme.listeners, function()
+        for role, row in pairs(themeRows) do
+            row.swatch.BackgroundColor3 = Theme.current[role]
+            if not row.box:IsFocused() then row.box.Text = Theme.hex(Theme.current[role]) end
+        end
+    end)
+
+    y = y + 6
+    fieldLabel(look, "Background image: id, rbxassetid, image URL or off [visibility 0-100]", y)
+    local imageBox = fieldBox(look, y + 20, Theme.image and Theme.image.src or ((type(Cfg.theme) == "table" and type(Cfg.theme.image) == "table" and Cfg.theme.image.src) or ""))
+    imageBox.PlaceholderText = "e.g. 1234567890 60"
+    local imageApply = actionButton(look, "Apply", UDim2.new(1, -85, 0, y + 20), UDim2.new(0, 70, 0, 28))
+    imageApply.MouseButton1Click:Connect(function()
+        local args = splitArgs(imageBox.Text)
+        task.spawn(function()
+            local ok, msg = Theme.applyImageArgs(args)
+            note("Theme", msg, ok and LIGHT or RED)
+            if Theme.image then imageBox.Text = Theme.image.src elseif ok then imageBox.Text = "" end
+        end)
+    end)
+    y = y + 60
+
+    fieldLabel(look, "Script font (every window; Default = original fonts)", y)
+    local fontChoices = UIFont.choices()
+    uiDropdown(look, "Font: ", UDim2.new(1, -30, 0, 28), UDim2.new(0, 15, 0, y + 20), fontChoices,
+        table.find(fontChoices, Cfg.uiFont) or 1, function(_, name)
+            task.spawn(function()
+                local ok, msg = UIFont.set(name)
+                note("Font", msg, ok and LIGHT or RED)
+            end)
+        end)
+    y = y + 56
+
+    -- applied a moment after the slider stops, not on every step of a drag
+    local scaleToken = 0
+    local scaleSlider = uiSlider(look, "Text size (every window)", UDim2.new(0, 15, 0, y), 340, {
+        min = 0.5, max = 2, step = 0.05, value = UIFont.scale,
+        format = function(v) return math.floor(v * 100 + 0.5) .. "%" end,
+        onChange = function(v)
+            scaleToken = scaleToken + 1
+            local mine = scaleToken
+            task.delay(0.25, function()
+                if mine == scaleToken then UIFont.setScale(v) end
+            end)
+        end,
+    })
+    actionButton(look, "Reset text size", UDim2.new(0, 15, 0, y + 48), UDim2.new(1, -30, 0, 26)).MouseButton1Click:Connect(function()
+        scaleSlider.set(1)
+        local ok, msg = UIFont.setScale(1)
+        note("Text size", msg, ok and LIGHT or RED)
+    end)
+    y = y + 84
+
+    -- custom mouse cursor
+    local Cur = UIAPI.Cursor
+    fieldLabel(look, "Cursor (Custom: image id or URL below; its top-left corner points)", y)
+    uiDropdown(look, "Cursor: ", UDim2.new(1, -30, 0, 28), UDim2.new(0, 15, 0, y + 20), Cur.CHOICES,
+        table.find(Cur.CHOICES, Cfg.cursor) or 1, function(_, name)
+            task.spawn(function()
+                local ok, msg = Cur.set(name)
+                note("Cursor", msg, ok and LIGHT or RED)
+            end)
+        end)
+    local curBox = fieldBox(look, y + 56, Cfg.cursorImage or "")
+    curBox.PlaceholderText = "custom cursor image id or URL"
+    actionButton(look, "Use", UDim2.new(1, -85, 0, y + 56), UDim2.new(0, 70, 0, 28)).MouseButton1Click:Connect(function()
+        Cfg.cursorImage = curBox.Text
+        task.spawn(function()
+            local ok, msg = Cur.set("Custom")
+            note("Cursor", msg, ok and LIGHT or RED)
+        end)
+    end)
+    uiSlider(look, "Cursor size", UDim2.new(0, 15, 0, y + 92), 340, {
+        min = 16, max = 128, step = 2, value = Cfg.cursorSize or 40,
+        format = function(v) return math.floor(v) .. " px" end,
+        onChange = function(v) Cur.setSize(v) end,
+    })
+    y = y + 140
+    look.CanvasSize = UDim2.new(0, 0, 0, y)
+
+    ---------------------------------------------------------------- Windows
+    local win = pages.Windows
+    fieldLabel(win, "Every window in Puppy Admin (also: click a command with 'Open' in help)", 4)
+    local WINDOWS = {
+        { "Commands", function() if helpFrame then helpFrame.Visible = true end end },
+        { "Tools", "tools" }, { "Movement", "move" }, { "Superfly", "superfly" }, { "Floor", "floor" },
+        { "ESP", "esp" }, { "Reanim", "reanim" }, { "Alts", "alts" }, { "Alt commands", "altcmds" },
+        { "Performance", "performance" }, { "Finder", "finder" }, { "Anti VC ban", "antivcban" },
+        { "Tag editor", "tagui" }, { "Tags", "taglist" }, { "Mini games", "games" }, { "Game Boy", "gameboy" },
+        { "GBA", "gba" }, { "Doom", "doom" }, { "Owner", "owner" }, { "Blacklist", "blacklist" },
+    }
+    local PANEL_OF = { tools = "tools", move = "move", floor = "floor", esp = "esp" }
+    local bw = (380 - 30 - 12) / 3
+    for i, w in ipairs(WINDOWS) do
+        local col, row = (i - 1) % 3, math.floor((i - 1) / 3)
+        local b = actionButton(win, w[1], UDim2.new(0, 15 + col * (bw + 6), 0, 26 + row * 34), UDim2.new(0, bw, 0, 28))
+        b.TextSize = 11
+        b.MouseButton1Click:Connect(function()
+            local target = w[2]
+            if type(target) == "function" then target(); return end
+            if PANEL_OF[target] then UIAPI.togglePanel(target); return end
+            local fn = H[target]
+            if type(fn) == "function" then task.spawn(function() pcall(fn, {}) end) end
+        end)
+    end
+    win.CanvasSize = UDim2.new(0, 0, 0, 30 + math.ceil(#WINDOWS / 3) * 34)
+
+    showSettingsTab("General")
+    end
+
     local killBtn = actionButton(settingsFrame, "KILL SCRIPT", UDim2.new(0, 15, 1, -45), UDim2.new(1, -30, 0, 32), Color3.fromRGB(130, 35, 35))
     killBtn.MouseButton1Click:Connect(function() shutdown(false) end)
+    settingsFrame:SetAttribute("PuppyAdminScrollBody", true) -- its tab pages scroll by themselves
     UIAPI.fitWindow(settingsFrame, 38)
 
     -- Output window used by auras / tags / anim / binds lists
@@ -15074,6 +15387,9 @@ do
     local uiStart = os.clock()
     createUI()
     if UIAPI.fps and UIAPI.fps.isOn() then pcall(UIAPI.fps.show) end
+    if Cfg.cursor and Cfg.cursor ~= "Default" then
+        task.spawn(function() pcall(UIAPI.Cursor.set, Cfg.cursor, true) end)
+    end
     Perf.since("Main UI (terminal, help, settings, panel registry)", uiStart)
 end
 Watch.start()
