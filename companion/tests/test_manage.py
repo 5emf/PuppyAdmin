@@ -353,6 +353,11 @@ class ManageWindowTest(unittest.TestCase):
         self.assertIsNone(self.app._header_photo)
         self.app.set_cursor("Glove")
         self.assertEqual(self.settings.get("cursor"), "Glove")
+        self.app.set_style("Kingdom Hearts")
+        self.assertEqual(style.lookup("TFrame", "background"), "#0a1234")
+        self.assertEqual((self.settings.get("font"), self.settings.get("cursor")), ("KH Menu", "Glove"))
+        self.app.set_style("Standard")
+        self.assertEqual((self.settings.get("font"), self.settings.get("cursor")), ("Default", "Default"))
         self.app.set_preset("Companion")
         self.assertEqual(style.lookup("TFrame", "background"), "#14151a")
 

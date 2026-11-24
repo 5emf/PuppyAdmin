@@ -53,14 +53,13 @@ class ManageTab:
         self.privacy_rows = []    # [(key, var, {label: value}, original_label)]
         self._photo = None
         self._ids = []
-        tab = ttk.Frame(app.nb, padding=app.px(12))
-        app.nb.add(tab, text="Manage")
+        tab = app._scroll_tab("Manage")
         self.tab = tab
 
         left = ttk.Frame(tab)
         left.grid(row=0, column=0, sticky="nsw")
         ttk.Label(left, text="Account").pack(anchor="w")
-        self.listbox = tk.Listbox(left, height=16, width=24, exportselection=False, activestyle="none",
+        self.listbox = tk.Listbox(left, height=14, width=24, exportselection=False, activestyle="none",
                                   bg=self.c["card"], fg=self.c["fg"], selectbackground=self.c["accent"], relief="flat",
                                   highlightthickness=0)
         self.listbox.pack(fill="y", expand=True, pady=app.pad(6, 0))

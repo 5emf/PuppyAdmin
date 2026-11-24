@@ -222,9 +222,10 @@ class CompanionApp:
         self._build_settings()
 
         logf = ttk.Frame(self.root, padding=self.pad(16, 0, 16, 14))
-        logf.pack(fill="x")
+        # packed before the tabs claim their space, so the log always stays on screen
+        logf.pack(side="bottom", fill="x", before=self.nb)
         mono = ("Consolas", 9) if sys.platform == "win32" else ("DejaVu Sans Mono", 9)
-        self.log_text = tk.Text(logf, height=7, bg=CARD, fg=DIM, relief="flat", wrap="word", font=mono,
+        self.log_text = tk.Text(logf, height=5, bg=CARD, fg=DIM, relief="flat", wrap="word", font=mono,
                                 highlightthickness=1, highlightbackground=LINE, highlightcolor=LINE,
                                 insertbackground=FG, padx=self.px(8), pady=self.px(6))
         self.raw(self.log_text, bg="CARD", fg="DIM", highlightbackground="LINE", highlightcolor="LINE", insertbackground="FG")
@@ -267,8 +268,7 @@ class CompanionApp:
                   ).grid(row=2, column=0, columnspan=2, sticky="w", pady=self.pad(8, 0))
 
     def _build_launch(self):
-        tab = ttk.Frame(self.nb, padding=self.px(12))
-        self.nb.add(tab, text="Launch")
+        tab = self._scroll_tab("Launch")
         where = ttk.LabelFrame(tab, text="WHERE TO", padding=self.px(12))
         where.pack(fill="x")
         self.place_var = tk.StringVar(value=str(self.settings.get("place") or ""))
@@ -319,8 +319,7 @@ class CompanionApp:
         ttk.Label(win, text="Ends every RobloxPlayerBeta.exe on this PC.", style="Dim.TLabel").pack(side="left", padx=self.px(12))
 
     def _build_settings(self):
-        tab = ttk.Frame(self.nb, padding=self.px(12))
-        self.nb.add(tab, text="Settings")
+        tab = self._scroll_tab("Settings")
         ws = ttk.LabelFrame(tab, text="EXECUTOR FOLDER (ITS WORKSPACE)", padding=self.px(12))
         ws.pack(fill="x")
         self.ws_var = tk.StringVar(value=str(self.settings.get("workspace") or ""))
@@ -463,65 +462,118 @@ class CompanionApp:
         self.header_lbl.configure(image=img)
         self.header_lbl.pack(side="right", padx=self.pad(0, 12))
 
+    def _scroll_tab(self, title):
+        """A notebook tab whose content scrolls (mouse wheel or scrollbar) when the window is
+        smaller than it; returns the frame to build into."""
+        outer = ttk.Frame(self.nb)
+        self.nb.add(outer, text=title)
+        canvas = tk.Canvas(outer, highlightthickness=0, borderwidth=0, bg=BG, height=self.px(200))
+        self.raw(canvas, bg="BG")
+        sb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        inner = ttk.Frame(canvas, padding=self.px(12))
+        item = canvas.create_window((0, 0), window=inner, anchor="nw")
+        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(item, width=e.width))
+
+        def wheel(e):
+            if canvas.yview() == (0.0, 1.0):
+                return
+            step = -1 if (getattr(e, "num", 0) == 4 or getattr(e, "delta", 0) > 0) else 1
+            canvas.yview_scroll(step * max(1, abs(getattr(e, "delta", 120)) // 120), "units")
+
+        def enter(_e):
+            for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+                self.root.bind_all(seq, wheel)
+
+        def leave(_e):
+            for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+                self.root.unbind_all(seq)
+        outer.bind("<Enter>", enter)
+        outer.bind("<Leave>", leave)
+        inner.scroll_canvas = canvas
+        return inner
+
     def _build_look(self):
-        tab = ttk.Frame(self.nb, padding=self.px(12))
-        self.nb.add(tab, text="Look")
-        th = ttk.LabelFrame(tab, text="THEME (THE SAME PRESETS AS PUPPY ADMIN)", padding=self.px(12))
+        tab = self._scroll_tab("Look")
+        th = ttk.LabelFrame(tab, text="THEME (PUPPY ADMIN'S PRESETS) - COLOURS: #HEX, R,G,B OR A NAME, THEN ENTER", padding=self.px(10))
         th.pack(fill="x")
+        srow = ttk.Frame(th)
+        srow.pack(anchor="w", pady=self.pad(0, 8))
+        ttk.Label(srow, text="UI style").pack(side="left", padx=self.pad(0, 8))
+        ttk.Button(srow, text="Kingdom Hearts", style="Accent.TButton",
+                   command=lambda: self.set_style("Kingdom Hearts")).pack(side="left", padx=self.pad(0, 6))
+        ttk.Button(srow, text="Standard", command=lambda: self.set_style("Standard")).pack(side="left")
+        ttk.Label(srow, style="Dim.TLabel", text="  theme + KH Menu font + glove cursor in one click").pack(side="left")
         prow = ttk.Frame(th)
         prow.pack(anchor="w")
-        for name in look.PRESET_NAMES:
-            ttk.Button(prow, text=name, command=lambda n=name: self.set_preset(n)).pack(side="left", padx=self.pad(0, 6))
+        for i, name in enumerate(look.PRESET_NAMES):  # two rows, so every preset fits
+            ttk.Button(prow, text=name, width=15, command=lambda n=name: self.set_preset(n)).grid(
+                row=i // 4, column=i % 4, padx=self.pad(0, 6), pady=self.pad(0, 4), sticky="w")
         grid = ttk.Frame(th)
         grid.pack(anchor="w", pady=self.pad(10, 0))
         self._swatches = {}
         roles = self.look_roles()
         for i, role in enumerate(look.ROLES):
             r, c = i % 4, (i // 4) * 3
-            ttk.Label(grid, text=look.LABELS[role]).grid(row=r, column=c, sticky="w", padx=self.pad(0, 8), pady=self.pad(0, 6))
+            ttk.Label(grid, text=look.LABELS[role]).grid(row=r, column=c, sticky="w", padx=self.pad(0, 8), pady=self.pad(0, 4))
             sw = tk.Label(grid, width=3, bg=look.to_hex(roles[role]), relief="solid", borderwidth=1)
             sw.grid(row=r, column=c + 1, sticky="w")
             var = tk.StringVar(value=look.to_hex(roles[role]))
             ent = ttk.Entry(grid, textvariable=var, width=12)
-            ent.grid(row=r, column=c + 2, sticky="w", padx=self.pad(6, 22), pady=self.pad(0, 6))
+            ent.grid(row=r, column=c + 2, sticky="w", padx=self.pad(6, 22), pady=self.pad(0, 4))
             ent.bind("<Return>", lambda e, ro=role, v=var: self.set_role_colour(ro, v.get()))
             ent.bind("<FocusOut>", lambda e, ro=role, v=var: self.set_role_colour(ro, v.get(), quiet=True))
             self._swatches[role] = (sw, var)
-        ttk.Label(th, style="Dim.TLabel", text="Colours: #hex, r,g,b or a name, then Enter.").pack(anchor="w", pady=self.pad(4, 0))
 
-        tx = ttk.LabelFrame(tab, text="TEXT", padding=self.px(12))
-        tx.pack(fill="x", pady=self.pad(12, 0))
+        bottom = ttk.Frame(tab)  # text and cursor side by side, so the tab fits the default window
+        bottom.pack(fill="x", pady=self.pad(8, 0))
+        bottom.columnconfigure(0, weight=1)
+        bottom.columnconfigure(1, weight=1)
+        tx = ttk.LabelFrame(bottom, text="TEXT", padding=self.px(10))
+        tx.grid(row=0, column=0, sticky="nsew", padx=self.pad(0, 8))
         ttk.Label(tx, text="App font").grid(row=0, column=0, sticky="w")
         self.font_var = tk.StringVar(value=self.settings.get("font") if self.settings.get("font") in fonts.choices() else fonts.DEFAULT)
-        fbox = ttk.Combobox(tx, textvariable=self.font_var, values=fonts.choices(), state="readonly", width=26)
+        fbox = ttk.Combobox(tx, textvariable=self.font_var, values=fonts.choices(), state="readonly", width=24)
         fbox.grid(row=0, column=1, sticky="w", padx=self.px(10))
         fbox.bind("<<ComboboxSelected>>", lambda e: self.set_font(self.font_var.get()))
         ttk.Label(tx, text="Text size").grid(row=1, column=0, sticky="w", pady=self.pad(10, 0))
         self.scale_var = tk.DoubleVar(value=look.text_scale(self.settings.get("text_scale")) * 100)
         self.scale_lbl = ttk.Label(tx, text="%d%%" % self.scale_var.get(), width=5)
-        sc = ttk.Scale(tx, from_=50, to=200, variable=self.scale_var, length=self.px(260),
+        sc = ttk.Scale(tx, from_=50, to=200, variable=self.scale_var, length=self.px(170),
                        command=lambda v: self.scale_lbl.configure(text="%d%%" % round(float(v))))
         sc.grid(row=1, column=1, sticky="w", padx=self.px(10), pady=self.pad(10, 0))
         sc.bind("<ButtonRelease-1>", lambda e: self.set_text_scale(self.scale_var.get() / 100))
         self.scale_lbl.grid(row=1, column=2, sticky="w", pady=self.pad(10, 0))
-        ttk.Button(tx, text="Reset", command=lambda: self.set_text_scale(1.0)).grid(row=1, column=3, padx=self.pad(8, 0), pady=self.pad(10, 0))
+        ttk.Button(tx, text="Reset", command=lambda: self.set_text_scale(1.0)).grid(row=2, column=1, sticky="w", padx=self.px(10), pady=self.pad(8, 0))
 
-        cu = ttk.LabelFrame(tab, text="CURSOR AND TOP-BAR PICTURE", padding=self.px(12))
-        cu.pack(fill="x", pady=self.pad(12, 0))
+        cu = ttk.LabelFrame(bottom, text="CURSOR AND TOP-BAR PICTURE", padding=self.px(10))
+        cu.grid(row=0, column=1, sticky="nsew")
         ttk.Label(cu, text="Cursor").grid(row=0, column=0, sticky="w")
         self.cursor_var = tk.StringVar(value=self.settings.get("cursor") if self.settings.get("cursor") in look.CURSOR_CHOICES else "Default")
-        cbox = ttk.Combobox(cu, textvariable=self.cursor_var, values=look.CURSOR_CHOICES, state="readonly", width=18)
+        cbox = ttk.Combobox(cu, textvariable=self.cursor_var, values=look.CURSOR_CHOICES, state="readonly", width=14)
         cbox.grid(row=0, column=1, sticky="w", padx=self.px(10))
         cbox.bind("<<ComboboxSelected>>", lambda e: self.set_cursor(self.cursor_var.get()))
-        ttk.Button(cu, text="Choose .cur / .ani file", command=self.choose_cursor_file).grid(row=0, column=2, sticky="w")
+        ttk.Button(cu, text=".cur / .ani file", command=self.choose_cursor_file).grid(row=0, column=2, sticky="w")
         ttk.Label(cu, text="Top-bar picture").grid(row=1, column=0, sticky="w", pady=self.pad(10, 0))
-        prow2 = ttk.Frame(cu)
-        prow2.grid(row=1, column=1, columnspan=2, sticky="w", padx=self.px(10), pady=self.pad(10, 0))
-        ttk.Button(prow2, text="Choose PNG / GIF", command=self.choose_header_image).pack(side="left")
-        ttk.Button(prow2, text="Remove", command=lambda: self.set_header_image("")).pack(side="left", padx=self.pad(6, 0))
-        ttk.Label(cu, style="Dim.TLabel", wraplength=self.px(760), text=(
-            "Glove, Light and Keyblade are Puppy Admin's cursors. Windows apps can't show a picture behind "
-            "their buttons, so the picture sits in the top bar.")).grid(row=2, column=0, columnspan=3, sticky="w", pady=self.pad(10, 0))
+        ttk.Button(cu, text="Choose PNG / GIF", command=self.choose_header_image).grid(
+            row=1, column=1, sticky="w", padx=self.px(10), pady=self.pad(10, 0))
+        ttk.Button(cu, text="Remove", command=lambda: self.set_header_image("")).grid(row=1, column=2, sticky="w", pady=self.pad(10, 0))
+        ttk.Label(cu, style="Dim.TLabel", wraplength=self.px(360), text="The picture sits in the top bar: Windows apps "
+                  "can't draw one behind their buttons.").grid(row=2, column=0, columnspan=3, sticky="w", pady=self.pad(8, 0))
+
+    def set_style(self, name):
+        st = look.STYLES[name]
+        self.settings.set("theme_preset", st["preset"])
+        self.settings.set("theme_colors", {})
+        self.settings.set("font", st["font"])
+        self.settings.set("cursor", st["cursor"])
+        self.font_var.set(st["font"])
+        self.cursor_var.set(st["cursor"])
+        self.apply_look()
+        self.log("UI style: %s." % name)
 
     def set_preset(self, name):
         self.settings.set("theme_preset", name)

@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-56" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-57" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -364,6 +364,8 @@ local Cfg = {
     cursor = "Default", -- Settings > Look > Cursor: Default, Glove, Light, Keyblade or Custom
     cursorImage = "",   -- Custom cursor: image id or URL
     cursorSize = 40,    -- cursor size in pixels (16 - 128)
+    uiStyle = "Standard", -- Settings > Look > UI style: Standard or Kingdom Hearts
+    khPrev = nil,       -- theme / font / cursor to go back to when the Kingdom Hearts style is turned off
     games = {},        -- mini game best scores: game id -> number
     fpsCounter = { on = false }, -- Performance > FPS counter: on, x, y (pixels)
     gbVolume = 1,      -- Game Boy sound level (0 = off)
@@ -5262,6 +5264,23 @@ function H.cursor(a)
     end)
 end
 table.insert(cmds, "cursor")
+
+-- uistyle [standard|kh]
+function H.uistyle(a)
+    local want = (a[1] or ""):lower()
+    local name = (want == "kh" or want:find("kingdom", 1, true)) and "Kingdom Hearts" or (want == "standard" and "Standard") or nil
+    if not name then
+        name = Cfg.uiStyle == "Kingdom Hearts" and "Standard" or "Kingdom Hearts" -- no argument: switch
+    end
+    task.spawn(function()
+        local ok, msg = UIAPI.KHStyle.set(name)
+        note("UI style", msg, ok and LIGHT or RED)
+    end)
+end
+table.insert(cmds, "uistyle")
+cmdDocs.uistyle = "uistyle [standard|kh] - Kingdom Hearts style menus (blue panels, KH font, pointing glove) or the standard look"
+ALIASES.khstyle = "uistyle"
+ALIASES.khui = "uistyle"
 cmdDocs.cursor = "cursor [default|glove|light|keyblade|image id/URL] [size] - Mouse cursor image (also in Settings > Look)"
 
 function H.help()
@@ -5696,6 +5715,7 @@ do
         { name = "Forest", bg = { 16, 24, 18 }, surface = { 24, 36, 27 }, accent = { 120, 210, 140 }, text = { 232, 245, 234 }, dim = { 150, 180, 155 }, border = { 52, 78, 58 }, on = { 80, 200, 110 } },
         { name = "Crimson", bg = { 24, 12, 14 }, surface = { 38, 18, 22 }, accent = { 235, 80, 90 }, text = { 250, 234, 236 }, dim = { 190, 150, 155 }, border = { 86, 40, 46 }, on = { 230, 70, 80 } },
         { name = "Light", bg = { 240, 240, 244 }, surface = { 226, 226, 232 }, accent = { 60, 110, 230 }, text = { 24, 24, 28 }, dim = { 100, 100, 110 }, border = { 190, 190, 200 }, on = { 60, 170, 90 } },
+        { name = "Kingdom Hearts", bg = { 10, 18, 52 }, surface = { 22, 48, 120 }, accent = { 140, 200, 255 }, text = { 255, 255, 255 }, dim = { 175, 195, 235 }, border = { 80, 130, 220 }, on = { 255, 214, 92 } },
     }
 
     -- Which roles each colour property may hold, in match order.
@@ -12492,6 +12512,146 @@ do
     table.insert(cleanups, C.off)
 end
 
+-- Optional "Kingdom Hearts" UI style (Settings > Look > UI style, `uistyle`): an
+-- original skin in the spirit of those menus, made from the owner's fonts and cursor
+-- images. Turning it on picks the "Kingdom Hearts" theme preset, the KH Menu font and
+-- the glove cursor, gives panels and buttons a deep-blue top-to-bottom shading, and
+-- shows a bobbing glove (with a light at its fingertip) pointing at the button under
+-- the mouse. Everything it adds is named "PuppyKH..." and removed when turned off;
+-- the previous theme, font and cursor come back.
+do
+    local K = { on = false, conns = {}, gui = nil, glove = nil, light = nil, target = nil }
+    UIAPI.KHStyle = K
+    K.STYLES = { "Standard", "Kingdom Hearts" }
+    local TAG = "PuppyKH"
+    local GuiService = game:GetService("GuiService")
+
+    local function skip(inst)
+        return inst.Name:sub(1, #TAG) == TAG or inst.Name == "PuppyAdminSwatch"
+            or inst:FindFirstAncestor("PuppyAdminGameBoard") ~= nil or inst:FindFirstAncestor("PuppyAdminCursor") ~= nil
+    end
+
+    local function shade(inst, bottom)
+        if inst:FindFirstChildOfClass("UIGradient") then return end -- has its own look
+        local g = Instance.new("UIGradient")
+        g.Name = TAG .. "Shade"
+        g.Rotation = 90
+        g.Color = ColorSequence.new(Color3.new(1, 1, 1), bottom)
+        g.Parent = inst
+    end
+
+    local function decorate(inst)
+        if not K.on or skip(inst) then return end
+        if inst:IsA("TextButton") then
+            shade(inst, Color3.fromRGB(160, 175, 225))
+            table.insert(K.conns, inst.MouseEnter:Connect(function() K.target = inst end))
+            table.insert(K.conns, inst.MouseLeave:Connect(function() if K.target == inst then K.target = nil end end))
+        elseif inst:IsA("Frame") and inst.BackgroundTransparency < 0.9 and inst:FindFirstChildOfClass("UICorner")
+            and inst.AbsoluteSize.X >= 150 and inst.AbsoluteSize.Y >= 100 then
+            shade(inst, Color3.fromRGB(95, 120, 190)) -- window-sized panels: lighter at the top, deeper below
+        end
+    end
+
+    local function place()
+        local b = K.target
+        local show = b and b.Parent and b.Visible and b.AbsoluteSize.X > 0 and b:IsDescendantOf(game)
+        if show then
+            local sg = b:FindFirstAncestorOfClass("ScreenGui")
+            show = sg and sg.Enabled
+            if show then
+                local inset = (sg.IgnoreGuiInset and Vector2.zero) or GuiService:GetGuiInset()
+                local p, sz = b.AbsolutePosition + inset, b.AbsoluteSize
+                local size = math.clamp(math.floor(sz.Y * 0.95), 16, 34)
+                local bob = math.sin(os.clock() * 7) * 2.5
+                K.glove.Size = UDim2.fromOffset(size, size)
+                K.glove.Position = UDim2.fromOffset(p.X - size - 3 + bob, p.Y + sz.Y / 2 - size * 0.39)
+                local ls = size * (0.75 + math.sin(os.clock() * 5) * 0.12)
+                K.light.Size = UDim2.fromOffset(ls, ls)
+                K.light.Position = UDim2.fromOffset(p.X - 3 + bob - ls / 2, p.Y + sz.Y / 2 - ls / 2)
+            end
+        end
+        K.glove.Visible = show and true or false
+        K.light.Visible = K.glove.Visible
+    end
+
+    local function decorateAll()
+        for _, root in ipairs(Theme.roots) do
+            if root.Parent then
+                for _, d in ipairs(root:GetDescendants()) do pcall(decorate, d) end
+                table.insert(K.conns, root.DescendantAdded:Connect(function(d)
+                    task.defer(function() if d.Parent then pcall(decorate, d) end end)
+                end))
+            end
+        end
+    end
+
+    local function undecorate()
+        for _, c in ipairs(K.conns) do pcall(function() c:Disconnect() end) end
+        K.conns, K.target = {}, nil
+        if K.gui then pcall(function() K.gui:Destroy() end); K.gui, K.glove, K.light = nil, nil, nil end
+        for _, root in ipairs(Theme.roots) do
+            if root.Parent then
+                for _, d in ipairs(root:GetDescendants()) do
+                    if d.Name:sub(1, #TAG) == TAG then pcall(function() d:Destroy() end) end
+                end
+            end
+        end
+    end
+
+    local function pointerGui()
+        K.gui = Instance.new("ScreenGui")
+        K.gui.Name = TAG .. "Pointer"
+        K.gui.IgnoreGuiInset = true
+        K.gui.DisplayOrder = 2147482000
+        K.gui.ResetOnSpawn = false
+        parentGui(K.gui)
+        K.light = make("ImageLabel", { Name = TAG .. "Light", BackgroundTransparency = 1, Active = false, ZIndex = 1,
+            ImageTransparency = 0.35, Visible = false }, K.gui)
+        K.glove = make("ImageLabel", { Name = TAG .. "Glove", BackgroundTransparency = 1, Active = false, ZIndex = 2,
+            ScaleType = Enum.ScaleType.Fit, Visible = false }, K.gui)
+        task.spawn(function()
+            local base = SETTINGS.Auras.assetBase .. "assets/cursors/"
+            local g = urlImageAsset(base .. "glove_v1.png", "cursor")
+            local l = urlImageAsset(base .. "light_v1.png", "cursor")
+            if K.glove and g then K.glove.Image = g end
+            if K.light and l then K.light.Image = l end
+        end)
+        table.insert(K.conns, RunService.RenderStepped:Connect(function() pcall(place) end))
+    end
+
+    -- name: "Standard" or "Kingdom Hearts". quiet = at start-up (theme, font and cursor are
+    -- already the saved ones). Yields while the font / images download.
+    function K.set(name, quiet)
+        local on = name == "Kingdom Hearts"
+        if on and not quiet and Cfg.uiStyle ~= "Kingdom Hearts" then
+            local preset = type(Cfg.theme) == "table" and Cfg.theme.preset or nil
+            Cfg.khPrev = { preset = preset, font = Cfg.uiFont, cursor = Cfg.cursor }
+        end
+        Cfg.uiStyle = on and "Kingdom Hearts" or "Standard"
+        undecorate()
+        K.on = on
+        if on then
+            if not quiet then
+                Theme.usePreset("Kingdom Hearts")
+                pcall(UIFont.set, "KH Menu", true)
+                pcall(UIAPI.Cursor.set, "Glove", true)
+            end
+            decorateAll()
+            pointerGui()
+        elseif not quiet then
+            local prev = type(Cfg.khPrev) == "table" and Cfg.khPrev or {}
+            if not (prev.preset and Theme.usePreset(prev.preset)) then Theme.usePreset("Default") end
+            pcall(UIFont.set, prev.font or "Default", true)
+            pcall(UIAPI.Cursor.set, prev.cursor or "Default", true)
+            Cfg.khPrev = nil
+        end
+        if not quiet then cfgSave() end
+        return true, "UI style: " .. Cfg.uiStyle
+    end
+
+    table.insert(cleanups, function() K.on = false; undecorate() end)
+end
+
 -- Command directory tabs: every command has one category (explicit list first,
 -- then the engine's movement / performance groups, then words in its help line).
 do
@@ -12508,7 +12668,7 @@ do
         Server = { "finder", "shmost", "shlowest", "serverhop", "rejoin", "antiafk", "unantiafk", "antikick", "unantikick", "antivcban" },
         Performance = { "perf", "performance" },
         Owner = { "owner", "kick", "ban", "unban", "bans", "blacklist" },
-        Settings = { "prefix", "uikey", "settings", "theme", "help", "kill", "stop", "cursor", "font" },
+        Settings = { "prefix", "uikey", "settings", "theme", "help", "kill", "stop", "cursor", "font", "uistyle" },
     }
     local byName = {}
     for cat, names in pairs(EXPLICIT) do for _, n in ipairs(names) do byName[n] = cat end end
@@ -13050,19 +13210,28 @@ local function createUI()
 
     ---------------------------------------------------------------- Look
     local look = pages.Look
+    fieldLabel(look, "UI style (Kingdom Hearts: blue menus, KH font, pointing glove)", 4)
+    local KH = UIAPI.KHStyle
+    uiDropdown(look, "UI style: ", UDim2.new(1, -30, 0, 28), UDim2.new(0, 15, 0, 24), KH.STYLES,
+        table.find(KH.STYLES, Cfg.uiStyle) or 1, function(_, name)
+            task.spawn(function()
+                local ok, msg = KH.set(name)
+                note("UI style", msg, ok and LIGHT or RED)
+            end)
+        end)
     -- Theme: presets, then one row per colour role (hex, r,g,b or a colour name)
-    fieldLabel(look, "UI theme", 4)
-    local perRow = 6
+    fieldLabel(look, "UI theme", 60)
+    local perRow = 4
     for i, p in ipairs(Theme.presets) do
         local col, row = (i - 1) % perRow, math.floor((i - 1) / perRow)
-        local b = actionButton(look, p.name, UDim2.new(0, 15 + col * 56, 0, 24 + row * 30), UDim2.new(0, 52, 0, 26))
+        local b = actionButton(look, p.name, UDim2.new(0, 15 + col * 84, 0, 80 + row * 30), UDim2.new(0, 80, 0, 26))
         b.TextSize = 11
         b.MouseButton1Click:Connect(function()
             Theme.usePreset(p.name)
             note("Theme", p.name, LIGHT)
         end)
     end
-    local y = 24 + math.ceil(#Theme.presets / perRow) * 30 + 6
+    local y = 80 + math.ceil(#Theme.presets / perRow) * 30 + 6
     fieldLabel(look, "Colors: #hex, r,g,b or a name (press Enter to apply)", y)
     y = y + 20
     local themeRows = {}
@@ -15389,6 +15558,9 @@ do
     if UIAPI.fps and UIAPI.fps.isOn() then pcall(UIAPI.fps.show) end
     if Cfg.cursor and Cfg.cursor ~= "Default" then
         task.spawn(function() pcall(UIAPI.Cursor.set, Cfg.cursor, true) end)
+    end
+    if Cfg.uiStyle == "Kingdom Hearts" then
+        task.delay(0.5, function() pcall(UIAPI.KHStyle.set, "Kingdom Hearts", true) end)
     end
     Perf.since("Main UI (terminal, help, settings, panel registry)", uiStart)
 end

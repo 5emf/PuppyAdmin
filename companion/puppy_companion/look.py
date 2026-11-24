@@ -16,7 +16,7 @@ LABELS = {"bg": "Background", "surface": "Surface", "accent": "Accent", "text": 
 PRESETS = [
     ("Companion", {"bg": (20, 21, 26), "surface": (28, 29, 36), "accent": (90, 169, 255), "text": (233, 233, 238),
                    "dim": (155, 156, 168), "border": (50, 51, 63), "on": (111, 220, 140)}),
-    # the six below are Puppy Admin's Theme presets, value for value
+    # the ones below are Puppy Admin's Theme presets, value for value
     ("Default", {"bg": (23, 23, 23), "surface": (30, 30, 30), "accent": (226, 226, 226), "text": (244, 244, 244),
                  "dim": (160, 160, 160), "border": (55, 55, 55), "on": (80, 210, 100)}),
     ("Midnight", {"bg": (14, 18, 32), "surface": (22, 28, 48), "accent": (110, 150, 255), "text": (230, 236, 255),
@@ -29,6 +29,8 @@ PRESETS = [
                  "dim": (190, 150, 155), "border": (86, 40, 46), "on": (230, 70, 80)}),
     ("Light", {"bg": (240, 240, 244), "surface": (226, 226, 232), "accent": (60, 110, 230), "text": (24, 24, 28),
                "dim": (100, 100, 110), "border": (190, 190, 200), "on": (60, 170, 90)}),
+    ("Kingdom Hearts", {"bg": (10, 18, 52), "surface": (22, 48, 120), "accent": (140, 200, 255), "text": (255, 255, 255),
+                        "dim": (175, 195, 235), "border": (80, 130, 220), "on": (255, 214, 92)}),
 ]
 PRESET_NAMES = [n for n, _ in PRESETS]
 
@@ -134,3 +136,11 @@ def cursor_spec(choice, custom_path=""):
         return ""
     path = os.path.join(CURSOR_DIR, name)
     return ("@" + path.replace("\\", "/")) if os.path.isfile(path) else ""
+
+
+# one-click styles: theme preset, font and cursor together (Puppy Admin's UI style)
+STYLES = {
+    "Standard": {"preset": "Companion", "font": "Default", "cursor": "Default"},
+    "Kingdom Hearts": {"preset": "Kingdom Hearts", "font": "KH Menu", "cursor": "Glove"},
+}
+
