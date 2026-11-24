@@ -208,8 +208,29 @@ local os2 = { time = function() return NOW end, clock = function() return CLOCK 
 ------------------------------------------------------------------ one Puppy Admin copy per account
 local function instance(userId)
     local notes = {}
+    local tbl = {}
+    for k, v in pairs(table) do tbl[k] = v end
+    tbl.find = function(t, v) for i = 1, #t do if t[i] == v then return i end end end
+    local function splitArgs(str)
+        local a = {}
+        for w in tostring(str):gmatch("%S+") do a[#a + 1] = w end
+        return a
+    end
+    local function resolveTargets(tok)
+        if not tok or tok == "" then return { PLAYERS[userId] } end
+        local l = tostring(tok):lower()
+        for _, p in pairs(PLAYERS) do if p.Name:lower():sub(1, #l) == l then return { p } end end
+        return {}
+    end
     local env = {
-        UIAPI = { panels = {}, syncFns = {} }, H = {}, Cfg = { altForm = {} }, cleanups = {},
+        UIAPI = { panels = {}, syncFns = {} }, H = {}, cleanups = {}, conns = {},
+        Cfg = { altForm = {}, altLite = false, altVcAuto = false, altWhitelist = {}, prefixes = { "." } },
+        cmds = {}, cmdDocs = {}, ALIASES = {}, Perf = { t0 = 0 }, VCB = { state = "idle", run = function() end },
+        splitArgs = splitArgs, resolveTargets = resolveTargets, setfpscap = nil,
+        gcinfo = function() return 0 end, collectgarbage = function() return 0 end,
+        workspace = { GetRealPhysicsFPS = function() return 60 end },
+        Enum = setmetatable({}, { __index = function() return setmetatable({}, { __index = function() return 0 end }) end }),
+        Instance = { new = function() return { Destroy = function() end, Play = function() end, Stop = function() end } end },
         genv = { PuppyAdminActive = true },
         plr = PLAYERS[userId], Players = Players, RunService = RunService, game = game,
         HttpService = { JSONEncode = function(_, v) return json.encode(v) end, JSONDecode = function(_, s) return json.decode(s) end },
@@ -218,9 +239,10 @@ local function instance(userId)
         note = function(t, m) table.insert(notes, t .. ": " .. m) end, cfgSave = function() end,
         LIGHT = "light", RED = "red", PAL = { GOOD = "good", DIM = "dim" }, Color3 = { fromRGB = function() return "c" end },
         Vector3 = Vector3, CFrame = CFrame, Random = Random, task = task, os = os2,
-        math = math, table = table, string = string, pairs = pairs, ipairs = ipairs, type = type, tonumber = tonumber,
+        math = math, string = string, pairs = pairs, ipairs = ipairs, type = type, tonumber = tonumber,
         tostring = tostring, pcall = pcall, setmetatable = setmetatable, next = next, error = error,
     }
+    env.table = tbl
     env.UIAPI.togglePanel = function() end
     local chunk = assert(load(SRC, "alts", "t", env))
     chunk()
@@ -317,7 +339,7 @@ check(FS["PuppyAdmin/companion/altcmd.json"] == nil, "alt wrote no command")
 main.Cfg.altForm.size = 1
 check(main.H.form({ "wings" }) == nil, "form command runs")
 local cmd = json.decode(FS["PuppyAdmin/companion/altcmd.json"])
-check(cmd.action == "form" and cmd.jobId == "job-A" and #cmd.layers == 1 and #cmd.layers[1].ids == 3, "command written")
+check(cmd.action == "cmd" and cmd.cmd == "form" and cmd.jobId == "job-A" and #cmd.layers == 1 and #cmd.layers[1].ids == 3, "command written")
 runTasks() -- alts read it
 for k, a in ipairs(alts) do check(a.UIAPI.Alts.state ~= nil, "alt " .. k .. " following") end
 
@@ -343,6 +365,51 @@ check(d < 12, "shape follows the main (" .. d .. ")")
 main.Cfg.altForm.glitch = true
 main.UIAPI.Alts.settingsChanged(); runDelays(); runTasks()
 check(alts[1].UIAPI.Alts.state.params.glitch == true, "glitch reached the alt")
+
+-- general target command: circle on a player
+main.H.alt({ "circle", "AltB" })  -- AltB is userId 3
+runTasks()
+cmd = json.decode(FS["PuppyAdmin/companion/altcmd.json"])
+check(cmd.action == "cmd" and cmd.cmd == "circle" and cmd.target == 3 and cmd.center == "target", "circle command written")
+check(alts[1].UIAPI.Alts.state and alts[1].UIAPI.Alts.state.cmd == "circle", "alt runs circle")
+for f = 1, 10 do Heartbeat:fire(1 / 60) end
+do
+    local troot = PLAYERS[3].Character.root
+    local a2 = PLAYERS[2].Character.root.CFrame.Position
+    check((a2 - troot.CFrame.Position).Magnitude < 20, "alt circles near the target")
+end
+
+-- numbered variant keeps its style
+main.H.alt({ "orbit3" })
+runTasks()
+cmd = json.decode(FS["PuppyAdmin/companion/altcmd.json"])
+check(cmd.cmd == "orbit" and cmd.params.style == 3, "orbit3 sends style 3")
+
+-- a one-shot command (jump) fires on the alts and does not pin them
+main.H.alt({ "jump" })
+runTasks()
+check(PLAYERS[2].Character.hum.Jump == true, "jump reached the alt")
+check(alts[1].UIAPI.Alts.state.once == true, "jump is a one-shot (no pinning job)")
+
+-- the declined commands are absent
+check(main.UIAPI.Alts.SPECS.bang == nil and main.UIAPI.Alts.resolveName("bang") == nil, "bang is not registered")
+check(main.UIAPI.Alts.SPECS.fbang == nil and main.UIAPI.Alts.SPECS.mbang == nil, "fbang/mbang are not registered")
+
+-- low-power mode: the alt still places itself (throttled), no error
+do
+    altsLiteMain = main  -- keep reference
+    main.Cfg.altLite = true
+    main.H.form({ "ring" })
+    runTasks()
+    alts[1].Cfg.altLite = true
+    for f = 1, 20 do Heartbeat:fire(1 / 60) end
+    local st = alts[1].UIAPI.Alts.state
+    check(st and st.cmd == nil and st.form == "ring", "lite: alt follows the ring")
+    check(PLAYERS[2].Character.hum.PlatformStand == true, "lite: alt still placed")
+    main.Cfg.altLite = false
+    main.H.form({ "wings" }); runTasks()  -- back to wings for the following tests
+    for f = 1, 40 do Heartbeat:fire(1 / 60) end
+end
 
 -- an alt joins: everyone gets a place
 addPlayer(5, "AltD", vec(0, 3, 9))
@@ -410,6 +477,7 @@ do
     end
     local E = main
     E.UDim2 = { fromOffset = function(x, y) return { x, y } end, new = function(a, b, c, d) return { a, b, c, d } end }
+    E.UDim = { new = function(a, b) return { a, b } end }
     E.Enum = setmetatable({}, { __index = function(_, k) return setmetatable({}, { __index = function(_, v) return k .. "." .. v end }) end })
     E.make = function(_, props, parent) return obj(parent, props) end
     E.corner = function() end
@@ -463,6 +531,26 @@ do
     end
     runDelays(); runTasks()
     check(alts[1].UIAPI.Alts.state.params.size == 2, "Size slider reaches the alts")
+
+    -- the command board builds and its target buttons issue commands
+    E.uiBox = function(parent, pos, size, ph) return obj(parent, { Text = "", placeholder = ph }) end
+    E.UIAPI.buildAltCmdsPanel({})
+    local cf = E.UIAPI.panels.altcmds
+    check(cf ~= nil, "command board registered")
+    local circleBtn, targetBox
+    for _, o in ipairs(made) do
+        if o.placeholder and tostring(o.placeholder):find("Target", 1, true) then targetBox = o end
+        if o.click and o.Text == "circle" then circleBtn = o end
+    end
+    check(circleBtn ~= nil, "command board has a circle button")
+    check(targetBox ~= nil, "command board has a target box")
+    if targetBox and circleBtn then
+        targetBox.Text = "AltB"
+        circleBtn.click()
+        runTasks()
+        local c = json.decode(FS["PuppyAdmin/companion/altcmd.json"])
+        check(c.cmd == "circle" and c.target == 3, "circle button uses the target box")
+    end
 end
 
 print(fails == 0 and "ALL OK" or (fails .. " FAILED"))
