@@ -171,10 +171,10 @@ local RunService = { Heartbeat = Heartbeat, Stepped = Stepped }
 local function part(name)
     return { Name = name, CanCollide = true, CFrame = CFrame.new(0, 3, 0), AssemblyLinearVelocity = vec(), AssemblyAngularVelocity = vec(),
         IsA = function(self, c) return c == "BasePart" end,
-        Position = nil }
+        Position = nil, Parent = "character" }
 end
 local function motor(name)
-    return { Name = name, Enabled = true, IsA = function(_, c) return c == "Motor6D" end }
+    return { Name = name, Enabled = true, IsA = function(_, c) return c == "Motor6D" or c == "JointInstance" end }
 end
 local function character(pos)
     local root = part("HumanoidRootPart")
@@ -239,7 +239,7 @@ local function instance(userId)
         workspace = { GetRealPhysicsFPS = function() return 60 end },
         Enum = setmetatable({}, { __index = function() return setmetatable({}, { __index = function() return 0 end }) end }),
         Instance = { new = function() return { Destroy = function() end, Play = function() end, Stop = function() end } end },
-        genv = { PuppyAdminActive = true },
+        genv = { PuppyAdminActive = true }, SETTINGS = { VelocityY = 220.290009 },
         plr = PLAYERS[userId], Players = Players, RunService = RunService, game = game,
         HttpService = { JSONEncode = function(_, v) return json.encode(v) end, JSONDecode = function(_, s) return json.decode(s) end },
         isfile = function(p) return FS[p] ~= nil end, readfile = function(p) return assert(FS[p]) end,
@@ -446,14 +446,24 @@ do
     check(oc.cmd == "orbit" and oc.params.limbs == true, "limbs flag is sent with the command")
     for f = 1, 6 do Heartbeat:fire(1 / 60) end
     local ch = PLAYERS[2].Character
-    check(ch.motors[1].Enabled == false and ch.motors[2].Enabled == false, "alt's joints disabled (limbs separated)")
+    check(ch.hum.Health == 0 and ch.hum.BreakJointsOnDeath == true,
+        "alt dies with BreakJointsOnDeath so the server breaks the joints (seen by everyone)")
+    check(ch.motors[1].Enabled == false and ch.motors[2].Enabled == false, "local joints match the server's break")
     local ls = alts[1].UIAPI.Alts.limbState
-    check(ls and ls.holders and #ls.holders == #ch.parts, "a WeldConstraint driver was made per limb")
-    check(ls and (ls.holders[1].CFrame.Position - ls.holders[2].CFrame.Position).Magnitude > 0.1, "limb drivers sit at different orbit points")
+    check(ls and #ls.parts == #ch.parts - 1 and ls.root == ch.root, "every part but the root is driven")
+    check(ls and ls.holders == nil and ls.folder == nil, "no client-only anchored holders (they never replicate)")
+    check(ls and (ls.parts[1].CFrame.Position - ls.parts[2].CFrame.Position).Magnitude > 0.1, "limbs sit at different orbit points")
+    check(ls and ls.parts[1].AssemblyLinearVelocity.Y > 100, "loose limbs get the netless push")
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    check(alts[1].UIAPI.Alts.limbState == ls, "a dead, separated body is not killed again")
+    -- the game respawns the alt: the new body is separated the same way
+    PLAYERS[2].Character = character(Vector3.new(0, 3, 0))
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    local ch2 = PLAYERS[2].Character
+    check(ch2.hum.Health == 0 and alts[1].UIAPI.Alts.limbState.char == ch2, "after a respawn the new body separates too")
     main.H.unform()
     runTasks()
-    check(ch.motors[1].Enabled == true, "stopping reassembles the limbs")
-    check(alts[1].UIAPI.Alts.limbState == nil, "the weld rig is cleared on stop")
+    check(alts[1].UIAPI.Alts.limbState == nil, "stopping releases the limbs (the game respawns the alt whole)")
     main.Cfg.altForm.limbs = false
     main.H.form({ "wings" }); runTasks()
     for f = 1, 40 do Heartbeat:fire(1 / 60) end

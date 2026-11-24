@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-50" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-51" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -13570,39 +13570,48 @@ function UIAPI.altsSetup()
         st.clock = st.clock + dt
         if os.time() - st.cmdTime > STALE then Alts.stopFollowing(); return end
         local root, hum = selfRoot()
-        if not (root and hum) or hum.Health <= 0 then return end
+        local mode = st.mode or "pin"
+        local limbMode = st.limbs and mode == "pin" and st.center ~= "self"
+        if not (root and hum) or (hum.Health <= 0 and not limbMode) then return end
         st.t = st.t + dt * st.params.speed
         if Alts.lite then -- weak machines: place the body ~30 times a second, not every frame
             st.acc = (st.acc or 0) + dt
             if st.acc < 0.0333 then return end
             dt = st.acc; st.acc = 0
         end
-        local mode = st.mode or "pin"
         if mode == "idle" then
             if st.behav and st.behav.idle then st.behav.idle(st, root, hum, dt) end
             return
         end
         -- separated limbs: the alt's parts each take a point on the orbit, so one alt
         -- makes several orbiting pieces (the whole set of alts' limbs form the ring)
-        if st.limbs and mode == "pin" and st.center ~= "self" then
+        if limbMode then
             local lc = resolveCenter(st)
             if not lc then return end
             local ls = Alts.shatter()
             if not ls then return end
-            -- drive the welded holders when the rig built, else the parts directly
-            local drivers = (ls.holders and #ls.holders > 0) and ls.holders or ls.parts
-            local welded = ls.holders ~= nil
-            if #drivers == 0 then return end
             local lbase = levelFrame(lc, st.lead or 0.1)
+            local drivers = ls.parts
             local per = #drivers
+            if per == 0 then return end
             local total = math.max(1, st.count) * per
+            -- the netless push keeps each loose part awake and owned by this client, so
+            -- the server (and everyone else) keeps receiving where it is
+            local push = Vector3.new(0, (SETTINGS.VelocityY or 220.290009) + math.sin(st.clock), 0)
+            local wiggle = CF(0, math.sin(st.clock * 15) * 0.0015, 0)
             for k, d in ipairs(drivers) do
-                local slot = st.index * per + (k - 1)
-                d.CFrame = lbase * CF(0, st.params.height, 0) * Alts.orbitOffset(slot, total, st.t, st.params.size, st.cmdParams.style)
-                if not welded then
-                    d.AssemblyLinearVelocity = Vector3.zero
+                if d.Parent then
+                    local slot = st.index * per + (k - 1)
+                    d.CFrame = lbase * CF(0, st.params.height, 0)
+                        * Alts.orbitOffset(slot, total, st.t, st.params.size, st.cmdParams.style) * wiggle
+                    d.AssemblyLinearVelocity = push
                     d.AssemblyAngularVelocity = Vector3.zero
                 end
+            end
+            if ls.root and ls.root.Parent then -- the invisible root waits at the centre
+                ls.root.CFrame = lbase * CF(0, st.params.height - 6, 0)
+                ls.root.AssemblyLinearVelocity = push
+                ls.root.AssemblyAngularVelocity = Vector3.zero
             end
             return
         end
@@ -13692,70 +13701,50 @@ function UIAPI.altsSetup()
         if Cfg.altLite ~= false then Alts.applyLowGraphics() end
     end
 
-    -- Separated limbs: disable the character's joints so each limb is a free part the
-    -- step can place on its own (so one alt makes several orbiting pieces). Reversible -
-    -- re-enabling the joints snaps the body back together. The humanoid is kept from
-    -- dying so the parts stay under this client's control.
+    -- Separated limbs, visible to everyone. Disabling Motor6Ds on this client never
+    -- reaches the server (the body stays whole for other players), so the joints are
+    -- broken the one way a client can make the server do it: the character dies with
+    -- BreakJointsOnDeath on, and the server breaks every joint. The loose parts stay
+    -- owned by this client until the game respawns the character (Players.RespawnTime),
+    -- and step() keeps placing them with the netless push so their positions replicate.
+    -- After a respawn the next step separates the new body the same way.
     function Alts.shatter()
         local char = plr.Character
         if not char then return nil end
-        if Alts.limbState then
-            if Alts.limbState.char == char then return Alts.limbState end
-            Alts.reassemble() -- respawned: drop the old rig first
-        end
+        local ls = Alts.limbState
+        if ls and ls.char == char then return ls end
         local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false) end)
-            pcall(function() hum.BreakJointsOnDeath = false end)
-            pcall(function() hum.PlatformStand = true end)
-        end
-        local parts, joints = {}, {}
+        if not hum then return nil end
+        pcall(function() settings().Physics.AllowSleep = false end)
+        if sethiddenproperty then pcall(function() sethiddenproperty(plr, "SimulationRadius", math.huge) end) end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        local parts = {}
         for _, d in ipairs(char:GetDescendants()) do
-            if d:IsA("Motor6D") then
-                table.insert(joints, d)
-            elseif d:IsA("BasePart") then
+            if d:IsA("BasePart") and d ~= root then
                 pcall(function() d.CanCollide = false end)
                 table.insert(parts, d)
             end
         end
-        for _, j in ipairs(joints) do pcall(function() j.Enabled = false end) end
-        -- WeldConstraint rig: each limb is welded (coincident) to a small anchored driver, so
-        -- moving the driver's CFrame carries the limb rigidly - no per-frame velocity reset and
-        -- no gravity tug, which is what makes the limb attach to its orbit point without delay.
-        local holders, folder = {}, nil
-        pcall(function()
-            folder = Instance.new("Folder")
-            folder.Name = "PuppyAltLimbs"
-            folder.Parent = workspace
-            for _, part in ipairs(parts) do
-                local h = Instance.new("Part")
-                h.Anchored, h.CanCollide, h.Transparency = true, false, 1
-                h.Size = Vector3.new(0.2, 0.2, 0.2)
-                h.CFrame = part.CFrame
-                h.Parent = folder
-                local w = Instance.new("WeldConstraint")
-                w.Part0, w.Part1 = h, part
-                w.Parent = h
-                table.insert(holders, h)
-            end
-        end)
-        if #holders ~= #parts then -- rig could not be built: fall back to driving the parts directly
-            if folder then pcall(function() folder:Destroy() end) end
-            holders, folder = nil, nil
+        if hum.Health > 0 then
+            pcall(function() hum.BreakJointsOnDeath = true end)
+            pcall(function() hum.RequiresNeck = true end)
+            pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true) end)
+            hum.Health = 0
         end
-        Alts.limbState = { char = char, parts = parts, joints = joints, holders = holders, folder = folder }
+        -- match the server at once on this screen too (the server's break arrives a moment later)
+        for _, d in ipairs(char:GetDescendants()) do
+            if d:IsA("JointInstance") or d:IsA("WeldConstraint") or d:IsA("RigidConstraint") then
+                pcall(function() d.Enabled = false end)
+            end
+        end
+        Alts.limbState = { char = char, parts = parts, root = (root and root:IsA("BasePart")) and root or nil, at = os.clock() }
         return Alts.limbState
     end
 
+    -- A body whose joints the server broke cannot be put back together; the game
+    -- respawns it (after Players.RespawnTime) and the alt comes back whole.
     function Alts.reassemble()
-        local ls = Alts.limbState
-        if not ls then return end
         Alts.limbState = nil
-        if ls.folder then pcall(function() ls.folder:Destroy() end) end -- removes holders + welds
-        for _, j in ipairs(ls.joints) do pcall(function() j.Enabled = true end) end
-        local char = plr.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true) end) end
     end
 
     local function num(v, lo, hi, default)
@@ -14749,7 +14738,7 @@ function UIAPI.altsSetup()
         switch("Glitch: random jumps and twists", 186, "glitch")
         switch("Spin: bodies turn in place", 214, "spin")
         switch("Pulse: the shape breathes", 242, "pulse")
-        switch("Separate limbs (each limb orbits on its own)", 270, "limbs")
+        switch("Separate limbs (alts break apart, everyone sees it)", 270, "limbs")
         local bwF = (IW - 8) / 2
         local startBtn = uiButton(fp, "Start", UDim2.fromOffset(bwF, 32), UDim2.fromOffset(0, 306), function()
             Alts.start((Alts.PRESETS[S.preset] or Alts.PRESETS[1]).key)
