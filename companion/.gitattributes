@@ -1,1 +1,6 @@
+# Keep text LF everywhere so payload.json's SHA-256 (built on any OS) matches the
+# bytes raw.githubusercontent.com serves to the updater. .bat must stay CRLF.
+* text=auto eol=lf
 *.bat text eol=crlf
+*.ico binary
+*.png binary
