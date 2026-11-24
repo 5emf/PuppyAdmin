@@ -283,8 +283,10 @@ class CompanionApp:
         ttk.Button(ws, text="Find", command=self.find_workspace).grid(row=0, column=2, padx=self.pad(6, 0))
         self.ws_lbl = ttk.Label(ws, text="", style="Dim.TLabel", wraplength=self.px(760))
         self.ws_lbl.grid(row=1, column=0, columnspan=3, sticky="w", pady=self.pad(8, 0))
-        ttk.Button(ws, text="Add Puppy Admin to auto-execute", command=self.install_autoexec).grid(
-            row=2, column=0, sticky="w", pady=self.pad(10, 0))
+        aerow = ttk.Frame(ws)
+        aerow.grid(row=2, column=0, columnspan=3, sticky="w", pady=self.pad(10, 0))
+        ttk.Button(aerow, text="Add Puppy Admin to auto-execute", command=self.install_autoexec).pack(side="left")
+        ttk.Button(aerow, text="Choose autoexec folder", command=self.choose_autoexec).pack(side="left", padx=self.pad(6, 0))
         ws.columnconfigure(0, weight=1)
 
         mi = ttk.LabelFrame(tab, text="SEVERAL ROBLOX WINDOWS", padding=self.px(12))
@@ -822,19 +824,43 @@ class CompanionApp:
         if not ws or not os.path.isdir(ws):
             self.log("Set the executor folder first.")
             return
-        create = False
-        target = workspace.autoexec_dir(ws)
-        if not os.path.isdir(target):
-            create = messagebox.askyesno("Auto-execute",
-                                         "There is no auto-execute folder next to the workspace.\nCreate %s?" % target,
-                                         parent=self.root)
-            if not create:
-                return
+        override = self.settings.get("autoexec_dir") or None
+        if override and not os.path.isdir(override):
+            override = None
+        detected = bool(override) or bool(workspace.find_autoexec_dirs(ws))
+        if not detected:
+            # nothing found: auto-execute belongs to the EXECUTOR, so let the user point at it
+            pick = messagebox.askyesno(
+                "Auto-execute",
+                "No auto-execute folder was found near the executor folder.\n\n"
+                "Auto-execute is a feature of the EXECUTOR you inject Puppy Admin with "
+                "(Fishstrap/Bloxstrap only launch Roblox, they have no auto-execute).\n\n"
+                "Yes: pick your executor's autoexec folder.\n"
+                "No: create %s and use that." % workspace.autoexec_dir(ws),
+                parent=self.root)
+            if pick:
+                picked = filedialog.askdirectory(parent=self.root, title="Your executor's autoexec folder",
+                                                 initialdir=os.path.dirname(os.path.normpath(ws)))
+                if not picked:
+                    return
+                override = os.path.normpath(picked)
         try:
-            path = workspace.install_autoexec(ws, LOADER, create=create)
-            self.log("Puppy Admin will start in every window this executor attaches to: %s" % path)
+            path = workspace.install_autoexec(ws, LOADER, create=True, override=override)
         except OSError as e:
             self.log("Could not write the auto-execute file: %s" % e)
+            return
+        self.settings.set("autoexec_dir", os.path.dirname(path))
+        self.log("Loader written to %s" % path)
+        self.log("It runs through your EXECUTOR, not Fishstrap. If it doesn't auto-run: that folder "
+                 "isn't your executor's autoexec (use Browse to pick the right one), or your executor "
+                 "wants a .txt file - rename PuppyAdmin.lua to PuppyAdmin.txt there.")
+
+    def choose_autoexec(self):
+        start = self.settings.get("autoexec_dir") or os.path.dirname(os.path.normpath(self.settings.get("workspace") or os.path.expanduser("~")))
+        picked = filedialog.askdirectory(parent=self.root, title="Your executor's autoexec folder", initialdir=start)
+        if picked:
+            self.settings.set("autoexec_dir", os.path.normpath(picked))
+            self.log("Auto-execute folder set to %s" % picked)
 
     def update_bootstrapper_label(self):
         name, detail = self._bootstrapper

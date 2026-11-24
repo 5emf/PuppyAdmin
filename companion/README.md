@@ -25,6 +25,10 @@ For maintainers: bump `PAYLOAD_VERSION` in `puppy_companion/_payload.py`, run `p
 
 1. **Settings, Executor folder:** press *Find*, or *Browse* to your executor's `workspace` folder (the one that holds the `PuppyAdmin` folder). The status line turns green once Puppy Admin has run there.
 2. **Settings, Add Puppy Admin to auto-execute** (optional): writes the Puppy Admin loader into the executor's auto-execute folder, so every Roblox window the executor attaches to runs Puppy Admin and reports to the companion.
+   - Auto-execute is a feature of the **executor** you inject with (Wave, Solara, Xeno, …). **Fishstrap and Bloxstrap only launch Roblox — they have no auto-execute**, so point this at your executor, not at Fishstrap.
+   - The companion looks for an `autoexec` / `autoexecute` / `autorun` folder beside, inside, or one level up from the executor folder. If it can't find one it asks you to pick it; you can also set it yourself with **Choose autoexec folder**. It remembers your choice.
+   - The loader is written as `PuppyAdmin.lua`. A few executors only run `.txt` auto-execute files — if yours doesn't pick it up, rename it to `PuppyAdmin.txt` in that folder.
+   - To confirm it worked: inject once, and that account should appear in the companion's Accounts list with a *ready* status within ~10 s.
 3. **Accounts, Add account:** paste the account's `.ROBLOSECURITY` cookie. To get it, log in to that account in a private browser window, press F12, open *Application*, *Cookies*, `https://www.roblox.com`, and copy the value of `.ROBLOSECURITY`. Then close the private window without logging out: logging out ends that cookie. The companion checks the cookie with Roblox before saving it.
 4. Select your main account and press **Make main**. Every other account is an alt.
 

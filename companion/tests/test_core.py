@@ -206,11 +206,30 @@ class WorkspaceTests(TempDirCase):
         roster = read(path)
         self.assertNotIn("DO-NOT-SHARE", roster)
         self.assertEqual(json.loads(roster)["main"]["userId"], 1)
-        os.makedirs(os.path.join(self.dir, "Exec", "AutoExec"))
+        os.makedirs(os.path.join(self.dir, "Exec", "AutoExec"))  # sibling of workspace
         self.assertTrue(workspace.autoexec_dir(ws).endswith("AutoExec"))
+        self.assertIn(os.path.join(self.dir, "Exec", "AutoExec"), workspace.find_autoexec_dirs(ws))
         p = workspace.install_autoexec(ws, "print('hi')")
         self.assertEqual(read(p), "print('hi')\n")
         self.assertEqual(workspace.find_candidates([self.dir]), [ws])
+
+    def test_autoexec_detection_and_override(self):
+        ws = os.path.join(self.dir, "Exec", "workspace")
+        os.makedirs(ws)
+        # a folder named "autoexec" INSIDE the workspace is also found
+        inside = os.path.join(ws, "autoexec")
+        os.makedirs(inside)
+        self.assertIn(inside, workspace.find_autoexec_dirs(ws))
+        # an explicit override wins even if it is nowhere near the workspace
+        other = os.path.join(self.dir, "SomeOther", "exec_autoexec")
+        os.makedirs(other)
+        self.assertEqual(workspace.autoexec_dir(ws, override=other), other)
+        p = workspace.install_autoexec(ws, "print('x')", override=other)
+        self.assertEqual(os.path.dirname(p), other)
+        # with nothing found and no override, default is a new autoexec beside the workspace
+        empty = os.path.join(self.dir, "Empty", "workspace")
+        os.makedirs(empty)
+        self.assertEqual(workspace.autoexec_dir(empty), os.path.join(self.dir, "Empty", "autoexec"))
 
 
 class QueueTests(TempDirCase):

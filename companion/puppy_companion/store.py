@@ -167,6 +167,7 @@ class Settings:
         "singleton_names": "ROBLOX_singletonMutex, ROBLOX_singletonEvent",
         "place": "",
         "job": "",
+        "autoexec_dir": "",       # your executor's autoexec folder, if auto-detect misses it
     }
 
     def __init__(self, folder=None):

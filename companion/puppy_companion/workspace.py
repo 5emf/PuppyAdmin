@@ -64,20 +64,40 @@ def write_roster(ws, store):
     return path
 
 
-def autoexec_dir(ws):
-    """The executor's auto-execute folder next to its workspace (existing one, or "autoexec")."""
-    parent = os.path.dirname(os.path.normpath(ws))
-    try:
-        for name in os.listdir(parent):
-            if name.lower() in AUTOEXEC_NAMES and os.path.isdir(os.path.join(parent, name)):
-                return os.path.join(parent, name)
-    except OSError:
-        pass
-    return os.path.join(parent, "autoexec")
+def find_autoexec_dirs(ws):
+    """Existing auto-execute folders near the workspace. Executor layouts vary, so
+    look beside the workspace, inside it, and one level up."""
+    ws = os.path.normpath(ws)
+    bases, out, seen = [os.path.dirname(ws), ws, os.path.dirname(os.path.dirname(ws))], [], set()
+    for base in bases:
+        if not base or base in seen:
+            continue
+        seen.add(base)
+        try:
+            names = os.listdir(base)
+        except OSError:
+            continue
+        for name in names:
+            if name.lower() in AUTOEXEC_NAMES:
+                p = os.path.join(base, name)
+                if os.path.isdir(p) and p not in out:
+                    out.append(p)
+    return out
 
 
-def install_autoexec(ws, loader_text, create=False):
-    folder = autoexec_dir(ws)
+def autoexec_dir(ws, override=None):
+    """The folder the loader is written to: an explicit override, else a detected
+    auto-execute folder, else a new "autoexec" beside the workspace."""
+    if override and os.path.isdir(override):
+        return override
+    found = find_autoexec_dirs(ws)
+    if found:
+        return found[0]
+    return os.path.join(os.path.dirname(os.path.normpath(ws)), "autoexec")
+
+
+def install_autoexec(ws, loader_text, create=False, override=None):
+    folder = autoexec_dir(ws, override)
     if not os.path.isdir(folder):
         if not create:
             raise FileNotFoundError(folder)
