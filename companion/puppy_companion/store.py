@@ -162,7 +162,8 @@ class Settings:
     DEFAULTS = {
         "workspace": "",            # the executor's workspace folder (where PuppyAdmin/ lives)
         "launch_delay": 8,          # seconds between launches
-        "multi_instance": True,     # hold Roblox's single-window lock
+        "multi_instance": True,     # let several Roblox windows run
+        "bootstrapper_multi": False, # Fishstrap/Bloxstrap holds the lock instead of us
         "singleton_names": "ROBLOX_singletonMutex, ROBLOX_singletonEvent",
         "place": "",
         "job": "",

@@ -134,6 +134,7 @@ class CompanionApp:
         self._closing = False
         self.update_ready = None       # version string once a newer package is downloaded
         self._update_busy = False
+        self._bootstrapper = launch.detect_bootstrapper()  # (name, command) or (None, reason)
         self.launches = LaunchQueue(store, lambda: self.settings.get("launch_delay"), self.log_from_thread,
                                     opener=opener, open_uri=open_uri)
         self.k = screen_scale(root)
@@ -289,16 +290,22 @@ class CompanionApp:
         mi = ttk.LabelFrame(tab, text="SEVERAL ROBLOX WINDOWS", padding=self.px(12))
         mi.pack(fill="x", pady=self.pad(12, 0))
         self.multi_var = tk.BooleanVar(value=bool(self.settings.get("multi_instance")))
-        ttk.Checkbutton(mi, text="Let more than one Roblox window run (hold Roblox's single-window lock)",
+        ttk.Checkbutton(mi, text="Let more than one Roblox window run",
                         variable=self.multi_var, command=self.apply_multi_instance).grid(row=0, column=0, columnspan=3, sticky="w")
-        ttk.Label(mi, text="Lock names").grid(row=1, column=0, sticky="w", pady=self.pad(10, 0))
+        self.boot_var = tk.BooleanVar(value=bool(self.settings.get("bootstrapper_multi")))
+        ttk.Checkbutton(mi, text="Fishstrap / Bloxstrap handles multiple windows (don't hold the lock here)",
+                        variable=self.boot_var, command=self.apply_multi_instance).grid(row=1, column=0, columnspan=3, sticky="w", pady=self.pad(6, 0))
+        self.boot_lbl = ttk.Label(mi, text="", style="Dim.TLabel", wraplength=self.px(760))
+        self.boot_lbl.grid(row=2, column=0, columnspan=3, sticky="w", pady=self.pad(6, 0))
+        ttk.Label(mi, text="Lock names").grid(row=3, column=0, sticky="w", pady=self.pad(10, 0))
         self.names_var = tk.StringVar(value=str(self.settings.get("singleton_names")))
-        ttk.Entry(mi, textvariable=self.names_var).grid(row=1, column=1, sticky="we", padx=self.px(10), pady=self.pad(10, 0))
-        ttk.Button(mi, text="Apply", command=self.apply_multi_instance).grid(row=1, column=2, pady=self.pad(10, 0))
+        ttk.Entry(mi, textvariable=self.names_var).grid(row=3, column=1, sticky="we", padx=self.px(10), pady=self.pad(10, 0))
+        ttk.Button(mi, text="Apply", command=self.apply_multi_instance).grid(row=3, column=2, pady=self.pad(10, 0))
         ttk.Label(mi, style="Dim.TLabel", wraplength=self.px(760),
                   text="Open the companion before any Roblox window. If Roblox was already running, "
-                       "close every Roblox window and press Apply."
-                  ).grid(row=2, column=0, columnspan=3, sticky="w", pady=self.pad(8, 0))
+                       "close every Roblox window and press Apply. With Fishstrap, turn on its own "
+                       "“Multiple Roblox instances” setting and tick the box above."
+                  ).grid(row=4, column=0, columnspan=3, sticky="w", pady=self.pad(8, 0))
         mi.columnconfigure(1, weight=1)
 
         dt = ttk.LabelFrame(tab, text="YOUR DATA", padding=self.px(12))
@@ -829,14 +836,34 @@ class CompanionApp:
         except OSError as e:
             self.log("Could not write the auto-execute file: %s" % e)
 
+    def update_bootstrapper_label(self):
+        name, detail = self._bootstrapper
+        if name in launch.BOOTSTRAPPERS:
+            self.boot_lbl.configure(text="%s launches Roblox on this PC; it can manage the windows for you." % name, style="Good.TLabel")
+        elif name == "Roblox":
+            self.boot_lbl.configure(text="Vanilla Roblox launches on this PC. Use the companion's lock, or install Fishstrap for multi-window.", style="Dim.TLabel")
+        elif name == "unknown":
+            self.boot_lbl.configure(text="A custom launcher handles Roblox links here.", style="Dim.TLabel")
+        else:
+            self.boot_lbl.configure(text=str(detail), style="Dim.TLabel")
+
     def apply_multi_instance(self, initial=False):
         names = [n.strip() for n in self.names_var.get().split(",") if n.strip()]
+        by_boot = bool(self.boot_var.get())
         if not initial:
             self.settings.set("singleton_names", ", ".join(names))
             self.settings.set("multi_instance", bool(self.multi_var.get()))
+            self.settings.set("bootstrapper_multi", by_boot)
+        self.update_bootstrapper_label()
         if not self.multi_var.get():
             self.multi.release()
             self.multi_lbl.configure(text="One Roblox window at a time", style="Dim.TLabel")
+            return
+        if by_boot:
+            # Fishstrap/Bloxstrap holds the lock itself; the companion stays out of the way
+            self.multi.release()
+            name = self._bootstrapper[0] if self._bootstrapper else "the bootstrapper"
+            self.multi_lbl.configure(text="Several windows: handled by %s" % name, style="Good.TLabel")
             return
         if sys.platform != "win32":
             self.multi_lbl.configure(text="Several windows: Windows only", style="Dim.TLabel")

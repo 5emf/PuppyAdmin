@@ -102,18 +102,11 @@ def check_launch_link(tmp):
 
 
 def roblox_handler():
-    """Which program Windows starts for roblox-player: links (information only)."""
-    if sys.platform != "win32":
-        return "not Windows"
-    import winreg
-    for hive, name in ((winreg.HKEY_CURRENT_USER, "HKCU"), (winreg.HKEY_CLASSES_ROOT, "HKCR")):
-        sub = r"roblox-player\shell\open\command" if name == "HKCR" else r"Software\Classes\roblox-player\shell\open\command"
-        try:
-            with winreg.OpenKey(hive, sub) as key:
-                return "%s: %s" % (name, winreg.QueryValueEx(key, "")[0])
-        except OSError:
-            continue
-    return "none registered (Roblox is not installed for this Windows user)"
+    """Which program starts roblox-player: links (Fishstrap / Bloxstrap / Roblox)."""
+    name, detail = launch.detect_bootstrapper()
+    if name:
+        return "%s (%s)" % (name, detail)
+    return detail
 
 
 def check_workspace(tmp):

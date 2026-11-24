@@ -43,6 +43,17 @@ Accounts start one after another, 8 seconds apart by default, so each Roblox win
 
 Roblox lets one window run at a time by holding a named lock. The companion takes that lock first and keeps it while it runs, so more windows can open. Start the companion before any Roblox window. If Roblox was already open, the header says so: close every Roblox window and press *Apply* in Settings. The lock names are in Settings in case Roblox changes them.
 
+**Fishstrap / Bloxstrap.** The companion launches through whatever opens `roblox-player:` links on your PC, so if Fishstrap (or Bloxstrap) is your launcher, launching already goes through it — the Settings page names the one it found. Those bootstrappers can manage multiple windows themselves: turn on Fishstrap's *Multiple Roblox instances* and tick **Fishstrap / Bloxstrap handles multiple windows** in Settings, and the companion stays out of the way (it won't hold the lock). Leave that box off to use the companion's own lock with vanilla Roblox.
+
+### Weak PCs (for example a 2014 Surface Book)
+
+Running several Roblox windows on an old laptop is heavy. What helps:
+
+- **Puppy Admin's low-power alt mode is on by default**: every alt caps its own FPS (30) and updates its formation less often, so the windows you aren't looking at cost far less. Toggle it with `altlite` or on the alt command board; your main window is never capped.
+- Use **Fishstrap** and lower its graphics (and set an FPS cap) for the alt accounts.
+- Raise **Seconds between launches** on the Launch tab so each window finishes loading before the next starts.
+- Launch a few alts at a time rather than all at once.
+
 ## Alt formations (in game)
 
 Your alts can take a shape around your main that **everyone in the server sees**: the shape is made of the alts' own characters, so nothing extra has to replicate.
@@ -52,6 +63,10 @@ Your alts can take a shape around your main that **everyone in the server sees**
 3. Pick a shape and press **Start**. Size, Speed and Height sliders, plus the Glitch, Spin and Pulse switches, change the shape live. **Stop** (or `unform`) lands the alts beside you.
 
 Shapes: Wings, Halo, Ring, Star, Spiral, Tower, Wall, Trail (follows the path you walk), Scatter, and two mixes: Wings + halo (4 or more alts) and Star + ring (5 or more). From chat or the terminal: `form wings`, `form halo 1.5` (with a size), `unform`.
+
+**More alt commands.** Beyond shapes, the alts take a full command set — press **Commands** in the Alt formations window (or type `altcmds`) for a board of buttons with a target box and a chat box. In chat or the terminal they live under the `alt` word so they never clash with your own commands: `alt goto bob`, `alt circle bob`, `alt orbit3`, `alt stalk bob`, `alt say hi`, `alt spam gg`, `alt fling`, `alt noclip`, `alt firework`, `alt equip1`, `alt stop`. The groups are movement (goto, bring, walkto, wander, noclip, clip, antivoid, jump, sit), patterns (lines, circle, stack, clone, worm, stalk, orbit1-10, spiral1-5, heli), actions (dance1-3, wave, point, laugh, mirror, firework, nuke, swarm), shapes (arrow, box, star), chat (say, spam, whisper) and utility (speed, equip1-10, rest, quit, whitelist, and uptime / memory / ping / altcount). `alt whitelist <player>` lets a friend drive your alts, but only through the `alt` word.
+
+**Voice-ban bypass.** Alts detect when voice chat is unavailable to them and run the voice-ban bypass by themselves (toggle on the board, or `alt vcban` to force it); it uses the same bypass as Puppy Admin's `antivcban`.
 
 ![Formations with 8 alts](assets/formations.png)
 

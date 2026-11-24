@@ -17,9 +17,9 @@ sys.path.insert(0, COMPANION)
 from puppy_companion import _payload  # noqa: E402
 
 
-# a tiny package the fake "GitHub" serves as version 1.2.0
+# a tiny package the fake "GitHub" serves as a newer version
 NEW_INIT = 'from ._payload import PAYLOAD_VERSION as __version__\nSENTINEL = "updated-package"\n'
-NEW_PAYLOAD = 'PAYLOAD_VERSION = "1.2.0"\n'
+NEW_PAYLOAD = 'PAYLOAD_VERSION = "9.9.9"\n'
 
 
 def _repo(files):
@@ -29,7 +29,7 @@ def _repo(files):
     for rel, data in files.items():
         urls[_payload.file_url(rel)] = data
         entries.append({"path": rel, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)})
-    manifest = {"version": "1.2.0", "files": sorted(entries, key=lambda e: e["path"])}
+    manifest = {"version": "9.9.9", "files": sorted(entries, key=lambda e: e["path"])}
     urls[_payload.manifest_url()] = json.dumps(manifest).encode()
     return urls, manifest
 
@@ -91,7 +91,7 @@ class UpdateTest(unittest.TestCase):
     def test_check_reports_newer(self):
         urls, manifest = _repo(self.files)
         got = self.update.check(opener=opener_for(urls))
-        self.assertEqual(got["version"], "1.2.0")
+        self.assertEqual(got["version"], "9.9.9")
 
     def test_no_update_when_same_version(self):
         self.files["puppy_companion/_payload.py"] = ('PAYLOAD_VERSION = "%s"\n' % _payload.PAYLOAD_VERSION).encode()
@@ -103,9 +103,9 @@ class UpdateTest(unittest.TestCase):
     def test_download_verifies_and_activates(self):
         urls, _ = _repo(self.files)
         version = self.update.download(self.update.check(opener=opener_for(urls)), opener=opener_for(urls))
-        self.assertEqual(version, "1.2.0")
-        self.assertEqual(self.update.installed_version(), "1.2.0")
-        pkg = os.path.join(self.update.code_root(), "1.2.0", "puppy_companion", "__init__.py")
+        self.assertEqual(version, "9.9.9")
+        self.assertEqual(self.update.installed_version(), "9.9.9")
+        pkg = os.path.join(self.update.code_root(), "9.9.9", "puppy_companion", "__init__.py")
         self.assertTrue(os.path.isfile(pkg))
 
     def test_corrupt_download_is_refused(self):
@@ -134,13 +134,13 @@ class UpdateTest(unittest.TestCase):
         self.update.download(self.update.check(opener=opener_for(urls)), opener=opener_for(urls))
         import run_companion
         run_companion = importlib.reload(run_companion)
-        # the bundled package is older (1.1.0); the bootstrap should swap in 1.2.0
+        # the bundled package is older; the bootstrap should swap in the downloaded one
         for m in [m for m in sys.modules if m == "puppy_companion" or m.startswith("puppy_companion.")]:
             del sys.modules[m]
         run_companion._activate_update()
         import puppy_companion
         self.assertEqual(getattr(puppy_companion, "SENTINEL", None), "updated-package")
-        self.assertEqual(puppy_companion.__version__, "1.2.0")
+        self.assertEqual(puppy_companion.__version__, "9.9.9")
 
 
 if __name__ == "__main__":

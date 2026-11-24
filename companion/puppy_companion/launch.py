@@ -14,6 +14,38 @@ from urllib.parse import quote, urlencode
 PLACE_LAUNCHER = "https://assetgame.roblox.com/game/PlaceLauncher.ashx"
 ROBLOX_EXE = "RobloxPlayerBeta.exe"
 ERROR_ALREADY_EXISTS = 183
+# other players that launch Roblox and already manage multiple windows themselves
+BOOTSTRAPPERS = ("Fishstrap", "Bloxstrap")
+
+
+def detect_bootstrapper():
+    """What handles roblox-player: links on this PC: (name, command) or (None, reason).
+
+    name is 'Fishstrap', 'Bloxstrap', 'Roblox' or 'unknown'. A roblox-player: launch
+    goes through whatever this returns, so Fishstrap/Bloxstrap launches work with no
+    change; they also manage multiple windows themselves (see the multi-window setting).
+    """
+    if sys.platform != "win32":
+        return None, "not Windows"
+    try:
+        import winreg
+    except ImportError:
+        return None, "no registry access"
+    for hive, sub in ((winreg.HKEY_CURRENT_USER, r"Software\Classes\roblox-player\shell\open\command"),
+                      (winreg.HKEY_CLASSES_ROOT, r"roblox-player\shell\open\command")):
+        try:
+            with winreg.OpenKey(hive, sub) as key:
+                command = winreg.QueryValueEx(key, "")[0]
+        except OSError:
+            continue
+        low = command.lower()
+        for name in BOOTSTRAPPERS:
+            if name.lower() in low:
+                return name, command
+        if "roblox" in low:
+            return "Roblox", command
+        return "unknown", command
+    return None, "no roblox-player handler registered (Roblox is not installed for this user)"
 
 _JOB_ID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _GAME_LINK = re.compile(r"roblox\.com/(?:[a-z]{2}/)?games/(\d+)", re.IGNORECASE)

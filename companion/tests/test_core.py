@@ -167,6 +167,14 @@ class LaunchTests(unittest.TestCase):
         self.assertIn("request%3DRequestGame%26", launch.launch_uri("T", launch.place_launcher_url("1", 5), "1", 1))
         self.assertIn("RequestFollowUser", launch.place_launcher_url("1", follow_user_id=99))
 
+    def test_detect_bootstrapper_off_windows(self):
+        import sys
+        if sys.platform == "win32":
+            self.skipTest("Windows reads the real registry")
+        name, detail = launch.detect_bootstrapper()
+        self.assertIsNone(name)
+        self.assertEqual(detail, "not Windows")
+
     def test_parsers(self):
         self.assertEqual(launch.parse_place("1818"), 1818)
         self.assertEqual(launch.parse_place("https://www.roblox.com/games/6872265039/Bed-Wars"), 6872265039)
