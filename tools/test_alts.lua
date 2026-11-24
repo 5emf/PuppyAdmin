@@ -447,10 +447,13 @@ do
     for f = 1, 6 do Heartbeat:fire(1 / 60) end
     local ch = PLAYERS[2].Character
     check(ch.motors[1].Enabled == false and ch.motors[2].Enabled == false, "alt's joints disabled (limbs separated)")
-    check((ch.parts[1].CFrame.Position - ch.parts[2].CFrame.Position).Magnitude > 0.1, "separated limbs sit at different orbit points")
+    local ls = alts[1].UIAPI.Alts.limbState
+    check(ls and ls.holders and #ls.holders == #ch.parts, "a WeldConstraint driver was made per limb")
+    check(ls and (ls.holders[1].CFrame.Position - ls.holders[2].CFrame.Position).Magnitude > 0.1, "limb drivers sit at different orbit points")
     main.H.unform()
     runTasks()
     check(ch.motors[1].Enabled == true, "stopping reassembles the limbs")
+    check(alts[1].UIAPI.Alts.limbState == nil, "the weld rig is cleared on stop")
     main.Cfg.altForm.limbs = false
     main.H.form({ "wings" }); runTasks()
     for f = 1, 40 do Heartbeat:fire(1 / 60) end

@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-49" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-50" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -13587,16 +13587,22 @@ function UIAPI.altsSetup()
         if st.limbs and mode == "pin" and st.center ~= "self" then
             local lc = resolveCenter(st)
             if not lc then return end
-            local parts = Alts.shatter()
-            if not parts or #parts == 0 then return end
+            local ls = Alts.shatter()
+            if not ls then return end
+            -- drive the welded holders when the rig built, else the parts directly
+            local drivers = (ls.holders and #ls.holders > 0) and ls.holders or ls.parts
+            local welded = ls.holders ~= nil
+            if #drivers == 0 then return end
             local lbase = levelFrame(lc, st.lead or 0.1)
-            local per = #parts
+            local per = #drivers
             local total = math.max(1, st.count) * per
-            for k, part in ipairs(parts) do
+            for k, d in ipairs(drivers) do
                 local slot = st.index * per + (k - 1)
-                part.CFrame = lbase * CF(0, st.params.height, 0) * Alts.orbitOffset(slot, total, st.t, st.params.size, st.cmdParams.style)
-                part.AssemblyLinearVelocity = Vector3.zero
-                part.AssemblyAngularVelocity = Vector3.zero
+                d.CFrame = lbase * CF(0, st.params.height, 0) * Alts.orbitOffset(slot, total, st.t, st.params.size, st.cmdParams.style)
+                if not welded then
+                    d.AssemblyLinearVelocity = Vector3.zero
+                    d.AssemblyAngularVelocity = Vector3.zero
+                end
             end
             return
         end
@@ -13693,7 +13699,10 @@ function UIAPI.altsSetup()
     function Alts.shatter()
         local char = plr.Character
         if not char then return nil end
-        if Alts.limbState and Alts.limbState.char == char then return Alts.limbState.parts end
+        if Alts.limbState then
+            if Alts.limbState.char == char then return Alts.limbState end
+            Alts.reassemble() -- respawned: drop the old rig first
+        end
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum then
             pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false) end)
@@ -13710,14 +13719,39 @@ function UIAPI.altsSetup()
             end
         end
         for _, j in ipairs(joints) do pcall(function() j.Enabled = false end) end
-        Alts.limbState = { char = char, parts = parts, joints = joints }
-        return parts
+        -- WeldConstraint rig: each limb is welded (coincident) to a small anchored driver, so
+        -- moving the driver's CFrame carries the limb rigidly - no per-frame velocity reset and
+        -- no gravity tug, which is what makes the limb attach to its orbit point without delay.
+        local holders, folder = {}, nil
+        pcall(function()
+            folder = Instance.new("Folder")
+            folder.Name = "PuppyAltLimbs"
+            folder.Parent = workspace
+            for _, part in ipairs(parts) do
+                local h = Instance.new("Part")
+                h.Anchored, h.CanCollide, h.Transparency = true, false, 1
+                h.Size = Vector3.new(0.2, 0.2, 0.2)
+                h.CFrame = part.CFrame
+                h.Parent = folder
+                local w = Instance.new("WeldConstraint")
+                w.Part0, w.Part1 = h, part
+                w.Parent = h
+                table.insert(holders, h)
+            end
+        end)
+        if #holders ~= #parts then -- rig could not be built: fall back to driving the parts directly
+            if folder then pcall(function() folder:Destroy() end) end
+            holders, folder = nil, nil
+        end
+        Alts.limbState = { char = char, parts = parts, joints = joints, holders = holders, folder = folder }
+        return Alts.limbState
     end
 
     function Alts.reassemble()
         local ls = Alts.limbState
         if not ls then return end
         Alts.limbState = nil
+        if ls.folder then pcall(function() ls.folder:Destroy() end) end -- removes holders + welds
         for _, j in ipairs(ls.joints) do pcall(function() j.Enabled = true end) end
         local char = plr.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
