@@ -164,6 +164,39 @@ class FontsTest(unittest.TestCase):
         fonts._loaded.clear()
 
 
+class LookTest(unittest.TestCase):
+    def test_colours_and_palette(self):
+        from puppy_companion import look
+        self.assertEqual(look.parse_color("#FF88cc"), (255, 136, 204))
+        self.assertEqual(look.parse_color("f8c"), (255, 136, 204))
+        self.assertEqual(look.parse_color("255, 136, 204"), (255, 136, 204))
+        self.assertEqual(look.parse_color("pink"), (255, 130, 190))
+        for bad in ("", "#12345", "300,1,1", "nope"):
+            self.assertIsNone(look.parse_color(bad))
+        roles = look.roles_for("Puppy", {"accent": "#00ff00", "evil": "#000000", "text": "garbage"})
+        self.assertEqual(roles["accent"], (0, 255, 0))
+        self.assertEqual(roles["text"], (255, 236, 246))  # bad override ignored
+        dark, light = look.palette(look.roles_for("Midnight")), look.palette(look.roles_for("Light"))
+        self.assertEqual(dark["BG"], "#0e1220")
+        # a raised surface steps lighter on dark themes and darker on light ones
+        self.assertGreater(int(dark["FIELD"][1:3], 16), int(dark["CARD"][1:3], 16))
+        self.assertLess(int(light["FIELD"][1:3], 16), int(light["CARD"][1:3], 16))
+        self.assertEqual(look.roles_for("unknown"), dict(look.PRESETS[0][1]))
+
+    def test_text_scale_and_cursor(self):
+        from puppy_companion import look
+        self.assertEqual(look.text_scale("1.53"), 1.55)
+        self.assertEqual(look.text_scale(9), 2.0)
+        self.assertEqual(look.text_scale("x"), 1.0)
+        for name in look.CURSORS.values():
+            with open(os.path.join(look.CURSOR_DIR, name), "rb") as f:
+                head = f.read(6 + 16)
+            self.assertEqual(head[:4], b"\x00\x00\x02\x00", name + " is a .cur file")
+        if sys.platform != "win32":
+            self.assertEqual(look.cursor_spec("Glove"), "")
+        self.assertEqual(look.cursor_spec("Default"), "")
+
+
 class RobloxAccountTest(unittest.TestCase):
     def setUp(self):
         self.api = FakeAccountApi()
@@ -295,6 +328,33 @@ class ManageWindowTest(unittest.TestCase):
             self.assertIn("could not be loaded", self.log_text())
         self.app.set_font("Default")
         self.assertIn("App font: Default", self.log_text())
+
+    def test_look_tab(self):
+        from tkinter import font as tkfont, ttk
+        style = ttk.Style(self.root)
+        self.app.set_preset("Puppy")
+        self.assertEqual(style.lookup("TFrame", "background"), "#1e121a")
+        self.assertEqual(self.app.log_text.cget("bg"), "#2c1a26")  # plain Tk widgets follow too
+        self.assertEqual(self.app.manage.listbox.cget("bg"), "#2c1a26")
+        self.app.set_role_colour("accent", "#00ff00")
+        self.assertEqual(self.settings.get("theme_colors"), {"accent": "#00ff00"})
+        self.assertEqual(style.lookup("Accent.TButton", "background"), "#00ff00")
+        self.app.set_role_colour("accent", "nonsense")
+        self.assertEqual(self.settings.get("theme_colors"), {"accent": "#00ff00"})
+        self.app.set_text_scale(1.5)
+        self.assertEqual(tkfont.nametofont("TkDefaultFont", root=self.root).cget("size"), 15)
+        self.app.set_text_scale(1.0)
+        png = os.path.join(self.tmp, "pic.png")
+        with open(png, "wb") as f:
+            f.write(PNG_1PX)
+        self.app.set_header_image(png)
+        self.assertIsNotNone(self.app._header_photo)
+        self.app.set_header_image(os.path.join(self.tmp, "missing.png"))
+        self.assertIsNone(self.app._header_photo)
+        self.app.set_cursor("Glove")
+        self.assertEqual(self.settings.get("cursor"), "Glove")
+        self.app.set_preset("Companion")
+        self.assertEqual(style.lookup("TFrame", "background"), "#14151a")
 
     def test_save_app_settings_writes_roster(self):
         self.m.select(42)

@@ -239,6 +239,12 @@ class Settings:
         "job": "",
         "autoexec_dir": "",       # your executor's autoexec folder, if auto-detect misses it
         "font": "Default",        # app font (fonts.FONTS label)
+        "theme_preset": "Companion",  # look.PRESETS name
+        "theme_colors": {},       # role -> "#rrggbb" overrides on top of the preset
+        "text_scale": 1.0,        # 0.5 - 2.0
+        "cursor": "Default",      # look.CURSOR_CHOICES
+        "cursor_file": "",        # a .cur / .ani file for "Custom file"
+        "header_image": "",       # a PNG / GIF shown in the top bar
     }
 
     def __init__(self, folder=None):

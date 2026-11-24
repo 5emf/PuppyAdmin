@@ -64,6 +64,7 @@ class ManageTab:
                                   bg=self.c["card"], fg=self.c["fg"], selectbackground=self.c["accent"], relief="flat",
                                   highlightthickness=0)
         self.listbox.pack(fill="y", expand=True, pady=app.pad(6, 0))
+        app.raw(self.listbox, bg="CARD", fg="FG", selectbackground="ACCENT", selectforeground="ON_ACCENT")
         self.listbox.bind("<<ListboxSelect>>", lambda e: self._picked())
 
         self.sub = ttk.Notebook(tab)
@@ -112,6 +113,7 @@ class ManageTab:
         ttk.Label(f, text="Notes").grid(row=r + 2, column=0, sticky="nw", pady=app.pad(8, 0))
         self.notes = tk.Text(f, height=3, width=40, bg=self.c["card"], fg=self.c["fg"], insertbackground=self.c["fg"],
                              relief="flat", wrap="word")
+        app.raw(self.notes, bg="CARD", fg="FG", insertbackground="FG")
         self.notes.grid(row=r + 2, column=1, sticky="we", padx=app.pad(10, 0), pady=app.pad(8, 0))
         ttk.Button(f, text="Save", style="Accent.TButton", command=self.save_app).grid(
             row=r + 3, column=1, sticky="e", pady=app.pad(10, 0))
@@ -135,6 +137,7 @@ class ManageTab:
         ttk.Label(f, text="About").grid(row=3, column=0, sticky="nw", pady=app.pad(12, 0))
         self.about = tk.Text(f, height=6, width=50, bg=self.c["card"], fg=self.c["fg"], insertbackground=self.c["fg"],
                              relief="flat", wrap="word")
+        self.app.raw(self.about, bg="CARD", fg="FG", insertbackground="FG")
         self.about.grid(row=3, column=1, columnspan=2, sticky="we", pady=app.pad(12, 0))
         row = ttk.Frame(f)
         row.grid(row=4, column=1, columnspan=2, sticky="e", pady=app.pad(8, 0))
@@ -432,7 +435,8 @@ class ManageTab:
         app = self.app
         dlg = tk.Toplevel(app.root)
         dlg.title("Update login")
-        dlg.configure(bg=self.c["bg"])
+        from . import app as appmod
+        dlg.configure(bg=appmod.BG, cursor=app.cursor_spec)
         dlg.transient(app.root)
         dlg.resizable(False, False)
         body = ttk.Frame(dlg, padding=app.px(16))

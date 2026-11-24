@@ -23,7 +23,7 @@ def main():
     files = []
     for root, _dirs, names in os.walk(PKG):
         for name in sorted(names):
-            if not name.endswith((".py", ".ttf")):
+            if not name.endswith((".py", ".ttf", ".cur")):
                 continue
             full = os.path.join(root, name)
             rel = os.path.relpath(full, COMPANION).replace("\\", "/")

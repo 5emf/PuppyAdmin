@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from tkinter import font as tkfont
 
-from . import fonts, launch, manage, update, workspace
+from . import fonts, launch, look, manage, update, workspace
 from .icon_data import ICON_32, ICON_64
 from .launch_queue import LaunchJob, LaunchQueue
 from .redact import redact
@@ -40,20 +40,36 @@ def screen_scale(root):
         return 1.0
 
 
-def apply_theme(root, k=1.0, family=None):
+# colours in use (the Look tab replaces them through apply_theme)
+HOVER, ACCENT_HI, ACCENT_LO, ON_ACCENT, TAB_HOVER = "#2f303c", "#74b7ff", "#3f8fe6", "#0b0d12", "#23242c"
+
+
+def apply_theme(root, k=1.0, family=None, pal=None, scale=1.0):
+    """pal: look.palette(...) colours (None keeps the current ones); scale: text size."""
+    global BG, CARD, FIELD, LINE, FG, DIM, ACCENT, GOOD, SELECT, HOVER, ACCENT_HI, ACCENT_LO, ON_ACCENT, TAB_HOVER
+    if pal:
+        BG, CARD, FIELD, LINE = pal["BG"], pal["CARD"], pal["FIELD"], pal["LINE"]
+        FG, DIM, ACCENT, GOOD, SELECT = pal["FG"], pal["DIM"], pal["ACCENT"], pal["GOOD"], pal["SELECT"]
+        HOVER, ACCENT_HI, ACCENT_LO = pal["HOVER"], pal["ACCENT_HI"], pal["ACCENT_LO"]
+        ON_ACCENT, TAB_HOVER = pal["ON_ACCENT"], pal["TAB_HOVER"]
+
     def p(n):
         return int(round(n * k))
+
+    def fs(n):
+        return max(6, int(round(n * scale)))
     style = ttk.Style(root)
     try:
         style.theme_use("clam")
     except tk.TclError:
         pass
     family = family or fonts.default_family()
-    base = (family, 10)
+    base = (family, fs(10))
+    root.configure(bg=BG)
     # named fonts, not the option database: an option-database font would override every ttk style's font
     for name in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont", "TkCaptionFont", "TkTooltipFont"):
         try:
-            tkfont.nametofont(name, root=root).configure(family=family, size=10)
+            tkfont.nametofont(name, root=root).configure(family=family, size=fs(10))
         except tk.TclError:
             pass
     style.configure(".", background=BG, foreground=FG, fieldbackground=FIELD, bordercolor=LINE,
@@ -65,14 +81,14 @@ def apply_theme(root, k=1.0, family=None):
     style.configure("Good.TLabel", foreground=GOOD)
     style.configure("Warn.TLabel", foreground=WARN)
     style.configure("Bad.TLabel", foreground=BAD)
-    style.configure("Title.TLabel", font=(family, 15, "bold"))
+    style.configure("Title.TLabel", font=(family, fs(15), "bold"))
     style.configure("TLabelframe", background=BG, bordercolor=LINE, relief="solid", borderwidth=1)
-    style.configure("TLabelframe.Label", background=BG, foreground=DIM, font=(family, 9, "bold"))
+    style.configure("TLabelframe.Label", background=BG, foreground=DIM, font=(family, fs(9), "bold"))
     style.configure("TButton", background=FIELD, foreground=FG, bordercolor=LINE, padding=(p(12), p(6)), focusthickness=0)
-    style.map("TButton", background=[("disabled", CARD), ("pressed", LINE), ("active", "#2f303c")],
+    style.map("TButton", background=[("disabled", CARD), ("pressed", LINE), ("active", HOVER)],
               foreground=[("disabled", DIM)])
-    style.configure("Accent.TButton", background=ACCENT, foreground="#0b0d12", bordercolor=ACCENT)
-    style.map("Accent.TButton", background=[("pressed", "#3f8fe6"), ("active", "#74b7ff")])
+    style.configure("Accent.TButton", background=ACCENT, foreground=ON_ACCENT, bordercolor=ACCENT)
+    style.map("Accent.TButton", background=[("pressed", ACCENT_LO), ("active", ACCENT_HI)])
     style.configure("Danger.TButton", background="#47222a", foreground="#ffd9d9", bordercolor="#5c2a33")
     style.map("Danger.TButton", background=[("pressed", "#3a1b21"), ("active", "#5c2a33")])
     style.configure("TEntry", fieldbackground=FIELD, foreground=FG, bordercolor=LINE, insertcolor=FG, padding=p(5))
@@ -86,10 +102,12 @@ def apply_theme(root, k=1.0, family=None):
     root.option_add("*TCombobox*Listbox.background", CARD)
     root.option_add("*TCombobox*Listbox.foreground", FG)
     root.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
-    root.option_add("*TCombobox*Listbox.selectForeground", BG)
+    root.option_add("*TCombobox*Listbox.selectForeground", ON_ACCENT)
     style.configure("TSpinbox", fieldbackground=FIELD, foreground=FG, bordercolor=LINE, arrowcolor=FG,
                     insertcolor=FG, padding=p(4), background=FIELD)
     style.map("TSpinbox", bordercolor=[("focus", ACCENT)], lightcolor=[("focus", FIELD)])
+    style.configure("Horizontal.TScale", background=ACCENT, troughcolor=FIELD, bordercolor=LINE,
+                    lightcolor=ACCENT, darkcolor=ACCENT)
     # clam draws check and radio indicators with -indicatorbackground (box) and -indicatorforeground (mark)
     for cls in ("TCheckbutton", "TRadiobutton"):
         style.configure(cls, background=BG, foreground=FG, indicatorbackground=FIELD, indicatorforeground=ACCENT,
@@ -99,9 +117,10 @@ def apply_theme(root, k=1.0, family=None):
     style.configure("TNotebook", background=BG, bordercolor=LINE, tabmargins=(0, 0, 0, 0))
     style.configure("TNotebook.Tab", background=CARD, foreground=DIM, padding=(p(18), p(7)), bordercolor=LINE)
     # clam shrinks the selected tab and gives it a light top edge: keep it the same size and dark
-    style.map("TNotebook.Tab", background=[("selected", FIELD), ("active", "#23242c")], foreground=[("selected", FG)],
+    style.map("TNotebook.Tab", background=[("selected", FIELD), ("active", TAB_HOVER)], foreground=[("selected", FG)],
               lightcolor=[("selected", FIELD), ("", CARD)], padding=[("selected", (p(18), p(7)))])
-    style.configure("Treeview", background=CARD, fieldbackground=CARD, foreground=FG, rowheight=p(26), bordercolor=LINE)
+    style.configure("Treeview", background=CARD, fieldbackground=CARD, foreground=FG, rowheight=p(int(26 * max(1.0, scale))),
+                    bordercolor=LINE)
     style.map("Treeview", background=[("selected", SELECT)], foreground=[("selected", FG)])
     style.configure("Treeview.Heading", background=FIELD, foreground=DIM, relief="flat", padding=(p(6), p(5)))
     style.map("Treeview.Heading", background=[("active", LINE)])
@@ -153,14 +172,19 @@ class CompanionApp:
         root.title("Puppy Companion")
         root.geometry("%dx%d" % (self.px(880), self.px(660)))
         root.minsize(self.px(780), self.px(580))
-        root.configure(bg=BG)
-        apply_theme(root, self.k, self._font_family(self.settings.get("font")))
+        self._raw = []            # plain Tk widgets that ttk styles do not reach: (widget, {option: colour name})
+        self._header_photo = None
+        self.cursor_spec = ""
+        apply_theme(root, self.k, self._font_family(self.settings.get("font")), self.look_palette(),
+                    look.text_scale(self.settings.get("text_scale")))
         try:
             self._icons = [tk.PhotoImage(master=root, data=ICON_64), tk.PhotoImage(master=root, data=ICON_32)]
             root.iconphoto(True, *self._icons)
         except tk.TclError:
             self._icons = []
         self._build()
+        self.apply_cursor()
+        self.apply_header_image()
         self.refresh_status(force=True)
         self.apply_multi_instance(initial=True)
         self.write_roster()
@@ -187,12 +211,14 @@ class CompanionApp:
         # packed only once an update has been downloaded
         self.multi_lbl = ttk.Label(top, text="", style="Dim.TLabel")
         self.multi_lbl.pack(side="right", pady=self.pad(6, 0))
+        self.header_lbl = ttk.Label(top)  # the Look tab's top-bar picture
 
         self.nb = ttk.Notebook(self.root)
         self.nb.pack(fill="both", expand=True, padx=self.px(16), pady=self.pad(10, 8))
         self._build_accounts()
         self._build_launch()
         self.manage = manage.ManageTab(self)
+        self._build_look()
         self._build_settings()
 
         logf = ttk.Frame(self.root, padding=self.pad(16, 0, 16, 14))
@@ -201,6 +227,7 @@ class CompanionApp:
         self.log_text = tk.Text(logf, height=7, bg=CARD, fg=DIM, relief="flat", wrap="word", font=mono,
                                 highlightthickness=1, highlightbackground=LINE, highlightcolor=LINE,
                                 insertbackground=FG, padx=self.px(8), pady=self.px(6))
+        self.raw(self.log_text, bg="CARD", fg="DIM", highlightbackground="LINE", highlightcolor="LINE", insertbackground="FG")
         sb = ttk.Scrollbar(logf, orient="vertical", command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=sb.set, state="disabled")
         self.log_text.pack(side="left", fill="both", expand=True)
@@ -332,15 +359,8 @@ class CompanionApp:
                   ).grid(row=4, column=0, columnspan=3, sticky="w", pady=self.pad(8, 0))
         mi.columnconfigure(1, weight=1)
 
-        dt = ttk.LabelFrame(tab, text="LOOK AND YOUR DATA", padding=self.px(12))
+        dt = ttk.LabelFrame(tab, text="YOUR DATA", padding=self.px(12))
         dt.pack(fill="x", pady=self.pad(12, 0))
-        frow = ttk.Frame(dt)
-        frow.pack(anchor="w", pady=self.pad(0, 10))
-        ttk.Label(frow, text="App font").pack(side="left")
-        self.font_var = tk.StringVar(value=self.settings.get("font") if self.settings.get("font") in fonts.choices() else fonts.DEFAULT)
-        fbox = ttk.Combobox(frow, textvariable=self.font_var, values=fonts.choices(), state="readonly", width=26)
-        fbox.pack(side="left", padx=self.px(10))
-        fbox.bind("<<ComboboxSelected>>", lambda e: self.set_font(self.font_var.get()))
         ttk.Label(dt, wraplength=self.px(760), text=(
             "Accounts are saved in %s, with each login cookie encrypted for your Windows user "
             "(Windows DPAPI). Cookies only ever go to roblox.com and are never written to the executor folder."
@@ -366,11 +386,204 @@ class CompanionApp:
     def set_font(self, label):
         family = self._font_family(label)
         self.settings.set("font", label)
-        apply_theme(self.root, self.k, family)
+        self.apply_look()
         if label != fonts.DEFAULT and family == fonts.default_family():
             self.log("%s could not be loaded on this PC; using the normal font." % label)
         else:
             self.log("App font: %s." % label)
+
+    # look -------------------------------------------------------------------------------
+    def raw(self, widget, **colours):
+        """Registers a plain Tk widget to be recoloured with the theme (values: colour names)."""
+        self._raw.append((widget, colours))
+        return widget
+
+    def look_roles(self):
+        return look.roles_for(self.settings.get("theme_preset"), self.settings.get("theme_colors") or {})
+
+    def look_palette(self):
+        return look.palette(self.look_roles())
+
+    def apply_look(self):
+        """Re-applies theme, font and text size everywhere, plus cursor and top-bar picture."""
+        apply_theme(self.root, self.k, self._font_family(self.settings.get("font")), self.look_palette(),
+                    look.text_scale(self.settings.get("text_scale")))
+        names = globals()
+        alive = []
+        for widget, colours in self._raw:
+            try:
+                widget.configure(**{opt: names[c] for opt, c in colours.items()})
+                alive.append((widget, colours))
+            except tk.TclError:
+                pass  # destroyed
+        self._raw = alive
+        try:
+            self.tree.tag_configure("online", foreground=GOOD)
+            self.tree.tag_configure("idle", foreground=FG)
+            self.tree.tag_configure("gone", foreground=DIM)
+        except (tk.TclError, AttributeError):
+            pass
+        if getattr(self, "_swatches", None):
+            roles = self.look_roles()
+            for role, (sw, var) in self._swatches.items():
+                sw.configure(bg=look.to_hex(roles[role]))
+                var.set(look.to_hex(roles[role]))
+        self.apply_cursor()
+        self.apply_header_image()
+
+    def apply_cursor(self):
+        spec = look.cursor_spec(self.settings.get("cursor"), self.settings.get("cursor_file"))
+        try:
+            self.root.configure(cursor=spec)
+            self.cursor_spec = spec
+        except tk.TclError:
+            self.root.configure(cursor="")
+            self.cursor_spec = ""
+            if self.settings.get("cursor") != "Default":
+                self.log("That cursor could not be loaded; using the normal one.")
+
+    def apply_header_image(self):
+        path = self.settings.get("header_image") or ""
+        if not path:
+            self.header_lbl.pack_forget()
+            self._header_photo = None
+            return
+        try:
+            img = tk.PhotoImage(master=self.root, file=path)
+            limit = self.px(56)
+            factor = max(1, -(-img.height() // limit))
+            if factor > 1:
+                img = img.subsample(factor, factor)
+        except tk.TclError:
+            self.header_lbl.pack_forget()
+            self._header_photo = None
+            self.log("The top-bar picture could not be opened (PNG or GIF only).")
+            return
+        self._header_photo = img
+        self.header_lbl.configure(image=img)
+        self.header_lbl.pack(side="right", padx=self.pad(0, 12))
+
+    def _build_look(self):
+        tab = ttk.Frame(self.nb, padding=self.px(12))
+        self.nb.add(tab, text="Look")
+        th = ttk.LabelFrame(tab, text="THEME (THE SAME PRESETS AS PUPPY ADMIN)", padding=self.px(12))
+        th.pack(fill="x")
+        prow = ttk.Frame(th)
+        prow.pack(anchor="w")
+        for name in look.PRESET_NAMES:
+            ttk.Button(prow, text=name, command=lambda n=name: self.set_preset(n)).pack(side="left", padx=self.pad(0, 6))
+        grid = ttk.Frame(th)
+        grid.pack(anchor="w", pady=self.pad(10, 0))
+        self._swatches = {}
+        roles = self.look_roles()
+        for i, role in enumerate(look.ROLES):
+            r, c = i % 4, (i // 4) * 3
+            ttk.Label(grid, text=look.LABELS[role]).grid(row=r, column=c, sticky="w", padx=self.pad(0, 8), pady=self.pad(0, 6))
+            sw = tk.Label(grid, width=3, bg=look.to_hex(roles[role]), relief="solid", borderwidth=1)
+            sw.grid(row=r, column=c + 1, sticky="w")
+            var = tk.StringVar(value=look.to_hex(roles[role]))
+            ent = ttk.Entry(grid, textvariable=var, width=12)
+            ent.grid(row=r, column=c + 2, sticky="w", padx=self.pad(6, 22), pady=self.pad(0, 6))
+            ent.bind("<Return>", lambda e, ro=role, v=var: self.set_role_colour(ro, v.get()))
+            ent.bind("<FocusOut>", lambda e, ro=role, v=var: self.set_role_colour(ro, v.get(), quiet=True))
+            self._swatches[role] = (sw, var)
+        ttk.Label(th, style="Dim.TLabel", text="Colours: #hex, r,g,b or a name, then Enter.").pack(anchor="w", pady=self.pad(4, 0))
+
+        tx = ttk.LabelFrame(tab, text="TEXT", padding=self.px(12))
+        tx.pack(fill="x", pady=self.pad(12, 0))
+        ttk.Label(tx, text="App font").grid(row=0, column=0, sticky="w")
+        self.font_var = tk.StringVar(value=self.settings.get("font") if self.settings.get("font") in fonts.choices() else fonts.DEFAULT)
+        fbox = ttk.Combobox(tx, textvariable=self.font_var, values=fonts.choices(), state="readonly", width=26)
+        fbox.grid(row=0, column=1, sticky="w", padx=self.px(10))
+        fbox.bind("<<ComboboxSelected>>", lambda e: self.set_font(self.font_var.get()))
+        ttk.Label(tx, text="Text size").grid(row=1, column=0, sticky="w", pady=self.pad(10, 0))
+        self.scale_var = tk.DoubleVar(value=look.text_scale(self.settings.get("text_scale")) * 100)
+        self.scale_lbl = ttk.Label(tx, text="%d%%" % self.scale_var.get(), width=5)
+        sc = ttk.Scale(tx, from_=50, to=200, variable=self.scale_var, length=self.px(260),
+                       command=lambda v: self.scale_lbl.configure(text="%d%%" % round(float(v))))
+        sc.grid(row=1, column=1, sticky="w", padx=self.px(10), pady=self.pad(10, 0))
+        sc.bind("<ButtonRelease-1>", lambda e: self.set_text_scale(self.scale_var.get() / 100))
+        self.scale_lbl.grid(row=1, column=2, sticky="w", pady=self.pad(10, 0))
+        ttk.Button(tx, text="Reset", command=lambda: self.set_text_scale(1.0)).grid(row=1, column=3, padx=self.pad(8, 0), pady=self.pad(10, 0))
+
+        cu = ttk.LabelFrame(tab, text="CURSOR AND TOP-BAR PICTURE", padding=self.px(12))
+        cu.pack(fill="x", pady=self.pad(12, 0))
+        ttk.Label(cu, text="Cursor").grid(row=0, column=0, sticky="w")
+        self.cursor_var = tk.StringVar(value=self.settings.get("cursor") if self.settings.get("cursor") in look.CURSOR_CHOICES else "Default")
+        cbox = ttk.Combobox(cu, textvariable=self.cursor_var, values=look.CURSOR_CHOICES, state="readonly", width=18)
+        cbox.grid(row=0, column=1, sticky="w", padx=self.px(10))
+        cbox.bind("<<ComboboxSelected>>", lambda e: self.set_cursor(self.cursor_var.get()))
+        ttk.Button(cu, text="Choose .cur / .ani file", command=self.choose_cursor_file).grid(row=0, column=2, sticky="w")
+        ttk.Label(cu, text="Top-bar picture").grid(row=1, column=0, sticky="w", pady=self.pad(10, 0))
+        prow2 = ttk.Frame(cu)
+        prow2.grid(row=1, column=1, columnspan=2, sticky="w", padx=self.px(10), pady=self.pad(10, 0))
+        ttk.Button(prow2, text="Choose PNG / GIF", command=self.choose_header_image).pack(side="left")
+        ttk.Button(prow2, text="Remove", command=lambda: self.set_header_image("")).pack(side="left", padx=self.pad(6, 0))
+        ttk.Label(cu, style="Dim.TLabel", wraplength=self.px(760), text=(
+            "Glove, Light and Keyblade are Puppy Admin's cursors. Windows apps can't show a picture behind "
+            "their buttons, so the picture sits in the top bar.")).grid(row=2, column=0, columnspan=3, sticky="w", pady=self.pad(10, 0))
+
+    def set_preset(self, name):
+        self.settings.set("theme_preset", name)
+        self.settings.set("theme_colors", {})
+        self.apply_look()
+        self.log("Theme: %s." % name)
+
+    def set_role_colour(self, role, text, quiet=False):
+        rgb = look.parse_color(text)
+        cur = self.look_roles()[role]
+        if not rgb:
+            if not quiet:
+                self.log("Colour: #hex, r,g,b or a name (for example #ff88cc or pink).")
+            self._swatches[role][1].set(look.to_hex(cur))
+            return
+        if tuple(rgb) == tuple(cur):
+            return
+        colours = dict(self.settings.get("theme_colors") or {})
+        colours[role] = look.to_hex(rgb)
+        self.settings.set("theme_colors", colours)
+        self.apply_look()
+        self.log("%s: %s." % (look.LABELS[role], look.to_hex(rgb)))
+
+    def set_text_scale(self, value):
+        v = look.text_scale(value)
+        self.settings.set("text_scale", v)
+        self.scale_var.set(v * 100)
+        self.scale_lbl.configure(text="%d%%" % round(v * 100))
+        self.apply_look()
+        self.log("Text size: %d%%." % round(v * 100))
+
+    def set_cursor(self, choice):
+        if choice == "Custom file" and not self.settings.get("cursor_file"):
+            self.choose_cursor_file()
+            return
+        self.settings.set("cursor", choice)
+        self.apply_cursor()
+        if sys.platform != "win32" and choice != "Default":
+            self.log("Custom cursors work on Windows only.")
+        else:
+            self.log("Cursor: %s." % choice)
+
+    def choose_cursor_file(self):
+        path = filedialog.askopenfilename(parent=self.root, title="Cursor file",
+                                          filetypes=[("Windows cursors", "*.cur *.ani"), ("All files", "*.*")])
+        if not path:
+            return
+        self.settings.set("cursor_file", path)
+        self.cursor_var.set("Custom file")
+        self.set_cursor("Custom file")
+
+    def choose_header_image(self):
+        path = filedialog.askopenfilename(parent=self.root, title="Top-bar picture",
+                                          filetypes=[("Pictures", "*.png *.gif"), ("All files", "*.*")])
+        if path:
+            self.set_header_image(path)
+
+    def set_header_image(self, path):
+        self.settings.set("header_image", path or "")
+        self.apply_header_image()
+        if path and self._header_photo:
+            self.log("Top-bar picture set.")
 
     # plumbing ---------------------------------------------------------------------------
     def _tick(self):
@@ -632,7 +845,7 @@ class CompanionApp:
     def add_account(self):
         dlg = tk.Toplevel(self.root)
         dlg.title("Add account")
-        dlg.configure(bg=BG)
+        dlg.configure(bg=BG, cursor=self.cursor_spec)
         dlg.transient(self.root)
         dlg.resizable(False, False)
         body = ttk.Frame(dlg, padding=self.px(16))

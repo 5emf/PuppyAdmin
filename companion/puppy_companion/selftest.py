@@ -14,7 +14,7 @@ import tempfile
 import traceback
 import uuid
 
-from . import __version__, fonts, launch, workspace
+from . import __version__, fonts, launch, look, workspace
 from .secure import ProtectorError, default_protector
 from .store import AccountStore, Settings
 
@@ -146,7 +146,7 @@ def check_window(tmp):
             root.update()
         rows = app.tree.get_children()
         tabs = [app.nb.tab(t, "text") for t in app.nb.tabs()]
-        if len(rows) != 2 or tabs != ["Accounts", "Launch", "Manage", "Settings"]:
+        if len(rows) != 2 or tabs != ["Accounts", "Launch", "Manage", "Look", "Settings"]:
             raise AssertionError("window content: rows=%r tabs=%r" % (rows, tabs))
         version = root.tk.call("info", "patchlevel")
         app.close()
@@ -167,7 +167,10 @@ def check_fonts(tmp):
     n = fonts.load_private(files)
     if n != len(files):
         raise AssertionError("only %d of %d fonts loaded" % (n, len(files)))
-    return "%d font files loaded for this program" % n
+    cursors = [c for c in look.CURSORS.values() if not os.path.isfile(os.path.join(look.CURSOR_DIR, c))]
+    if cursors:
+        raise AssertionError("cursor files missing from the program: %s" % ", ".join(cursors))
+    return "%d font files loaded for this program; %d cursors present" % (n, len(look.CURSORS))
 
 
 CHECKS = [
