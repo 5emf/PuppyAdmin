@@ -340,6 +340,23 @@ check(#ids == 3 and ids[1] == 2 and ids[3] == 4, "only alts running Puppy Admin 
 check(select(1, main.UIAPI.Alts.describe(6)) == "here, Puppy Admin not running", "alt without the script is flagged")
 report(4) -- keep AltC fresh
 
+-- per-account settings from the companion's Manage tab ride in roster.json
+do
+    local saved = FS["PuppyAdmin/companion/roster.json"]
+    local r = json.decode(saved)
+    r.alts[1].prefs = { lite = false, fps = 45, mute = false, vcAuto = false }
+    r.alts[2].prefs = { fps = 9999 }
+    FS["PuppyAdmin/companion/roster.json"] = json.encode(r)
+    alts[1].UIAPI.Alts.loadRoster(true); alts[2].UIAPI.Alts.loadRoster(true); alts[3].UIAPI.Alts.loadRoster(true)
+    local p1 = alts[1].UIAPI.Alts.myPrefs()
+    check(p1.lite == false and p1.fps == 45 and p1.mute == false and p1.vcAuto == false, "alt reads its own prefs")
+    check(alts[1].UIAPI.Alts.liteOn() == false, "per-account low power off wins over the global switch")
+    check(alts[2].UIAPI.Alts.myPrefs().fps == 240, "fps pref is clamped")
+    check(next(alts[3].UIAPI.Alts.myPrefs()) == nil, "an alt without prefs uses its own switches")
+    FS["PuppyAdmin/companion/roster.json"] = saved
+    for _, a in ipairs(alts) do a.UIAPI.Alts.loadRoster(true) end
+end
+
 -- an alt cannot lead
 check(alts[1].UIAPI.Alts.start("wings") == false, "alt cannot start")
 check(FS["PuppyAdmin/companion/altcmd.json"] == nil, "alt wrote no command")

@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-51" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-52" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -13266,7 +13266,7 @@ function UIAPI.altsSetup()
         if Alts.roster and not force and now - Alts.rosterAt < 5 then return Alts.roster end
         Alts.rosterAt = now
         local data = readJson(ROSTER_FILE)
-        local r = { main = nil, alts = {}, isAlt = {}, names = {}, found = data ~= nil }
+        local r = { main = nil, alts = {}, isAlt = {}, names = {}, prefs = {}, found = data ~= nil }
         if data then
             if type(data.main) == "table" then
                 r.main = tonumber(data.main.userId)
@@ -13280,12 +13280,33 @@ function UIAPI.altsSetup()
                         table.insert(r.alts, id)
                         r.isAlt[id] = true
                         r.names[id] = tostring(a.name or id)
+                        -- per-account settings from Puppy Companion's Manage tab (missing = own switch)
+                        if type(a.prefs) == "table" then
+                            local pr = {}
+                            if type(a.prefs.lite) == "boolean" then pr.lite = a.prefs.lite end
+                            if type(a.prefs.mute) == "boolean" then pr.mute = a.prefs.mute end
+                            if type(a.prefs.vcAuto) == "boolean" then pr.vcAuto = a.prefs.vcAuto end
+                            local fps = tonumber(a.prefs.fps)
+                            if fps and fps == fps then pr.fps = math.max(15, math.min(240, math.floor(fps))) end
+                            r.prefs[id] = pr
+                        end
                     end
                 end
             end
         end
         Alts.roster = r
         return r
+    end
+
+    -- this account's own settings from the companion (empty when none are set)
+    function Alts.myPrefs()
+        local r = Alts.loadRoster()
+        return (r.prefs and r.prefs[plr.UserId]) or {}
+    end
+    function Alts.liteOn()
+        local p = Alts.myPrefs()
+        if p.lite ~= nil then return p.lite end
+        return Cfg.altLite ~= false
     end
 
     function Alts.role()
@@ -13655,7 +13676,7 @@ function UIAPI.altsSetup()
     -- low-power: cap the alt's own FPS while it follows (a 2014 Surface Book runs many windows)
     function Alts.capFps()
         if Alts.lite and setfpscap and not Alts.capped then
-            setfpscap(Cfg.altLiteFps or 30)
+            setfpscap(Alts.myPrefs().fps or Cfg.altLiteFps or 30)
             Alts.capped = true
         end
     end
@@ -13697,8 +13718,8 @@ function UIAPI.altsSetup()
 
     -- client settings for an alt: always mute; drop graphics only in low-power mode
     function Alts.applyAltClientSettings()
-        Alts.muteAudio()
-        if Cfg.altLite ~= false then Alts.applyLowGraphics() end
+        if Alts.myPrefs().mute ~= false then Alts.muteAudio() end
+        if Alts.liteOn() then Alts.applyLowGraphics() end
     end
 
     -- Separated limbs, visible to everyone. Disabling Motor6Ds on this client never
@@ -14508,7 +14529,8 @@ function UIAPI.altsSetup()
 
     -- alts: check for a voice ban now and then, and bypass it automatically
     function Alts.vcTick()
-        if Cfg.altVcAuto == false then return end
+        local vp = Alts.myPrefs().vcAuto
+        if vp == false or (vp == nil and Cfg.altVcAuto == false) then return end
         if Alts.role() ~= "alt" then return end
         if VCB.state == "active" or VCB.state == "running" then return end
         if Alts.voiceUnavailable() then Alts.autoVcBan(true) end
@@ -14531,7 +14553,8 @@ function UIAPI.altsSetup()
         local r = Alts.loadRoster()
         if not r.main or tonumber(c.main) ~= r.main then return end
         c.main, c.time, c.target = r.main, tonumber(c.time) or 0, tonumber(c.target) or 0
-        Alts.lite = (c.params and c.params.lite == true) or Cfg.altLite == true
+        local own = Alts.myPrefs().lite
+        if own ~= nil then Alts.lite = own else Alts.lite = (c.params and c.params.lite == true) or Cfg.altLite == true end
         if c.jobId ~= game.JobId or os.time() - c.time > STALE or c.action ~= "cmd" then
             Alts.stopFollowing(); return
         end

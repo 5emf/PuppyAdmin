@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from tkinter import font as tkfont
 
-from . import launch, update, workspace
+from . import launch, manage, update, workspace
 from .icon_data import ICON_32, ICON_64
 from .launch_queue import LaunchJob, LaunchQueue
 from .redact import redact
@@ -77,6 +77,16 @@ def apply_theme(root, k=1.0):
     style.map("Danger.TButton", background=[("pressed", "#3a1b21"), ("active", "#5c2a33")])
     style.configure("TEntry", fieldbackground=FIELD, foreground=FG, bordercolor=LINE, insertcolor=FG, padding=p(5))
     style.map("TEntry", bordercolor=[("focus", ACCENT)], lightcolor=[("focus", FIELD)])
+    style.configure("TCombobox", fieldbackground=FIELD, background=FIELD, foreground=FG, bordercolor=LINE,
+                    arrowcolor=FG, selectbackground=FIELD, selectforeground=FG, padding=p(4))
+    style.map("TCombobox", fieldbackground=[("readonly", FIELD), ("disabled", CARD)],
+              foreground=[("disabled", DIM), ("readonly", FG)], background=[("readonly", FIELD)],
+              selectbackground=[("readonly", FIELD)], selectforeground=[("readonly", FG)],
+              bordercolor=[("focus", ACCENT)])
+    root.option_add("*TCombobox*Listbox.background", CARD)
+    root.option_add("*TCombobox*Listbox.foreground", FG)
+    root.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
+    root.option_add("*TCombobox*Listbox.selectForeground", BG)
     style.configure("TSpinbox", fieldbackground=FIELD, foreground=FG, bordercolor=LINE, arrowcolor=FG,
                     insertcolor=FG, padding=p(4), background=FIELD)
     style.map("TSpinbox", bordercolor=[("focus", ACCENT)], lightcolor=[("focus", FIELD)])
@@ -130,6 +140,7 @@ class CompanionApp:
         self._check_update = check_update
         self.ui = queue.Queue()
         self.statuses = {}
+        self._rejoin = {}
         self.script_latest = None  # newest Puppy Admin SCRIPT_BUILD on GitHub, once known
         self._last_refresh = 0.0
         self._closing = False
@@ -181,6 +192,7 @@ class CompanionApp:
         self.nb.pack(fill="both", expand=True, padx=self.px(16), pady=self.pad(10, 8))
         self._build_accounts()
         self._build_launch()
+        self.manage = manage.ManageTab(self)
         self._build_settings()
 
         logf = ttk.Frame(self.root, padding=self.pad(16, 0, 16, 14))
@@ -249,6 +261,15 @@ class CompanionApp:
                    style="Accent.TButton").pack(side="left")
         ttk.Button(row, text="Launch all alts", command=self.launch_alts).pack(side="left", padx=self.px(6))
         ttk.Button(row, text="Send alts to main's server", command=self.alts_to_main).pack(side="left")
+        grow = ttk.Frame(act)
+        grow.pack(fill="x", pady=self.pad(12, 0))
+        ttk.Label(grow, text="Group").pack(side="left")
+        self.group_launch_var = tk.StringVar()
+        self.group_box = ttk.Combobox(grow, textvariable=self.group_launch_var, values=self.store.groups(),
+                                      state="readonly", width=20)
+        self.group_box.pack(side="left", padx=self.px(8))
+        ttk.Button(grow, text="Launch group", command=self.launch_group).pack(side="left")
+        ttk.Label(grow, text="Set groups on the Manage tab.", style="Dim.TLabel").pack(side="left", padx=self.px(10))
         row2 = ttk.Frame(act)
         row2.pack(fill="x", pady=self.pad(12, 0))
         ttk.Label(row2, text="Seconds between launches").pack(side="left")
@@ -533,6 +554,45 @@ class CompanionApp:
             user = a.name if a.display_name in ("", a.name) else "%s (@%s)" % (a.display_name, a.name)
             self.tree.item(str(a.user_id), values=(a.label, user, a.role, text, seen), tags=(tag,))
         self.update_workspace_label()
+        self.auto_rejoin_tick(now)
+
+    REJOIN_AFTER = 45      # seconds an alt must be gone before it is relaunched
+    REJOIN_WAIT = 120      # seconds between two relaunches of the same alt
+    REJOIN_MAX = 3         # relaunches per alt in REJOIN_WINDOW
+    REJOIN_WINDOW = 600
+
+    def auto_rejoin_tick(self, now):
+        """Alts with auto-rejoin on are relaunched into the main's server when they drop
+        out of it (crash, kick, disconnect). Only alts seen in a game since the app
+        started count, and each gets at most REJOIN_MAX tries per REJOIN_WINDOW."""
+        main = self.store.main()
+        mst = self.statuses.get(main.user_id) if main else None
+        main_live = bool(mst and mst["fresh"] and mst["online"] and mst["placeId"] and mst["jobId"]
+                         and not mst.get("privateServer"))
+        for a in self.store.alts():
+            if not a.prefs.get("auto_rejoin"):
+                self._rejoin.pop(a.user_id, None)
+                continue
+            rec = self._rejoin.setdefault(a.user_id, {"seen": False, "lost": None, "tries": [], "last": 0.0})
+            st = self.statuses.get(a.user_id)
+            if st and st["fresh"] and st["online"]:
+                rec["seen"], rec["lost"] = True, None
+                continue
+            if not rec["seen"]:
+                continue
+            if rec["lost"] is None:
+                rec["lost"] = now
+                continue
+            rec["tries"] = [t for t in rec["tries"] if now - t < self.REJOIN_WINDOW]
+            if (now - rec["lost"] < self.REJOIN_AFTER or now - rec["last"] < self.REJOIN_WAIT
+                    or len(rec["tries"]) >= self.REJOIN_MAX or not main_live):
+                continue
+            rec["tries"].append(now)
+            rec["last"] = now
+            self.log("Auto-rejoin: %s left the game, sending it back to the main's server (try %d of %d)."
+                     % (a.label, len(rec["tries"]), self.REJOIN_MAX))
+            self.launches.add([LaunchJob(a.user_id, a.label, mst["placeId"], mst["jobId"].lower(),
+                                         extra_delay=a.prefs.get("extra_delay") or 0)])
 
     def write_roster(self):
         ws = self.settings.get("workspace")
@@ -545,6 +605,10 @@ class CompanionApp:
     def accounts_changed(self):
         self.refresh_status(force=True)
         self.write_roster()
+        if getattr(self, "manage", None):
+            self.manage.reload()
+        if getattr(self, "group_box", None):
+            self.group_box.configure(values=self.store.groups())
 
     def add_account(self):
         dlg = tk.Toplevel(self.root)
@@ -713,6 +777,8 @@ class CompanionApp:
 
     def _queue(self, accounts, place, job):
         jobs, skipped = [], []
+        # each account's launch order (Manage tab) first, then the list order
+        accounts = sorted(accounts, key=lambda a: (a.prefs.get("launch_order") or 0))
         for a in accounts:
             st = self.statuses.get(a.user_id)
             live = st and st["fresh"] and st["online"]
@@ -720,7 +786,7 @@ class CompanionApp:
             if live and (st["jobId"].lower() == job if job else st["placeId"] == place):
                 skipped.append(a.label)
                 continue
-            jobs.append(LaunchJob(a.user_id, a.label, place, job))
+            jobs.append(LaunchJob(a.user_id, a.label, place, job, extra_delay=a.prefs.get("extra_delay") or 0))
         if skipped:
             self.log("Already there: %s." % ", ".join(skipped))
         if jobs:
@@ -746,6 +812,16 @@ class CompanionApp:
         t = self._target()
         if t:
             self._queue(alts, *t)
+
+    def launch_group(self):
+        group = self.group_launch_var.get().strip()
+        accounts = [a for a in self.store.accounts() if group and a.group == group]
+        if not accounts:
+            self.log("Pick a group first (groups are set per account on the Manage tab).")
+            return
+        t = self._target()
+        if t:
+            self._queue(accounts, *t)
 
     def main_server(self, done):
         """done((place, job) or None, error) - from Puppy Admin's report, else Roblox presence."""

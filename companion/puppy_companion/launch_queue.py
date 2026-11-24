@@ -15,6 +15,7 @@ class LaunchJob:
     place_id: int = 0
     job_id: str = ""
     follow_user_id: int = 0
+    extra_delay: float = 0.0  # this account's own extra wait after it launches (Manage tab)
 
 
 class LaunchQueue:
@@ -64,7 +65,7 @@ class LaunchQueue:
                     self.busy = False
                     more = bool(self._jobs)
                 if more:
-                    self._cancel.wait(max(0.05, float(self.delay())))
+                    self._cancel.wait(max(0.05, float(self.delay()) + max(0.0, float(job.extra_delay or 0))))
 
     def launch_one(self, job):
         try:

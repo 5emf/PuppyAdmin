@@ -50,6 +50,23 @@ def read_statuses(ws, now=None):
     return out
 
 
+def _roster_alt(acc):
+    """One alt in roster.json. "prefs" holds only the settings Puppy Admin reads, and only
+    the ones set on this account (missing = Puppy Admin's own switch). Field names are
+    read by Alts.loadRoster in PuppyAdmin.lua: keep them in step."""
+    entry = {"userId": acc.user_id, "name": acc.name}
+    p = getattr(acc, "prefs", None) or {}
+    prefs = {}
+    for key, out in (("lite", "lite"), ("mute", "mute"), ("vc_auto", "vcAuto")):
+        if isinstance(p.get(key), bool):
+            prefs[out] = p[key]
+    if isinstance(p.get("fps"), int):
+        prefs["fps"] = p["fps"]
+    if prefs:
+        entry["prefs"] = prefs
+    return entry
+
+
 def write_roster(ws, store):
     if not ws or not os.path.isdir(ws):
         return None
@@ -57,7 +74,7 @@ def write_roster(ws, store):
     data = {
         "updated": int(time.time()),
         "main": {"userId": main.user_id, "name": main.name} if main else None,
-        "alts": [{"userId": a.user_id, "name": a.name} for a in store.alts()],
+        "alts": [_roster_alt(a) for a in store.alts()],
     }
     path = os.path.join(status_dir(ws), "roster.json")
     atomic_write(path, json.dumps(data, indent=2))

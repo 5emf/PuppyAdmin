@@ -5,11 +5,45 @@ import os
 import tempfile
 import threading
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 from .paths import data_dir
 
 ROLES = ("main", "alt")
+
+# Per-account settings (Manage tab). None / missing = use the global setting.
+# lite/mute/vc_auto go to that account's Puppy Admin through roster.json; the
+# launch ones are used by the companion itself.
+PREF_DEFAULTS = {
+    "lite": None,          # True/False: low-power mode for this alt (None = Puppy Admin's own switch)
+    "fps": None,           # FPS cap in low-power mode (15-240; None = Puppy Admin's own, 30)
+    "mute": None,          # False = this alt keeps game sound (alts are muted by default)
+    "vc_auto": None,       # True/False: auto VC-ban bypass on this alt
+    "launch_order": 0,     # lower launches first
+    "extra_delay": 0,      # extra seconds to wait after launching this account
+    "auto_rejoin": False,  # relaunch into the main's server if it drops out
+    "notes": "",
+}
+
+
+def clean_prefs(raw):
+    """Only known keys, each checked; anything odd falls back to the default."""
+    out = dict(PREF_DEFAULTS)
+    if not isinstance(raw, dict):
+        return out
+    for key in ("lite", "mute", "vc_auto"):
+        v = raw.get(key)
+        out[key] = v if isinstance(v, bool) else None
+    fps = raw.get("fps")
+    if isinstance(fps, (int, float)) and not isinstance(fps, bool) and fps == fps:
+        out["fps"] = int(max(15, min(240, fps)))
+    for key, lo, hi in (("launch_order", -99, 99), ("extra_delay", 0, 120)):
+        v = raw.get(key)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and v == v:
+            out[key] = int(max(lo, min(hi, v)))
+    out["auto_rejoin"] = raw.get("auto_rejoin") is True
+    out["notes"] = str(raw.get("notes") or "")[:500]
+    return out
 
 
 @dataclass
@@ -21,6 +55,8 @@ class Account:
     role: str = "alt"
     added: float = 0.0
     secret: str = ""  # base64 of the encrypted login cookie
+    group: str = ""   # optional named set ("farm", "school pc", ...) for launching together
+    prefs: dict = field(default_factory=lambda: dict(PREF_DEFAULTS))
 
     @property
     def label(self):
@@ -68,6 +104,7 @@ class AccountStore:
                         display_name=str(raw.get("display_name", "")), alias=str(raw.get("alias", "")),
                         role=raw.get("role") if raw.get("role") in ROLES else "alt",
                         added=float(raw.get("added", 0)), secret=str(raw.get("secret", "")),
+                        group=str(raw.get("group") or "")[:40], prefs=clean_prefs(raw.get("prefs")),
                     )
                 except (KeyError, TypeError, ValueError):
                     continue
@@ -139,6 +176,39 @@ class AccountStore:
             if acc is None:
                 return
             acc.alias = alias.strip()[:40]
+            self.save()
+
+    def set_group(self, user_id, group):
+        with self._lock:
+            acc = self.get(user_id)
+            if acc is None:
+                return
+            acc.group = str(group or "").strip()[:40]
+            self.save()
+
+    def groups(self):
+        return sorted({a.group for a in self.accounts() if a.group}, key=str.lower)
+
+    def set_prefs(self, user_id, changes):
+        """Merge changes into the account's settings (validated); returns the result."""
+        with self._lock:
+            acc = self.get(user_id)
+            if acc is None:
+                return None
+            merged = dict(acc.prefs)
+            merged.update(changes or {})
+            acc.prefs = clean_prefs(merged)
+            self.save()
+            return dict(acc.prefs)
+
+    def replace_cookie(self, user_id, cookie):
+        """New login for an existing account (the caller has checked it is the same user)."""
+        secret = base64.b64encode(self.protector.protect(cookie.strip().encode("utf-8"))).decode("ascii")
+        with self._lock:
+            acc = self.get(user_id)
+            if acc is None:
+                raise KeyError("no such account")
+            acc.secret = secret
             self.save()
 
     def cookie(self, user_id):

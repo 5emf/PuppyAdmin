@@ -146,7 +146,7 @@ def check_window(tmp):
             root.update()
         rows = app.tree.get_children()
         tabs = [app.nb.tab(t, "text") for t in app.nb.tabs()]
-        if len(rows) != 2 or tabs != ["Accounts", "Launch", "Settings"]:
+        if len(rows) != 2 or tabs != ["Accounts", "Launch", "Manage", "Settings"]:
             raise AssertionError("window content: rows=%r tabs=%r" % (rows, tabs))
         version = root.tk.call("info", "patchlevel")
         app.close()

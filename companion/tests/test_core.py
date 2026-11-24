@@ -42,8 +42,8 @@ class Response:
     def __init__(self, status, hdrs, body=b""):
         self.status, self.headers, self._body = status, hdrs, body
 
-    def read(self):
-        return self._body
+    def read(self, n=-1):
+        return self._body if n is None or n < 0 else self._body[:n]
 
     def __enter__(self):
         return self
