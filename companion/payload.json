@@ -1,5 +1,5 @@
 {
-  "version": "1.3.0",
+  "version": "1.4.0",
   "files": [
     {
       "path": "puppy_companion/__init__.py",
@@ -8,13 +8,18 @@
     },
     {
       "path": "puppy_companion/_payload.py",
-      "sha256": "3dcf66e6e733d3cd73412740ca9e1d03c181140d9194a172f4114d74bf90fd67",
+      "sha256": "1e062199148deb107788c59e0b8ed4e3e200c18364b4c67657237890f1e42175",
       "size": 1652
     },
     {
       "path": "puppy_companion/app.py",
-      "sha256": "5ff03eff68e7b7eedc9418148a73dcbd010364ee1bcebc4be548dfdef3ed5eb6",
-      "size": 53804
+      "sha256": "e35cabcd8120d3ed0317d90eaa8b0ca0a22707885b704a66e29a9cae393c0045",
+      "size": 54893
+    },
+    {
+      "path": "puppy_companion/fonts.py",
+      "sha256": "9c4b77fe7e82d6f4e02b20dbc8849fa592252bac62f90f3bef8862cf17d21350",
+      "size": 2311
     },
     {
       "path": "puppy_companion/icon_data.py",
@@ -58,13 +63,13 @@
     },
     {
       "path": "puppy_companion/selftest.py",
-      "sha256": "02bc5aa9394f56dc84ea9b9e8dd0174c4bf67035a8bafda1d91fc396de1b8789",
-      "size": 8246
+      "sha256": "a0bfdeaf70214946b553b9c403ad4d7d84970c6d958ea452a2374b5ce80f95ef",
+      "size": 8772
     },
     {
       "path": "puppy_companion/store.py",
-      "sha256": "9d3b42500b566caf0def187c5dc751d8ffe005e011ad7182d4133082c30b4f8b",
-      "size": 9321
+      "sha256": "bdde3d7f441214327998683d71cf11a76aaa16c92c4b65ca332f9defbd42a45f",
+      "size": 9386
     },
     {
       "path": "puppy_companion/update.py",

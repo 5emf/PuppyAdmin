@@ -140,6 +140,30 @@ class PrefsTest(TempCase):
         self.assertEqual((a.group, a.prefs), ("", PREF_DEFAULTS))
 
 
+class FontsTest(unittest.TestCase):
+    def test_every_font_file_ships(self):
+        from puppy_companion import fonts
+        for label, (family, files) in fonts.FONTS.items():
+            for f in files:
+                path = os.path.join(fonts.FONT_DIR, f)
+                self.assertTrue(os.path.isfile(path), path)
+                with open(path, "rb") as fh:
+                    self.assertEqual(fh.read(4), b"\x00\x01\x00\x00", f + " is TrueType")
+        self.assertEqual(fonts.choices()[0], fonts.DEFAULT)
+
+    def test_family_for_loads_privately(self):
+        from puppy_companion import fonts
+        calls = []
+        adder = lambda path, flags, res: calls.append((os.path.basename(path), flags)) or 1
+        fonts._loaded.clear()
+        self.assertEqual(fonts.family_for("KH Menu", available=lambda: {"KHMenu"}, adder=adder), "KHMenu")
+        self.assertEqual(sorted(c[0] for c in calls), sorted(fonts.FONTS["KH Menu"][1]))
+        self.assertTrue(all(flags == fonts.FR_PRIVATE for _, flags in calls))
+        self.assertEqual(fonts.family_for("KH Data", available=set(), adder=lambda *a: 0), fonts.default_family())
+        self.assertEqual(fonts.family_for("nope"), fonts.default_family())
+        fonts._loaded.clear()
+
+
 class RobloxAccountTest(unittest.TestCase):
     def setUp(self):
         self.api = FakeAccountApi()
@@ -259,6 +283,18 @@ class ManageWindowTest(unittest.TestCase):
 
     def log_text(self):
         return self.app.log_text.get("1.0", "end")
+
+    def test_font_setting(self):
+        from tkinter import font as tkfont
+        self.app.set_font("KH Menu")
+        self.assertEqual(self.settings.get("font"), "KH Menu")
+        fam = tkfont.nametofont("TkDefaultFont", root=self.root).cget("family")
+        if "KHMenu" in tkfont.families(self.root):
+            self.assertEqual(fam, "KHMenu")
+        else:  # not installed on this test machine: falls back and says so
+            self.assertIn("could not be loaded", self.log_text())
+        self.app.set_font("Default")
+        self.assertIn("App font: Default", self.log_text())
 
     def test_save_app_settings_writes_roster(self):
         self.m.select(42)

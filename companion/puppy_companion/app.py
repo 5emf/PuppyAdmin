@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from tkinter import font as tkfont
 
-from . import launch, manage, update, workspace
+from . import fonts, launch, manage, update, workspace
 from .icon_data import ICON_32, ICON_64
 from .launch_queue import LaunchJob, LaunchQueue
 from .redact import redact
@@ -40,7 +40,7 @@ def screen_scale(root):
         return 1.0
 
 
-def apply_theme(root, k=1.0):
+def apply_theme(root, k=1.0, family=None):
     def p(n):
         return int(round(n * k))
     style = ttk.Style(root)
@@ -48,7 +48,7 @@ def apply_theme(root, k=1.0):
         style.theme_use("clam")
     except tk.TclError:
         pass
-    family = "Segoe UI" if sys.platform == "win32" else "DejaVu Sans"
+    family = family or fonts.default_family()
     base = (family, 10)
     # named fonts, not the option database: an option-database font would override every ttk style's font
     for name in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont", "TkCaptionFont", "TkTooltipFont"):
@@ -154,7 +154,7 @@ class CompanionApp:
         root.geometry("%dx%d" % (self.px(880), self.px(660)))
         root.minsize(self.px(780), self.px(580))
         root.configure(bg=BG)
-        apply_theme(root, self.k)
+        apply_theme(root, self.k, self._font_family(self.settings.get("font")))
         try:
             self._icons = [tk.PhotoImage(master=root, data=ICON_64), tk.PhotoImage(master=root, data=ICON_32)]
             root.iconphoto(True, *self._icons)
@@ -332,8 +332,15 @@ class CompanionApp:
                   ).grid(row=4, column=0, columnspan=3, sticky="w", pady=self.pad(8, 0))
         mi.columnconfigure(1, weight=1)
 
-        dt = ttk.LabelFrame(tab, text="YOUR DATA", padding=self.px(12))
+        dt = ttk.LabelFrame(tab, text="LOOK AND YOUR DATA", padding=self.px(12))
         dt.pack(fill="x", pady=self.pad(12, 0))
+        frow = ttk.Frame(dt)
+        frow.pack(anchor="w", pady=self.pad(0, 10))
+        ttk.Label(frow, text="App font").pack(side="left")
+        self.font_var = tk.StringVar(value=self.settings.get("font") if self.settings.get("font") in fonts.choices() else fonts.DEFAULT)
+        fbox = ttk.Combobox(frow, textvariable=self.font_var, values=fonts.choices(), state="readonly", width=26)
+        fbox.pack(side="left", padx=self.px(10))
+        fbox.bind("<<ComboboxSelected>>", lambda e: self.set_font(self.font_var.get()))
         ttk.Label(dt, wraplength=self.px(760), text=(
             "Accounts are saved in %s, with each login cookie encrypted for your Windows user "
             "(Windows DPAPI). Cookies only ever go to roblox.com and are never written to the executor folder."
@@ -352,6 +359,18 @@ class CompanionApp:
         self.update_btn.pack(side="left")
         self.update_restart_btn = ttk.Button(row, text="Restart to update", style="Accent.TButton", command=self._do_restart)
         # shown next to the button once an update is downloaded
+
+    def _font_family(self, label):
+        return fonts.family_for(label, available=lambda: set(tkfont.families(self.root)))
+
+    def set_font(self, label):
+        family = self._font_family(label)
+        self.settings.set("font", label)
+        apply_theme(self.root, self.k, family)
+        if label != fonts.DEFAULT and family == fonts.default_family():
+            self.log("%s could not be loaded on this PC; using the normal font." % label)
+        else:
+            self.log("App font: %s." % label)
 
     # plumbing ---------------------------------------------------------------------------
     def _tick(self):

@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-54" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-55" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -5446,7 +5446,22 @@ local PAL = {
 local UIFont = { custom = {}, families = {}, original = setmetatable({}, { __mode = "k" }) }
 do
     -- label -> repository file
-    UIFont.CUSTOM = { ["Kingdom Hearts"] = "KingdomHearts.ttf" }
+    -- label -> one file, or a family of faces { file, weight, style } (weights / italics
+    -- of one typeface, so bold and italic text keeps its look)
+    UIFont.CUSTOM = {
+        ["Kingdom Hearts"] = "KingdomHearts.ttf",
+        ["KH Menu"] = {
+            { file = "KHMenu.ttf", weight = 400, style = "normal" },
+            { file = "KHMenuBold.ttf", weight = 700, style = "normal" },
+            { file = "KHMenuItalic.ttf", weight = 400, style = "italic" },
+            { file = "KHMenuBoldItalic.ttf", weight = 700, style = "italic" },
+        },
+        ["KH Gummi"] = "KHGummi.ttf",
+        ["KH Data"] = "KHData.ttf",
+        ["KH Title"] = "KHTitle.ttf",
+        ["KH Scala"] = "KHScala.ttf",
+        ["KH Scala Script"] = "KHScalaScript.ttf",
+    }
     local DIR = "PuppyAdmin/fonts"
     local ROBLOX = {
         "Gotham", "BuilderSans", "SourceSans", "Arial", "Roboto", "Ubuntu", "Nunito", "Montserrat", "FredokaOne",
@@ -5476,25 +5491,28 @@ do
     -- Font family id for a custom font, or nil when the executor cannot load it. Yields on first download.
     function UIFont.customFamily(label)
         if UIFont.custom[label] ~= nil then return UIFont.custom[label] or nil end
-        local file = UIFont.CUSTOM[label]
-        if not file or not (writefile and readfile and isfile and getcustomasset) then UIFont.custom[label] = false; return nil end
+        local spec = UIFont.CUSTOM[label]
+        if not spec or not (writefile and readfile and isfile and getcustomasset) then UIFont.custom[label] = false; return nil end
+        local faces = type(spec) == "string" and { { file = spec, weight = 400, style = "normal" } } or spec
         local ok, family = pcall(function()
             if makefolder and isfolder and not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
             if makefolder and isfolder and not isfolder(DIR) then makefolder(DIR) end
-            local ttf = DIR .. "/" .. file
-            if not isfile(ttf) then
-                local body = game:HttpGet(SETTINGS.Auras.assetBase .. "assets/fonts/" .. file)
-                -- a real TrueType file starts with 00 01 00 00 or "true"
-                if type(body) ~= "string" or #body < 1000 or not (body:sub(1, 4) == "\0\1\0\0" or body:sub(1, 4) == "true") then
-                    error("download is not a TrueType font")
+            local out = {}
+            for _, face in ipairs(faces) do
+                local ttf = DIR .. "/" .. face.file
+                if not isfile(ttf) then
+                    local body = game:HttpGet(SETTINGS.Auras.assetBase .. "assets/fonts/" .. face.file)
+                    -- a real TrueType file starts with 00 01 00 00 or "true"
+                    if type(body) ~= "string" or #body < 1000 or not (body:sub(1, 4) == "\0\1\0\0" or body:sub(1, 4) == "true") then
+                        error(face.file .. " download is not a TrueType font")
+                    end
+                    writefile(ttf, body)
                 end
-                writefile(ttf, body)
+                out[#out + 1] = { name = (face.weight >= 700 and "Bold" or "Regular") .. (face.style == "italic" and " Italic" or ""),
+                    weight = face.weight, style = face.style, assetId = getcustomasset(ttf) }
             end
-            local json = DIR .. "/" .. file:gsub("%.ttf$", "") .. ".json"
-            writefile(json, HttpService:JSONEncode({
-                name = label,
-                faces = { { name = "Regular", weight = 400, style = "normal", assetId = getcustomasset(ttf) } },
-            }))
+            local json = DIR .. "/" .. label:gsub("[^%w]", "") .. ".json"
+            writefile(json, HttpService:JSONEncode({ name = label, faces = out }))
             return getcustomasset(json)
         end)
         if not ok then warn("[PuppyAdmin] font " .. label .. ": " .. tostring(family)) end

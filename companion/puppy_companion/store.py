@@ -238,6 +238,7 @@ class Settings:
         "place": "",
         "job": "",
         "autoexec_dir": "",       # your executor's autoexec folder, if auto-detect misses it
+        "font": "Default",        # app font (fonts.FONTS label)
     }
 
     def __init__(self, folder=None):

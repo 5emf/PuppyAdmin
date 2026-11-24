@@ -14,7 +14,7 @@ import tempfile
 import traceback
 import uuid
 
-from . import __version__, launch, workspace
+from . import __version__, fonts, launch, workspace
 from .secure import ProtectorError, default_protector
 from .store import AccountStore, Settings
 
@@ -159,6 +159,17 @@ def check_window(tmp):
     return "Tk %s, %d accounts listed, tabs %s" % (version, len(rows), ", ".join(tabs))
 
 
+def check_fonts(tmp):
+    files = sorted({f for _, (_, names) in fonts.FONTS.items() for f in names})
+    missing = [f for f in files if not os.path.isfile(os.path.join(fonts.FONT_DIR, f))]
+    if missing:
+        raise AssertionError("font files missing from the program: %s" % ", ".join(missing))
+    n = fonts.load_private(files)
+    if n != len(files):
+        raise AssertionError("only %d of %d fonts loaded" % (n, len(files)))
+    return "%d font files loaded for this program" % n
+
+
 CHECKS = [
     ("login encryption", check_dpapi),
     ("saved accounts", check_store),
@@ -166,6 +177,7 @@ CHECKS = [
     ("launch link", check_launch_link),
     ("executor folder files", check_workspace),
     ("window", check_window),
+    ("fonts", check_fonts),
 ]
 
 
