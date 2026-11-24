@@ -173,15 +173,23 @@ local function part(name)
         IsA = function(self, c) return c == "BasePart" end,
         Position = nil }
 end
+local function motor(name)
+    return { Name = name, Enabled = true, IsA = function(_, c) return c == "Motor6D" end }
+end
 local function character(pos)
     local root = part("HumanoidRootPart")
     root.CFrame = CFrame.new(pos)
-    local parts = { root, part("Head"), part("UpperTorso") }
-    local hum = { Health = 100, PlatformStand = false }
-    return { root = root, hum = hum,
+    local parts = { root, part("Head"), part("UpperTorso") }  -- 3 free parts for the limb tests
+    local motors = { motor("Neck"), motor("Waist") }
+    local hum = { Health = 100, PlatformStand = false,
+        SetStateEnabled = function() end, BreakJointsOnDeath = true }
+    local descendants = {}
+    for _, p in ipairs(parts) do descendants[#descendants + 1] = p end
+    for _, m in ipairs(motors) do descendants[#descendants + 1] = m end
+    return { root = root, hum = hum, parts = parts, motors = motors,
         FindFirstChild = function(_, n) if n == "HumanoidRootPart" then return root end end,
         FindFirstChildOfClass = function(_, c) if c == "Humanoid" then return hum end end,
-        GetDescendants = function() return parts end }
+        GetDescendants = function() return descendants end }
 end
 -- Position follows CFrame
 local function rootPos(p) return p.CFrame.Position end
@@ -426,6 +434,25 @@ do
     check(PLAYERS[2].Character.hum.PlatformStand == true, "lite: alt still placed")
     main.Cfg.altLite = false
     main.H.form({ "wings" }); runTasks()  -- back to wings for the following tests
+    for f = 1, 40 do Heartbeat:fire(1 / 60) end
+end
+
+-- separated limbs: an orbit distributes each alt's limbs as its own orbiting piece
+do
+    main.Cfg.altForm.limbs = true
+    main.H.alt({ "orbit1" })
+    runTasks()
+    local oc = json.decode(FS["PuppyAdmin/companion/altcmd.json"])
+    check(oc.cmd == "orbit" and oc.params.limbs == true, "limbs flag is sent with the command")
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    local ch = PLAYERS[2].Character
+    check(ch.motors[1].Enabled == false and ch.motors[2].Enabled == false, "alt's joints disabled (limbs separated)")
+    check((ch.parts[1].CFrame.Position - ch.parts[2].CFrame.Position).Magnitude > 0.1, "separated limbs sit at different orbit points")
+    main.H.unform()
+    runTasks()
+    check(ch.motors[1].Enabled == true, "stopping reassembles the limbs")
+    main.Cfg.altForm.limbs = false
+    main.H.form({ "wings" }); runTasks()
     for f = 1, 40 do Heartbeat:fire(1 / 60) end
 end
 
