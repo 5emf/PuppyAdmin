@@ -13,3 +13,10 @@
 - Doom sound: the engine passes sound calls to the host (`opts.sound` in the Doom module). Freedoom Phase 1's effects (`sfx_v<N>.pak`) and music (`music_v<N>/`) are pre-rendered mp3 in `assets/doom/freedoom1`, made by the scratchpad script `make_doom_audio.py`. Bump the `_v` names in `UIAPI.DOOM_SOUND` when they change.
 - The main chunk sits at Lua's 200-local limit. Put new code in functions or `do` blocks, or on tables such as `UIAPI.*`, instead of adding top-level locals.
 - Check that it parses with `luac5.4 -p` (on a copy with the engine stubbed when needed), and compare free names and global writes against the previous version.
+
+## Puppy Companion (desktop app, `companion/`)
+- Windows app in Python 3 with only the standard library (Tkinter, ctypes); built into `PuppyCompanion.exe` with PyInstaller by `.github/workflows/companion.yml` (tests, build, then the built program's `--selftest`). Keep the tests passing: `python -m unittest discover -s tests` from `companion/` (window tests need Tk and a display; under Linux use `xvfb-run`).
+- Login cookies: encrypted with DPAPI (`secure.py`), never logged (`redact.py`), never written to the executor workspace, and sent only to roblox.com. Do not add any other destination for them.
+- Everything that depends on Roblox's launch protocol or single-window lock is in `launch.py`; the web requests are in `roblox.py`. Both are unverified against live Roblox until the owner reports back.
+- Puppy Admin side: `UIAPI.companionStart` writes `PuppyAdmin/companion/<UserId>.json` every 10 s (online false on shutdown); the app writes `PuppyAdmin/companion/roster.json` (main and alt user IDs and names). Keep the field names in step with `workspace.py`.
+- The icon is drawn by `companion/tools/make_icon.py` (writes the .ico and `puppy_companion/icon_data.py`).

@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.22-43" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-44" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -13122,6 +13122,48 @@ local function showBrandIntro()
 end
 
 ------------------------------------------------------------------------
+-- Desktop companion (the Puppy Companion app): every 10 s this window
+-- writes PuppyAdmin/companion/<UserId>.json in the executor's workspace -
+-- who is playing, which game and server - and marks it offline on `stop` /
+-- `kill`. Nothing secret is in it and nothing leaves the PC. The app writes
+-- roster.json (which user IDs are the main and the alts) next to it.
+------------------------------------------------------------------------
+
+function UIAPI.companionStart()
+    if UIAPI.companionOn or not (writefile and isfolder and makefolder) then return end
+    UIAPI.companionOn = true
+    local DIR = "PuppyAdmin/companion"
+    local FILE = DIR .. "/" .. tostring(plr.UserId) .. ".json"
+    local build = tostring(genv.PuppyAdminBuild or "")
+    local function write(online)
+        pcall(function()
+            if not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
+            if not isfolder(DIR) then makefolder(DIR) end
+            -- best effort: a client may not see that its server is a private one
+            local private = false
+            pcall(function() private = game.PrivateServerId ~= "" or game.PrivateServerOwnerId ~= 0 end)
+            writefile(FILE, HttpService:JSONEncode({
+                userId = plr.UserId, name = plr.Name, displayName = plr.DisplayName,
+                placeId = game.PlaceId, jobId = game.JobId, privateServer = private,
+                players = #Players:GetPlayers(), online = online, time = os.time(), build = build,
+            }))
+        end)
+    end
+    write(true)
+    task.spawn(function()
+        -- UIAPI belongs to this copy of the script: a newer build's start ends this loop
+        while UIAPI.companionOn and genv.PuppyAdminActive == true do
+            task.wait(10)
+            if UIAPI.companionOn and genv.PuppyAdminActive == true then write(true) end
+        end
+    end)
+    table.insert(cleanups, function()
+        UIAPI.companionOn = false
+        write(false)
+    end)
+end
+
+------------------------------------------------------------------------
 -- Runtime
 ------------------------------------------------------------------------
 
@@ -13136,6 +13178,7 @@ do
     Perf.since("Main UI (terminal, help, settings, panel registry)", uiStart)
 end
 Watch.start()
+pcall(UIAPI.companionStart)
 -- fetch the engine file in the background once per version, so the first reanim / movement command does not wait for it
 task.spawn(function()
     task.wait(3)

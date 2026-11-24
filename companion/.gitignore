@@ -1,0 +1,6 @@
+build/
+dist/
+*.spec
+.venv-build/
+__pycache__/
+selftest.txt
