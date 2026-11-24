@@ -110,14 +110,22 @@ def install_autoexec(ws, loader_text, create=False, override=None):
 
 def _roots():
     home = os.path.expanduser("~")
-    roots = []
+    roots = [home]  # catches ~\<Executor>\workspace, e.g. a Potassium folder in the profile
     if sys.platform == "win32":
-        for var in ("LOCALAPPDATA", "APPDATA"):
+        for var in ("LOCALAPPDATA", "APPDATA", "PROGRAMDATA"):
             if os.environ.get(var):
                 roots.append(os.environ[var])
+        if os.environ.get("LOCALAPPDATA"):
+            roots.append(os.path.join(os.environ["LOCALAPPDATA"], "Programs"))
     for sub in ("Desktop", "Downloads", "Documents", os.path.join("OneDrive", "Desktop")):
         roots.append(os.path.join(home, sub))
-    return [r for r in roots if os.path.isdir(r)]
+    seen, out = set(), []
+    for r in roots:
+        r = os.path.normpath(r)
+        if r not in seen and os.path.isdir(r):
+            seen.add(r)
+            out.append(r)
+    return out
 
 
 def find_candidates(roots=None, depth=2, limit=400):
