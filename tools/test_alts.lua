@@ -391,6 +391,24 @@ runTasks()
 check(PLAYERS[2].Character.hum.Jump == true, "jump reached the alt")
 check(alts[1].UIAPI.Alts.state.once == true, "jump is a one-shot (no pinning job)")
 
+-- say fires once and is NOT kept as the resending command (the "spams and never stops" bug)
+main.H.alt({ "say", "hello" })
+runTasks()
+local sayRaw = FS["PuppyAdmin/companion/altcmd.json"]
+local sayCmd = json.decode(sayRaw)
+check(sayCmd.action == "cmd" and sayCmd.cmd == "say" and sayCmd.params.text == "hello", "say written once")
+check(main.UIAPI.Alts.active == nil, "say does not stay the active command")
+CLOCK = CLOCK + 12
+runTasks(); runTasks()
+check(FS["PuppyAdmin/companion/altcmd.json"] == sayRaw, "say is not rewritten (no 5s spam)")
+
+-- a trailing space in the target no longer breaks resolution (common from the box / phone keyboards)
+main.H.alt({ "circle", "AltB " })
+runTasks()
+check(json.decode(FS["PuppyAdmin/companion/altcmd.json"]).target == 3, "target with a trailing space still resolves")
+main.H.unform()
+runTasks()
+
 -- the declined commands are absent
 check(main.UIAPI.Alts.SPECS.bang == nil and main.UIAPI.Alts.resolveName("bang") == nil, "bang is not registered")
 check(main.UIAPI.Alts.SPECS.fbang == nil and main.UIAPI.Alts.SPECS.mbang == nil, "fbang/mbang are not registered")

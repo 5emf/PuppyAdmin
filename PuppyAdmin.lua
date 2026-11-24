@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-46" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-47" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -3609,6 +3609,20 @@ function Pup.setActive(on)
     if not rs then return end
     if on == nil then on = not rs.reanimActive end
     if (rs.reanimActive == true) ~= on then rs.toggleReanim() end
+    -- Noclip while reanimated defaults OFF: turn it off once the reanim is live (you can
+    -- still switch it back on in the Reanim panel). The engine ships it on, so force it here.
+    if on then
+        task.spawn(function()
+            for _ = 1, 20 do
+                local r = Pup.panelState()
+                if r and r.reanimActive and type(r.setNoclip) == "function" then
+                    pcall(r.setNoclip, false)
+                    return
+                end
+                task.wait(0.1)
+            end
+        end)
+    end
 end
 
 -- Reset button: while reanimated, reset ends reanimation first and then kills
@@ -13593,6 +13607,26 @@ function UIAPI.altsSetup()
         if Alts.capped and setfpscap then pcall(setfpscap, 0); Alts.capped = false end
     end
 
+    -- Alts run with the lightest graphics for minimal lag on weak PCs (done once per alt).
+    function Alts.applyLowGraphics()
+        if Alts.lowGfxDone then return end
+        Alts.lowGfxDone = true
+        pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
+        pcall(function()
+            local UGS = UserSettings():GetService("UserGameSettings")
+            UGS.SavedQualityLevel = Enum.SavedQualitiesLevel.Level01
+            UGS.MasterVolume = 0
+        end)
+        pcall(function()
+            local L = game:GetService("Lighting")
+            L.GlobalShadows = false
+            L.FogEnd = 1e9
+            for _, e in ipairs(L:GetChildren()) do
+                if e:IsA("PostEffect") then e.Enabled = false end
+            end
+        end)
+    end
+
     local function num(v, lo, hi, default)
         v = tonumber(v)
         if not v or v ~= v then return default end
@@ -14211,10 +14245,17 @@ function UIAPI.altsSetup()
         if not leadCheck() then return end
         local target, targetName = 0, nil
         if spec.needsTarget or spec.optionalTarget then
-            local p = args and args[1] and resolveTargets(args[1])[1] or nil
-            if p and p ~= plr then target, targetName = p.UserId, p.DisplayName end
+            -- trim the typed name: a trailing space (common from the box / phone keyboards)
+            -- otherwise makes the match fail and you get "name a player" even with a target filled in
+            local token = args and args[1] and tostring(args[1]):match("^%s*(.-)%s*$") or ""
+            if token ~= "" then
+                local p = resolveTargets(token)[1]
+                if p and p ~= plr then target, targetName = p.UserId, p.DisplayName end
+                if target == 0 and token:match("^%d+$") then target = tonumber(token) end -- allow a raw UserId
+            end
             if spec.needsTarget and target == 0 then
-                note("Alts", name .. ": name a player, e.g. ." .. name .. " bob", RED)
+                note("Alts", token == "" and (name .. ": type a player's name in the Target box first")
+                    or (name .. ": no player here matches '" .. token .. "'"), RED)
                 return
             end
         end
@@ -14225,6 +14266,24 @@ function UIAPI.altsSetup()
         local ids = Alts.present()
         if #ids == 0 then
             note("Alts", "No alt with Puppy Admin running is in this server (Puppy Companion: Send alts to main's server)", RED)
+            return
+        end
+        -- one-shot commands (say, jump, dance, emote, equip, rest, ...) fire once and are NOT
+        -- kept as the active command, so the main never resends and re-fires them. spam keeps
+        -- going through its own loop on the alt until a new command or stop.
+        if (spec.mode or "pin") == "once" then
+            Alts.active = nil -- also stops resending any continuous command that was running
+            Alts.seq = (Alts.seq or 0) + 1
+            local c = { v = 2, main = plr.UserId, placeId = game.PlaceId, jobId = game.JobId, time = os.time(),
+                action = "cmd", cmd = name, params = params, target = target, targetName = targetName,
+                center = center, ids = ids, seq = Alts.seq }
+            if not writeText(CMD_FILE, HttpService:JSONEncode(c)) then
+                note("Alts", "This executor cannot write files, so it cannot reach your alts", RED)
+                return
+            end
+            note("Alts", (spec.label or name) .. (targetName and (" on " .. targetName) or "")
+                .. " - " .. #ids .. " alt" .. (#ids == 1 and "" or "s"), LIGHT)
+            if UIAPI.sync then UIAPI.sync() end
             return
         end
         Alts.active = { cmd = name, params = params, target = target, targetName = targetName, center = center,
@@ -14680,6 +14739,7 @@ function UIAPI.altsSetup()
     task.spawn(function()
         while Alts.alive and genv.PuppyAdminActive == true do
             if Alts.role() == "alt" then
+                if Cfg.altLite ~= false then Alts.applyLowGraphics() end
                 local ok, raw = pcall(function()
                     if isfile and readfile and isfile(CMD_FILE) then return readfile(CMD_FILE) end
                     return nil
