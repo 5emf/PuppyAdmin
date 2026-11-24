@@ -148,7 +148,7 @@ def check_window(tmp):
         folder = os.path.join(tmp, "store")
         store = AccountStore(default_protector(), folder)
         app = CompanionApp(root, store, Settings(folder), multi=_FakeLock(), opener=_no_network,
-                           open_uri=lambda uri: None)
+                           open_uri=lambda uri: None, check_update=False)
         for _ in range(5):
             root.update()
         rows = app.tree.get_children()

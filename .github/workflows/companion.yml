@@ -26,8 +26,15 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Tests (logic and window)
+      - name: Tests (logic, window, updater)
         run: python -m unittest discover -s tests -v
+
+      - name: payload.json is current
+        shell: pwsh
+        run: |
+          python tools/make_payload.py
+          git diff --exit-code payload.json
+          if ($LASTEXITCODE -ne 0) { throw "payload.json is stale: run 'python companion/tools/make_payload.py' and commit it" }
 
       - name: Install PyInstaller
         run: |

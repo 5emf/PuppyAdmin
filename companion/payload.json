@@ -1,0 +1,75 @@
+{
+  "version": "1.1.0",
+  "files": [
+    {
+      "path": "puppy_companion/__init__.py",
+      "sha256": "72ea4b6263bf57090fb08ee275138a6dc91bac06448b8456fbda43d59be66223",
+      "size": 357
+    },
+    {
+      "path": "puppy_companion/_payload.py",
+      "sha256": "04efab77d16539fce854747a0d6394a65dbddcae3417d4d48f14daaa8c29e114",
+      "size": 1652
+    },
+    {
+      "path": "puppy_companion/app.py",
+      "sha256": "1ccebac083d4f349b566a57b54a6afc7a54664a00371686cbf0bfe982c801622",
+      "size": 44016
+    },
+    {
+      "path": "puppy_companion/icon_data.py",
+      "sha256": "a4a0dc2461f05b7b60617f38f6fa0d35aa392019cefac096db09e9961e1793d4",
+      "size": 10083
+    },
+    {
+      "path": "puppy_companion/launch.py",
+      "sha256": "e6a4b67dcde09cc61c0369a9b36ef05278c4e281c0690867884579b25fd2fa7e",
+      "size": 5602
+    },
+    {
+      "path": "puppy_companion/launch_queue.py",
+      "sha256": "ab247b2da4142ea82a4edeb68dcb03cbeba00739ffda847ea41a0125a932023d",
+      "size": 2857
+    },
+    {
+      "path": "puppy_companion/paths.py",
+      "sha256": "09beacfd56452457d44a088de89cfceef09161ad77b96fb5ad55ca895a979e90",
+      "size": 538
+    },
+    {
+      "path": "puppy_companion/redact.py",
+      "sha256": "b0af2c2df89417b7b5936f4cfd621d24a95106792f1a3c3badce492411396376",
+      "size": 319
+    },
+    {
+      "path": "puppy_companion/roblox.py",
+      "sha256": "4e1cc75b8efee955814abc1e442e0e37bcb67adaff1d0d73347376782bbf0db3",
+      "size": 4987
+    },
+    {
+      "path": "puppy_companion/secure.py",
+      "sha256": "68fa20aa0f8a1f71eb3cd2b8e588844e9db35dd35026fb0f99262d928848a67c",
+      "size": 3208
+    },
+    {
+      "path": "puppy_companion/selftest.py",
+      "sha256": "ec28fdcf0e9bb3328e79c35fc697a8daedcbf1101af3b3b221d9a38c99678f56",
+      "size": 8674
+    },
+    {
+      "path": "puppy_companion/store.py",
+      "sha256": "eeac43d6af13386a6a525d96ec678a35d9cd6846c92ceb9d60aa3e0be589600b",
+      "size": 6028
+    },
+    {
+      "path": "puppy_companion/update.py",
+      "sha256": "b062e2da2b48484a8d093facbab69beba1ad865e98968f12f78e765344366131",
+      "size": 7044
+    },
+    {
+      "path": "puppy_companion/workspace.py",
+      "sha256": "57e7a2b8a8fcc0173bb5e4e7349e6a45630ec028e674e6ad9767d27a2550d160",
+      "size": 4506
+    }
+  ]
+}

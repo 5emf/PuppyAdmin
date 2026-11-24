@@ -70,7 +70,7 @@ class WindowTest(unittest.TestCase):
         self.uris = []
         self.roblox = FakeRoblox()
         self.app = appmod.CompanionApp(self.root, self.store, self.settings, multi=FakeLock(),
-                                       opener=self.roblox, open_uri=self.uris.append)
+                                       opener=self.roblox, open_uri=self.uris.append, check_update=False)
 
     def tearDown(self):
         if hasattr(self, "app"):

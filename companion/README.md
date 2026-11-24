@@ -15,6 +15,12 @@ The desktop half of Puppy Admin's alt-account support, for Windows. It:
 - **Build it yourself:** install Python 3.10 or newer from python.org and run `companion\build.bat`. It runs the tests, builds `companion\dist\PuppyCompanion\PuppyCompanion.exe` and runs its self-test.
 - **Run from source:** `python companion\run_companion.py` (Python 3.10 or newer, nothing else to install).
 
+## Updating
+
+You only download the exe once. After that the app updates its own code: on start (and from *Settings → Check for updates*) it reads `companion/payload.json` from the repository, and if the package is newer it downloads it into `%APPDATA%\PuppyCompanion\code`, checks every file against its SHA-256 and that it compiles, and shows **Restart to update**. The restart loads the new code; the exe (the Python runtime and Tk) is untouched. A failed or tampered download is thrown away and the app keeps running the version it has, so an update can never brick it. You only need a new exe when the bundled Python or Tk changes, which is rare.
+
+For maintainers: bump `PAYLOAD_VERSION` in `puppy_companion/_payload.py`, run `python companion/tools/make_payload.py`, and commit `payload.json` with your changes. CI fails if `payload.json` is stale. `_payload.py` also holds the repo/branch the update is pulled from; point it at your own fork if you run one.
+
 ## First start
 
 1. **Settings, Executor folder:** press *Find*, or *Browse* to your executor's `workspace` folder (the one that holds the `PuppyAdmin` folder). The status line turns green once Puppy Admin has run there.
@@ -94,6 +100,9 @@ If a launch fails, the log line says what Roblox answered.
 | `puppy_companion/launch_queue.py` | Launches one after another on a worker thread. |
 | `puppy_companion/workspace.py` | Status files, roster, auto-execute, finding the executor folder. |
 | `puppy_companion/selftest.py` | The built-in checks. |
+| `puppy_companion/update.py` | The self-update: check GitHub, download, verify, mark active. |
+| `puppy_companion/_payload.py` | The version this build ships and where updates are pulled from. |
+| `tools/make_payload.py` | Writes `payload.json` (version + per-file SHA-256). Run it after changing the package. |
 | `../tools/test_alts.lua` | Tests Puppy Admin's alt formations (shapes, command file, window) under Lua 5.4: `lua5.4 tools/test_alts.lua PuppyAdmin.lua` from the repository root. |
 | `tools/make_icon.py` | Draws the icon (`assets/PuppyCompanion.ico`, `puppy_companion/icon_data.py`). |
 | `tests/` | `python -m unittest discover -s tests` (window tests need a display and are skipped without one). |

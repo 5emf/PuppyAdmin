@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from tkinter import font as tkfont
 
-from . import __version__, launch, workspace
+from . import launch, update, workspace
 from .icon_data import ICON_32, ICON_64
 from .launch_queue import LaunchJob, LaunchQueue
 from .redact import redact
@@ -119,16 +119,21 @@ class CompanionApp:
     TICK_MS = 150
     REFRESH_SECONDS = 3
 
-    def __init__(self, root, store, settings, multi=None, opener=None, open_uri=None):
+    def __init__(self, root, store, settings, multi=None, opener=None, open_uri=None,
+                 update_opener=None, check_update=True):
         self.root = root
         self.store = store
         self.settings = settings
         self.multi = multi or launch.MultiInstance()
         self.opener = opener
+        self._update_opener = update_opener  # None -> real urllib; a fake in tests
+        self._check_update = check_update
         self.ui = queue.Queue()
         self.statuses = {}
         self._last_refresh = 0.0
         self._closing = False
+        self.update_ready = None       # version string once a newer package is downloaded
+        self._update_busy = False
         self.launches = LaunchQueue(store, lambda: self.settings.get("launch_delay"), self.log_from_thread,
                                     opener=opener, open_uri=open_uri)
         self.k = screen_scale(root)
@@ -146,9 +151,11 @@ class CompanionApp:
         self.refresh_status(force=True)
         self.apply_multi_instance(initial=True)
         self.write_roster()
-        self.log("Puppy Companion %s ready. %d account(s)." % (__version__, len(self.store.accounts())))
+        self.log("Puppy Companion %s ready. %d account(s)." % (update.running_version(), len(self.store.accounts())))
         root.protocol("WM_DELETE_WINDOW", self.close)
         self._after = root.after(self.TICK_MS, self._tick)
+        if self._check_update:
+            self.check_updates(manual=False)
 
     def px(self, n):
         return int(round(n * self.k))
@@ -161,7 +168,10 @@ class CompanionApp:
         top = ttk.Frame(self.root, padding=self.pad(16, 12, 16, 0))
         top.pack(fill="x")
         ttk.Label(top, text="Puppy Companion", style="Title.TLabel").pack(side="left")
-        ttk.Label(top, text="v" + __version__, style="Dim.TLabel").pack(side="left", padx=self.pad(8, 0), pady=self.pad(6, 0))
+        ttk.Label(top, text="v" + update.running_version(), style="Dim.TLabel").pack(
+            side="left", padx=self.pad(8, 0), pady=self.pad(6, 0))
+        self.restart_btn = ttk.Button(top, text="Restart to update", style="Accent.TButton", command=self._do_restart)
+        # packed only once an update has been downloaded
         self.multi_lbl = ttk.Label(top, text="", style="Dim.TLabel")
         self.multi_lbl.pack(side="right", pady=self.pad(6, 0))
 
@@ -299,6 +309,19 @@ class CompanionApp:
             % self.store.folder)).pack(anchor="w")
         ttk.Button(dt, text="Open data folder", command=lambda: self._open_folder(self.store.folder)).pack(anchor="w", pady=self.pad(10, 0))
 
+        up = ttk.LabelFrame(tab, text="UPDATES", padding=self.px(12))
+        up.pack(fill="x", pady=self.pad(12, 0))
+        self.update_lbl = ttk.Label(up, wraplength=self.px(760), style="Dim.TLabel",
+                                    text="Running version %s. Updates are the app's code, pulled from GitHub: "
+                                         "no new download of the program." % update.running_version())
+        self.update_lbl.pack(anchor="w")
+        row = ttk.Frame(up)
+        row.pack(anchor="w", pady=self.pad(10, 0))
+        self.update_btn = ttk.Button(row, text="Check for updates", command=lambda: self.check_updates(manual=True))
+        self.update_btn.pack(side="left")
+        self.update_restart_btn = ttk.Button(row, text="Restart to update", style="Accent.TButton", command=self._do_restart)
+        # shown next to the button once an update is downloaded
+
     # plumbing ---------------------------------------------------------------------------
     def _tick(self):
         if self._closing:
@@ -360,6 +383,74 @@ class CompanionApp:
                 subprocess.Popen(["xdg-open", path])
         except OSError as e:
             self.log("Could not open %s: %s" % (path, e))
+
+    # updates ----------------------------------------------------------------------------
+    def check_updates(self, manual=True):
+        """Looks for a newer package on GitHub and downloads it. manual=False is the quiet
+        startup check (it says nothing unless there is an update)."""
+        if self._update_busy or self.update_ready:
+            if manual and self.update_ready:
+                self.log("Update %s is downloaded. Press Restart to update." % self.update_ready)
+            return
+        self._update_busy = True
+        if manual:
+            self.update_btn.state(["disabled"])
+            self.update_lbl.configure(text="Checking GitHub for a newer version...", style="Dim.TLabel")
+
+        def work():
+            manifest = update.check(opener=self._http_opener())
+            if not manifest:
+                return None
+            return update.download(manifest, opener=self._http_opener())
+
+        self.run_bg(work, lambda version, err: self._update_done(version, err, manual))
+
+    def _http_opener(self):
+        # None -> update.py uses real urllib; a fake opener is injected only in tests
+        return self._update_opener
+
+    def _update_done(self, version, err, manual):
+        self._update_busy = False
+        if self.update_btn:
+            self.update_btn.state(["!disabled"])
+        if err:
+            if manual:
+                self.update_lbl.configure(text="Update check failed: %s" % err, style="Bad.TLabel")
+                self.log("Update check failed: %s" % err)
+            return
+        if not version:
+            if manual:
+                self.update_lbl.configure(text="You are on the latest version (%s)." % update.running_version(),
+                                          style="Good.TLabel")
+                self.log("No update: already on %s." % update.running_version())
+            return
+        self.update_ready = version
+        self.update_lbl.configure(text="Update %s downloaded. Restart to use it." % version, style="Good.TLabel")
+        self.update_restart_btn.pack(side="left", padx=self.pad(8, 0))
+        self.restart_btn.pack(side="right", padx=self.pad(0, 10), pady=self.pad(4, 0))
+        self.log("Update %s downloaded. Press 'Restart to update' to use it." % version)
+
+    def _do_restart(self):
+        if not self.update_ready:
+            return
+        self.log("Restarting into update %s..." % self.update_ready)
+        self._closing = True
+        try:
+            self.root.after_cancel(self._after)
+        except (tk.TclError, AttributeError):
+            pass
+        self.launches.cancel()
+        self.multi.release()
+        self.root.destroy()
+        if getattr(sys, "frozen", False):
+            args = [sys.executable] + sys.argv[1:]
+        else:
+            args = [sys.executable] + sys.argv
+        try:
+            os.execv(sys.executable, args)
+        except OSError:
+            subprocess.Popen(args)
+            sys.exit(0)
 
     # accounts ---------------------------------------------------------------------------
     def _status_text(self, acc, st, main_job):
