@@ -22,6 +22,56 @@
       "size": 2311
     },
     {
+      "path": "puppy_companion/fonts/KHData.ttf",
+      "sha256": "41f83dbf5a8e02908b5034e1cd53d51d2f02673d478ad9ae2c3dee7864dfc7ac",
+      "size": 79608
+    },
+    {
+      "path": "puppy_companion/fonts/KHGummi.ttf",
+      "sha256": "4f7283048377b8562c1c11ca1009e3649d421f0c97c1b8ad1ea97b2298d59077",
+      "size": 58336
+    },
+    {
+      "path": "puppy_companion/fonts/KHMenu.ttf",
+      "sha256": "2caca52d0e006ca279d8ea5a4bfb00dcf7ec9c6ef11ccf63382f2e267e82ae26",
+      "size": 40132
+    },
+    {
+      "path": "puppy_companion/fonts/KHMenuBold.ttf",
+      "sha256": "4a29e0e3b34d5847865752c3b56ff94d6bb0b28958a0ce10189d81e7f92ba766",
+      "size": 41400
+    },
+    {
+      "path": "puppy_companion/fonts/KHMenuBoldItalic.ttf",
+      "sha256": "5b1d4e4cb1ca490d2771b597f6177c807ba0eadc77c53bf5b04e46c505681169",
+      "size": 44436
+    },
+    {
+      "path": "puppy_companion/fonts/KHMenuItalic.ttf",
+      "sha256": "20faed8628d73c84a97d6248724e2c0f3bef80d8879ecca8c2716ab663721876",
+      "size": 42972
+    },
+    {
+      "path": "puppy_companion/fonts/KHScala.ttf",
+      "sha256": "e71514f4c01cd7ecc95ddee3a9f5483f223bbf62a31645fd1dc03cae4d5b6122",
+      "size": 26940
+    },
+    {
+      "path": "puppy_companion/fonts/KHScalaScript.ttf",
+      "sha256": "3b0dd55bd05280e123f270da7dfccf84bc3a8e7911580ed4a837b13083af5701",
+      "size": 30400
+    },
+    {
+      "path": "puppy_companion/fonts/KHTitle.ttf",
+      "sha256": "2933459dcfbbab5d0ed68889eca1a9df83d6329b515853c62e373d2cf0b1d0a9",
+      "size": 108804
+    },
+    {
+      "path": "puppy_companion/fonts/KingdomHearts.ttf",
+      "sha256": "b25690c1d1dcffafd7b873f9d6213ff6325e4121818505f0065ae77d38f09876",
+      "size": 28632
+    },
+    {
       "path": "puppy_companion/icon_data.py",
       "sha256": "a4a0dc2461f05b7b60617f38f6fa0d35aa392019cefac096db09e9961e1793d4",
       "size": 10083
