@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-47" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-48" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -12369,7 +12369,6 @@ local function buildPanels(screenGui)
     B.doom = function() UIAPI.buildDoomPanel(screenGui) end
     B.finder = function() UIAPI.buildFinderPanel(screenGui) end
     B.alts = function() UIAPI.buildAltsPanel(screenGui) end
-    B.altcmds = function() UIAPI.buildAltCmdsPanel(screenGui) end
 end
 
 ------------------------------------------------------------------------
@@ -12854,9 +12853,33 @@ local function createUI()
     tagVisBtn.MouseButton1Click:Connect(function() UIAPI.setTagsHidden(not Cfg.tagsHidden) end)
 
     -- alt formations (Puppy Companion's main and alts)
-    local altsBtn = actionButton(settingsFrame, "Alt formations (your Puppy Companion alts)", UDim2.new(0, 15, 0, 866), UDim2.new(1, -30, 0, 28))
+    local altsBtn = actionButton(settingsFrame, "Alts - accounts, formations & commands", UDim2.new(0, 15, 0, 866), UDim2.new(1, -30, 0, 28))
     altsBtn.TextSize = 12
     altsBtn.MouseButton1Click:Connect(function() if H.alts then H.alts({}) end end)
+    -- live status on the button, so you can see your alts without opening the window
+    UIAPI.altsButtonStatus = function()
+        local A = UIAPI.Alts
+        if not A or not A.loadRoster then return end
+        local ok, r = pcall(A.loadRoster)
+        if not ok or not r then return end
+        if r.main == plr.UserId then
+            local n = #A.present()
+            altsBtn.Text = string.format("Alts - %d ready%s", n, A.active and (" - " .. tostring(A.active.label)) or "")
+            altsBtn.TextColor3 = n > 0 and Color3.fromRGB(120, 230, 140) or Color3.new(1, 1, 1)
+        elseif r.isAlt and r.isAlt[plr.UserId] then
+            altsBtn.Text = "Alts - this account is an alt"
+            altsBtn.TextColor3 = Color3.fromRGB(255, 190, 120)
+        else
+            altsBtn.Text = "Alts - accounts, formations & commands"
+            altsBtn.TextColor3 = Color3.new(1, 1, 1)
+        end
+    end
+    task.spawn(function()
+        while settingsFrame.Parent do
+            pcall(UIAPI.altsButtonStatus)
+            task.wait(3)
+        end
+    end)
 
     local killBtn = actionButton(settingsFrame, "KILL SCRIPT", UDim2.new(0, 15, 1, -45), UDim2.new(1, -30, 0, 32), Color3.fromRGB(130, 35, 35))
     killBtn.MouseButton1Click:Connect(function() shutdown(false) end)
@@ -14532,135 +14555,96 @@ function UIAPI.altsSetup()
 
     function H.unform() Alts.stop() end
 
+    -- One window, three tabs: Accounts (roster + power/voice), Formations, Commands.
     function UIAPI.buildAltsPanel(screenGui)
-        local W, HGT = 320, 560
-        local f = uiWindow(screenGui, "alts", "Alt formations", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2 - 190, 0.5, -HGT / 2))
+        local W, HGT = 360, 600
+        local f = uiWindow(screenGui, "alts", "Alts", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2, 0.5, -HGT / 2))
         local IW = W - 32
         local S = Cfg.altForm
-        local status = label(f, {
-            Position = UDim2.fromOffset(16, 42), Size = UDim2.fromOffset(IW, 34), TextWrapped = true, TextSize = 12,
-            TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = PAL.DIM, Text = "",
-        })
-        local list = make("ScrollingFrame", {
-            Position = UDim2.fromOffset(16, 80), Size = UDim2.fromOffset(IW, 104), BackgroundColor3 = PAL.CARD,
+
+        local status = label(f, { Position = UDim2.fromOffset(16, 44), Size = UDim2.fromOffset(IW, 16), TextSize = 11,
+            TextColor3 = PAL.DIM, TextTruncate = Enum.TextTruncate.AtEnd })
+
+        local pageTop = 100
+        local pages, tabBtns = {}, {}
+        local function showTab(nm)
+            for k, pg in pairs(pages) do pg.Visible = (k == nm) end
+            for k, b in pairs(tabBtns) do
+                b.BackgroundTransparency = (k == nm) and 0 or 0.55
+                b.TextColor3 = (k == nm) and PAL.TEXT or PAL.DIM
+            end
+            if UIAPI.syncFns.alts then UIAPI.syncFns.alts() end
+        end
+        UIAPI.altsTab = showTab
+        local tabNames = { "Accounts", "Formations", "Commands" }
+        local tw = (IW - 12) / 3
+        for i, nm in ipairs(tabNames) do
+            local b = uiButton(f, nm, UDim2.fromOffset(tw, 26), UDim2.fromOffset(16 + (i - 1) * (tw + 6), 66), function() showTab(nm) end)
+            b.TextSize = 12
+            tabBtns[nm] = b
+            pages[nm] = make("Frame", { Position = UDim2.fromOffset(16, pageTop), Size = UDim2.fromOffset(IW, HGT - pageTop - 12),
+                BackgroundTransparency = 1, Visible = false }, f)
+        end
+
+        -- Accounts ----------------------------------------------------------
+        local acc = pages.Accounts
+        local list = make("ScrollingFrame", { Size = UDim2.fromOffset(IW, 236), BackgroundColor3 = PAL.CARD,
             BackgroundTransparency = 0.3, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = PAL.DIM,
-            CanvasSize = UDim2.fromOffset(0, 0),
-        }, f)
+            CanvasSize = UDim2.fromOffset(0, 0) }, acc)
         corner(list, 8)
+        local liteSw = uiSwitch(acc, "Low power (cap " .. (Cfg.altLiteFps or 30) .. " FPS, low graphics)", UDim2.fromOffset(0, 250), IW, Cfg.altLite ~= false, function(on)
+            Cfg.altLite = on; cfgSave(); if not on then Alts.restoreFps() end; if Alts.active then Alts.send() end
+        end)
+        local vcSw = uiSwitch(acc, "Alts auto-bypass voice bans", UDim2.fromOffset(0, 282), IW, Cfg.altVcAuto ~= false, function(on)
+            Cfg.altVcAuto = on; cfgSave()
+        end)
+        local bwA = (IW - 8) / 2
+        uiButton(acc, "Run VC-ban bypass", UDim2.fromOffset(bwA, 30), UDim2.fromOffset(0, 318), function() Alts.autoVcBan(true) end)
+        uiButton(acc, "Stop all", UDim2.fromOffset(bwA, 30), UDim2.fromOffset(bwA + 8, 318), function() Alts.stop() end)
+        label(acc, { Position = UDim2.fromOffset(0, 356), Size = UDim2.fromOffset(IW, 120), TextWrapped = true, TextSize = 11,
+            TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = PAL.DIM,
+            Text = "Accounts come from Puppy Companion: set your main, add alts, pick the executor folder. Each alt needs Puppy Admin auto-executing and must be in this server. The shape and commands are made of the alts' own characters, so everyone sees them." })
+
+        -- Formations --------------------------------------------------------
+        local fp = pages.Formations
         local names = {}
         for i, p in ipairs(Alts.PRESETS) do names[i] = p.name end
         if not Alts.PRESETS[S.preset] then S.preset = 1 end
-        local dd = uiDropdown(f, "Shape: ", UDim2.fromOffset(IW, 28), UDim2.fromOffset(16, 194), names, S.preset, function(i)
-            S.preset = i
-            cfgSave()
-            if Alts.active then Alts.start(Alts.PRESETS[i].key) end
+        local dd = uiDropdown(fp, "Shape: ", UDim2.fromOffset(IW, 28), UDim2.fromOffset(0, 4), names, S.preset, function(i)
+            S.preset = i; cfgSave()
+            if Alts.active and Alts.active.cmd == "form" then Alts.start(Alts.PRESETS[i].key) end
         end)
         local sliders = {}
         local function slider(text, y, key, min, max, step, fmt)
-            local s = uiSlider(f, text, UDim2.fromOffset(16, y), IW, {
-                min = min, max = max, step = step, value = S[key], format = fmt,
-                onChange = function(v) S[key] = v; Alts.settingsChanged() end,
-            })
-            sliders[key] = s
+            sliders[key] = uiSlider(fp, text, UDim2.fromOffset(0, y), IW, { min = min, max = max, step = step,
+                value = S[key], format = fmt, onChange = function(v) S[key] = v; Alts.settingsChanged() end })
         end
-        slider("Size", 230, "size", 0.5, 3, 0.1, function(v) return string.format("%.1fx", v) end)
-        slider("Speed", 276, "speed", 0, 3, 0.1, function(v) return string.format("%.1fx", v) end)
-        slider("Height", 322, "height", -3, 15, 0.5, function(v) return string.format("%+.1f", v) end)
+        slider("Size", 44, "size", 0.5, 3, 0.1, function(v) return string.format("%.1fx", v) end)
+        slider("Speed", 90, "speed", 0, 3, 0.1, function(v) return string.format("%.1fx", v) end)
+        slider("Height", 136, "height", -3, 15, 0.5, function(v) return string.format("%+.1f", v) end)
         local switches = {}
         local function switch(text, y, key)
-            switches[key] = uiSwitch(f, text, UDim2.fromOffset(16, y), IW, S[key], function(on)
-                S[key] = on
-                Alts.settingsChanged()
-            end)
+            switches[key] = uiSwitch(fp, text, UDim2.fromOffset(0, y), IW, S[key], function(on) S[key] = on; Alts.settingsChanged() end)
         end
-        switch("Glitch: random jumps and twists", 374, "glitch")
-        switch("Spin: bodies turn in place", 404, "spin")
-        switch("Pulse: the shape breathes", 434, "pulse")
-        local bw = (IW - 16) / 3
-        local startBtn = uiButton(f, "Start", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16, 472), function()
+        switch("Glitch: random jumps and twists", 188, "glitch")
+        switch("Spin: bodies turn in place", 218, "spin")
+        switch("Pulse: the shape breathes", 248, "pulse")
+        local bwF = (IW - 8) / 2
+        local startBtn = uiButton(fp, "Start", UDim2.fromOffset(bwF, 32), UDim2.fromOffset(0, 288), function()
             Alts.start((Alts.PRESETS[S.preset] or Alts.PRESETS[1]).key)
         end)
-        uiButton(f, "Stop", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16 + bw + 8, 472), function() Alts.stop() end)
-        uiButton(f, "Commands", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16 + (bw + 8) * 2, 472), function()
-            UIAPI.togglePanel("altcmds")
-        end)
-        label(f, {
-            Position = UDim2.fromOffset(16, 510), Size = UDim2.fromOffset(IW, 44), TextWrapped = true, TextSize = 10,
-            TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = PAL.DIM,
-            Text = "Everyone in the server sees the shape: it is made of your alts' own characters. Each alt needs Puppy Admin running (auto-execute) and must be in this server. Puppy Companion's list says which accounts are alts.",
-        })
+        uiButton(fp, "Stop", UDim2.fromOffset(bwF, 32), UDim2.fromOffset(bwF + 8, 288), function() Alts.stop() end)
 
-        local function refresh()
-            local r = Alts.loadRoster(true)
-            local role = Alts.role()
-            for _, c in ipairs(list:GetChildren()) do
-                if c:IsA("GuiObject") then c:Destroy() end
-            end
-            for i, id in ipairs(r.alts) do
-                local text, color = Alts.describe(id)
-                local y = (i - 1) * 22 + 4
-                label(list, { Position = UDim2.fromOffset(8, y), Size = UDim2.new(0.5, -8, 0, 20), TextSize = 12,
-                    Text = r.names[id] or tostring(id), TextTruncate = Enum.TextTruncate.AtEnd })
-                label(list, { Position = UDim2.new(0.5, 0, 0, y), Size = UDim2.new(0.5, -8, 0, 20), TextSize = 11,
-                    Text = text, TextColor3 = color, TextXAlignment = Enum.TextXAlignment.Right })
-            end
-            list.CanvasSize = UDim2.fromOffset(0, #r.alts * 22 + 8)
-            if not r.found then
-                status.Text = "No account list yet. In Puppy Companion: add your accounts, make one the main and set the executor folder."
-            elseif role == "alt" then
-                status.Text = "This account is an alt: it follows " .. tostring(r.names[r.main] or "the main") .. "'s formations by itself."
-            elseif role ~= "main" then
-                status.Text = "This account is not in Puppy Companion's list, so it cannot lead your alts."
-            else
-                status.Text = string.format("You lead. %d of %d alt%s ready in this server.%s", #Alts.present(), #r.alts,
-                    #r.alts == 1 and "" or "s", Alts.active and (" Now: " .. tostring(Alts.active.label) .. ".") or "")
-            end
-            startBtn.Text = Alts.active and "Restart" or "Start"
-        end
-
-        UIAPI.syncFns.alts = function()
-            if not f.Visible then return end
-            dd.set(S.preset)
-            for key, s in pairs(sliders) do
-                if not s.isDragging() then s.set(S[key]) end
-            end
-            for key, s in pairs(switches) do s.set(S[key]) end
-            pcall(refresh)
-        end
-        f:GetPropertyChangedSignal("Visible"):Connect(function()
-            if f.Visible then UIAPI.syncFns.alts() end
-        end)
-        task.spawn(function() -- who is here changes on its own
-            while f.Parent and Alts.alive do
-                task.wait(2)
-                if f.Visible then pcall(refresh) end
-            end
-        end)
-    end
-
-    function H.altcmds() UIAPI.togglePanel("altcmds") end
-    if not table.find(cmds, "altcmds") then table.insert(cmds, "altcmds") end
-    cmdDocs.altcmds = "altcmds - open the alt command board (all alt commands as buttons)"
-    ALIASES.altcommands = "altcmds"
-
-    -- The full command board: a target box, a chat box, grouped buttons, and the
-    -- low-power / voice-ban controls. Target commands use the target box; say / spam /
-    -- whisper use the chat box. Everything here just calls the same H.* handlers.
-    function UIAPI.buildAltCmdsPanel(screenGui)
-        local W, HGT = 360, 600
-        local f = uiWindow(screenGui, "altcmds", "Alt commands", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2 + 190, 0.5, -HGT / 2))
-        local IW = W - 32
-        local targetBox = uiBox(f, UDim2.fromOffset(16, 46), UDim2.fromOffset(IW, 28), "Target player (for goto, circle, stalk, ...)")
-        local chatBox = uiBox(f, UDim2.fromOffset(16, 82), UDim2.fromOffset(IW, 28), "Message (for say, spam, whisper)")
-
-        local body = make("ScrollingFrame", {
-            Position = UDim2.fromOffset(16, 118), Size = UDim2.fromOffset(IW, HGT - 118 - 108), BackgroundColor3 = PAL.CARD,
-            BackgroundTransparency = 0.35, BorderSizePixel = 0, ScrollBarThickness = 4, ScrollBarImageColor3 = PAL.DIM,
-            CanvasSize = UDim2.fromOffset(0, 0),
-        }, f)
-        corner(body, 8)
-        make("UIPadding", { PaddingTop = UDim.new(0, 6), PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6) }, body)
-
+        -- Commands ----------------------------------------------------------
+        local cp = pages.Commands
+        local targetBox = uiBox(cp, UDim2.fromOffset(0, 2), UDim2.fromOffset(IW, 26), "Target player (goto, circle, stalk, ...)")
+        local chatBox = uiBox(cp, UDim2.fromOffset(0, 32), UDim2.fromOffset(IW, 26), "Message (say, spam, whisper)")
+        local cbodyH = (HGT - pageTop - 12) - 64 - 36
+        local cbody = make("ScrollingFrame", { Position = UDim2.fromOffset(0, 64), Size = UDim2.fromOffset(IW, cbodyH),
+            BackgroundColor3 = PAL.CARD, BackgroundTransparency = 0.35, BorderSizePixel = 0, ScrollBarThickness = 4,
+            ScrollBarImageColor3 = PAL.DIM, CanvasSize = UDim2.fromOffset(0, 0) }, cp)
+        corner(cbody, 8)
+        make("UIPadding", { PaddingTop = UDim.new(0, 6), PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6) }, cbody)
         local function boardRun(name)
             local base, extra = Alts.resolveName(name)
             if not base then return end
@@ -14672,68 +14656,90 @@ function UIAPI.altsSetup()
             else args = {} end
             Alts.run(base, args, extra)
         end
-
-        local y = 0
+        local cy = 0
         local colW = (IW - 12 - 12) / 3
-        local function section(title, list)
-            make("TextLabel", {
-                Position = UDim2.fromOffset(2, y), Size = UDim2.fromOffset(IW - 12, 20), BackgroundTransparency = 1,
+        local function section(title, items)
+            make("TextLabel", { Position = UDim2.fromOffset(2, cy), Size = UDim2.fromOffset(IW - 12, 18), BackgroundTransparency = 1,
                 Text = title:upper(), Font = Enum.Font.GothamBold, TextSize = 11, TextColor3 = PAL.DIM,
-                TextXAlignment = Enum.TextXAlignment.Left,
-            }, body)
-            y = y + 22
-            for idx, name in ipairs(list) do
+                TextXAlignment = Enum.TextXAlignment.Left }, cbody)
+            cy = cy + 20
+            for idx, name in ipairs(items) do
                 local col = (idx - 1) % 3
                 local row = math.floor((idx - 1) / 3)
-                local b = uiButton(body, name, UDim2.fromOffset(colW, 26),
-                    UDim2.fromOffset(col * (colW + 6), y + row * 30), function() boardRun(name) end)
+                local b = uiButton(cbody, name, UDim2.fromOffset(colW, 26),
+                    UDim2.fromOffset(col * (colW + 6), cy + row * 30), function() boardRun(name) end)
                 b.TextSize = 11
             end
-            y = y + math.ceil(#list / 3) * 30 + 8
+            cy = cy + math.ceil(#items / 3) * 30 + 8
         end
-
-        local function numbered(base, n)
-            local l = {}
-            for i = 1, n do l[i] = base .. i end
-            return l
-        end
-
-        section("Move & position", { "goto", "bring", "walkto", "wander", "noclip", "clip", "antivoid", "unantivoid", "jump", "sit" })
-        section("Patterns", { "rline", "lline", "bline", "fline", "circle", "loopcircle", "stackon", "clone", "loopclone", "worm", "stalk", "heli" })
-        section("Orbits", numbered("orbit", 10))
-        section("Spirals & shields", { "spiral1", "spiral2", "spiral3", "spiral4", "spiral5", "shield1", "shield2", "shield3", "shield4", "shield5" })
-        section("Actions & emotes", { "dance1", "dance2", "dance3", "wave", "point", "laugh", "mirror", "firework", "nuke", "swarm", "rizz" })
-        section("Emote slots", numbered("emote", 8))
-        section("Trolling & shapes", { "fling", "spin", "arrow", "box", "star" })
+        section("Move", { "goto", "bring", "walkto", "stalk", "noclip", "clip" })
+        section("Around you", { "circle", "orbit1", "orbit2", "spin", "worm", "heli", "mirror" })
+        section("Actions", { "dance1", "dance2", "dance3", "wave", "point", "firework", "nuke", "swarm" })
+        section("Shapes", { "arrow", "box", "star", "fling" })
         section("Chat", { "say", "spam", "w" })
-        section("Equip slots", numbered("equip", 10))
-        section("Utility", { "rest", "ref", "quit", "altcount", "uptime", "memory", "cpu", "ping" })
-        body.CanvasSize = UDim2.fromOffset(0, y + 6)
+        section("Utility", { "speed", "equip1", "antivoid", "rest", "quit", "vcban" })
+        cbody.CanvasSize = UDim2.fromOffset(0, cy + 6)
+        label(cp, { Position = UDim2.fromOffset(0, 64 + cbodyH + 4), Size = UDim2.fromOffset(IW, 30), TextWrapped = true,
+            TextSize = 10, TextColor3 = PAL.DIM, TextYAlignment = Enum.TextYAlignment.Top,
+            Text = "Every command also works in chat: alt <name> (e.g. alt orbit5, alt shield3). Full list: help." })
 
-        -- low-power + voice-ban controls, and Stop, pinned to the bottom
-        local liteSw = uiSwitch(f, "Low power (cap alts at " .. (Cfg.altLiteFps or 30) .. " FPS)", UDim2.fromOffset(16, HGT - 98), IW, Cfg.altLite ~= false, function(on)
-            Cfg.altLite = on
-            cfgSave()
-            if not on then Alts.restoreFps() end
-            if Alts.active then Alts.send() end
-        end)
-        local vcSw = uiSwitch(f, "Alts auto-bypass voice bans", UDim2.fromOffset(16, HGT - 68), IW, Cfg.altVcAuto ~= false, function(on)
-            Cfg.altVcAuto = on
-            cfgSave()
-        end)
-        local bw = (IW - 8) / 2
-        uiButton(f, "Run VC-ban bypass now", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16, HGT - 36), function()
-            Alts.autoVcBan(true)
-        end)
-        uiButton(f, "Stop all", UDim2.fromOffset(bw, 30), UDim2.fromOffset(16 + bw + 8, HGT - 36), function() Alts.stop() end)
+        -- shared refresh / sync --------------------------------------------
+        local function refresh()
+            local r = Alts.loadRoster(true)
+            local role = Alts.role()
+            for _, c in ipairs(list:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
+            for i, id in ipairs(r.alts) do
+                local text, color = Alts.describe(id)
+                local y = (i - 1) * 22 + 4
+                label(list, { Position = UDim2.fromOffset(8, y), Size = UDim2.new(0.5, -8, 0, 20), TextSize = 12,
+                    Text = r.names[id] or tostring(id), TextTruncate = Enum.TextTruncate.AtEnd })
+                label(list, { Position = UDim2.new(0.5, 0, 0, y), Size = UDim2.new(0.5, -8, 0, 20), TextSize = 11,
+                    Text = text, TextColor3 = color, TextXAlignment = Enum.TextXAlignment.Right })
+            end
+            list.CanvasSize = UDim2.fromOffset(0, #r.alts * 22 + 8)
+            if not r.found then
+                status.Text = "No accounts yet - set them up in Puppy Companion."
+            elseif role == "alt" then
+                status.Text = "This is an alt: it follows " .. tostring(r.names[r.main] or "the main") .. " by itself."
+            elseif role ~= "main" then
+                status.Text = "This account is not in Puppy Companion's list."
+            else
+                status.Text = string.format("You lead - %d of %d alt%s ready here.%s", #Alts.present(), #r.alts,
+                    #r.alts == 1 and "" or "s", Alts.active and (" Now: " .. tostring(Alts.active.label)) or "")
+            end
+            startBtn.Text = Alts.active and "Restart" or "Start"
+            if UIAPI.altsButtonStatus then pcall(UIAPI.altsButtonStatus) end
+        end
 
-        UIAPI.syncFns.altcmds = function()
+        UIAPI.syncFns.alts = function()
             if not f.Visible then return end
+            dd.set(S.preset)
+            for key, s in pairs(sliders) do if not s.isDragging() then s.set(S[key]) end end
+            for key, s in pairs(switches) do s.set(S[key]) end
             liteSw.set(Cfg.altLite ~= false)
             vcSw.set(Cfg.altVcAuto ~= false)
+            pcall(refresh)
         end
-        f:GetPropertyChangedSignal("Visible"):Connect(function() if f.Visible then UIAPI.syncFns.altcmds() end end)
+        f:GetPropertyChangedSignal("Visible"):Connect(function() if f.Visible then UIAPI.syncFns.alts() end end)
+        showTab("Accounts")
+        task.spawn(function()
+            while f.Parent and Alts.alive do
+                task.wait(2)
+                if f.Visible then pcall(refresh) end
+            end
+        end)
     end
+
+    -- opens the Alts window straight on the Commands tab
+    function H.altcmds()
+        local f = UIAPI.panels.alts -- builds it if needed
+        if f then f.Visible = true end
+        if UIAPI.altsTab then UIAPI.altsTab("Commands") end
+        if UIAPI.sync then UIAPI.sync() end
+    end
+    if not table.find(cmds, "altcmds") then table.insert(cmds, "altcmds") end
+    cmdDocs.altcmds = "altcmds - open the Alts window on the Commands tab"
+    ALIASES.altcommands = "altcmds"
 
     -- every copy watches the command file while it is an alt (the roster can change while it runs)
     task.spawn(function()

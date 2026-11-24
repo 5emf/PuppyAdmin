@@ -519,6 +519,7 @@ do
         function d.get() return d.index end
         return d
     end
+    E.uiBox = function(parent, pos, size, ph) return obj(parent, { Text = "", placeholder = ph }) end
     report(2); report(3); report(4); report(5)
     CLOCK = CLOCK + 3
     E.UIAPI.buildAltsPanel({})
@@ -550,18 +551,16 @@ do
     runDelays(); runTasks()
     check(alts[1].UIAPI.Alts.state.params.size == 2, "Size slider reaches the alts")
 
-    -- the command board builds and its target buttons issue commands
-    E.uiBox = function(parent, pos, size, ph) return obj(parent, { Text = "", placeholder = ph }) end
-    E.UIAPI.buildAltCmdsPanel({})
-    local cf = E.UIAPI.panels.altcmds
-    check(cf ~= nil, "command board registered")
-    local circleBtn, targetBox
+    -- the Commands tab lives in the same window: a target box and a circle button
+    local circleBtn, targetBox, tabBtn
     for _, o in ipairs(made) do
         if o.placeholder and tostring(o.placeholder):find("Target", 1, true) then targetBox = o end
         if o.click and o.Text == "circle" then circleBtn = o end
+        if o.click and o.Text == "Commands" then tabBtn = o end
     end
-    check(circleBtn ~= nil, "command board has a circle button")
-    check(targetBox ~= nil, "command board has a target box")
+    check(tabBtn ~= nil, "window has a Commands tab")
+    check(circleBtn ~= nil, "Commands tab has a circle button")
+    check(targetBox ~= nil, "Commands tab has a target box")
     if targetBox and circleBtn then
         targetBox.Text = "AltB"
         circleBtn.click()
@@ -569,6 +568,9 @@ do
         local c = json.decode(FS["PuppyAdmin/companion/altcmd.json"])
         check(c.cmd == "circle" and c.target == 3, "circle button uses the target box")
     end
+    -- altcmds opens the same window on the Commands tab (no second panel)
+    E.H.altcmds()
+    check(E.UIAPI.panels.alts ~= nil and E.UIAPI.panels.altcmds == nil, "altcmds reuses the one Alts window")
 end
 
 print(fails == 0 and "ALL OK" or (fails .. " FAILED"))
