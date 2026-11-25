@@ -4,6 +4,10 @@ Drawn with Pillow at 4x and downsampled (like the game sheets). Writes:
   assets/hud/panel_v1.png    - 9-slice panel: deep navy fill, light-blue rim, thin inner line, notched corners
   assets/hud/header_v1.png   - title strip: a glowing line that fades out to the right
   assets/hud/ringback_v1.png - dark ring behind the circular HP segments, with a light outer rim
+  Themeable layers (white / grey, tinted in Roblox with ImageColor3 so they follow every theme change):
+  assets/hud/panel_fill_v1.png, panel_rim_v1.png - panel body (theme surface) and its lines (theme accent)
+  assets/hud/ring_fill_v1.png,  ring_rim_v1.png  - ring backing body and its rims
+  assets/hud/header_tint_v1.png                  - the title strip in grey (theme accent)
 Run: python3 tools/make_hud_art.py   (bump the _v names when the art changes)
 """
 import os
@@ -95,7 +99,79 @@ def ringback():
     return img.resize((160, 160), Image.LANCZOS)
 
 
+def tintable(img):
+    """Grey by luminance, stretched so the brightest pixel is white; alpha kept."""
+    img = img.convert("RGBA")
+    px = img.load()
+    w, h = img.size
+    peak = 1
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            if a > 40:
+                peak = max(peak, 0.299 * r + 0.587 * g + 0.114 * b)
+    out = Image.new("RGBA", (w, h))
+    opx = out.load()
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            v = min(255, int(round((0.299 * r + 0.587 * g + 0.114 * b) * 255 / peak)))
+            opx[x, y] = (v, v, v, a)
+    return out
+
+
+WHITE_TOP, WHITE_BOT = (255, 255, 255), (165, 165, 165)
+
+
+def panel_fill():
+    W = H = 96 * S
+    cut = 10 * S
+    mask = Image.new("L", (W, H), 0)
+    notched(ImageDraw.Draw(mask), (0, 0, W - 1, H - 1), cut, fill=255)
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    img.paste(vgrad(W, H, WHITE_TOP, WHITE_BOT, alpha=240), (0, 0), mask)
+    return img.resize((96, 96), Image.LANCZOS)
+
+
+def panel_rim():
+    W = H = 96 * S
+    cut = 10 * S
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    pts = notched(d, (S, S, W - 1 - S, H - 1 - S), cut, outline=None)
+    d.line(pts + [pts[0]], fill=(255, 255, 255, 255), width=2 * S)
+    inset = 6 * S
+    pts2 = notched(d, (inset, inset, W - 1 - inset, H - 1 - inset), cut - 3 * S, outline=None)
+    d.line(pts2 + [pts2[0]], fill=(255, 255, 255, 150), width=S)
+    for (x, y) in ((inset + 5 * S, inset + 5 * S), (W - inset - 5 * S, inset + 5 * S),
+                   (inset + 5 * S, H - inset - 5 * S), (W - inset - 5 * S, H - inset - 5 * S)):
+        r = 2 * S
+        d.polygon([(x, y - r), (x + r, y), (x, y + r), (x - r, y)], fill=(255, 255, 255, 230))
+    return img.resize((96, 96), Image.LANCZOS)
+
+
+def ring_fill():
+    W = 160 * S
+    img = Image.new("RGBA", (W, W), (0, 0, 0, 0))
+    c, R = W / 2, 78 * S
+    ImageDraw.Draw(img).ellipse([c - R, c - R, c + R, c + R], fill=(255, 255, 255, 245))
+    return img.resize((160, 160), Image.LANCZOS)
+
+
+def ring_rim():
+    W = 160 * S
+    img = Image.new("RGBA", (W, W), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    c, R, r2 = W / 2, 78 * S, 58 * S
+    d.ellipse([c - R, c - R, c + R, c + R], outline=(255, 255, 255, 255), width=3 * S)
+    d.ellipse([c - r2, c - r2, c + r2, c + r2], outline=(255, 255, 255, 170), width=2 * S)
+    return img.resize((160, 160), Image.LANCZOS)
+
+
 os.makedirs(OUT, exist_ok=True)
-for name, fn in (("panel_v1.png", panel), ("header_v1.png", header), ("ringback_v1.png", ringback)):
+for name, fn in (("panel_v1.png", panel), ("header_v1.png", header), ("ringback_v1.png", ringback),
+                 ("panel_fill_v1.png", panel_fill), ("panel_rim_v1.png", panel_rim),
+                 ("ring_fill_v1.png", ring_fill), ("ring_rim_v1.png", ring_rim),
+                 ("header_tint_v1.png", lambda: tintable(header()))):
     fn().save(os.path.join(OUT, name), optimize=True)
     print("wrote", name)

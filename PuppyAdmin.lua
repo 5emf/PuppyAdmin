@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-59" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-60" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -12559,7 +12559,10 @@ do
     end
 
     -- ornate panel art (assets/hud, drawn by tools/make_hud_art.py), shared with the self HUD
-    K.ART = { panel = "panel_v1.png", header = "header_v1.png", ringback = "ringback_v1.png" }
+    -- white / grey layers tinted with ImageColor3: fill = theme surface, rim and strip = theme accent,
+    -- so the panels follow every theme change (preset, single colours)
+    K.ART = { panelFill = "panel_fill_v1.png", panelRim = "panel_rim_v1.png", ringFill = "ring_fill_v1.png",
+        ringRim = "ring_rim_v1.png", header = "header_tint_v1.png" }
     K.img = {}
     function K.loadArt()
         for key, file in pairs(K.ART) do
@@ -12569,16 +12572,43 @@ do
     end
     K.PANEL_SLICE = Rect.new(14, 14, 82, 82) -- the panel's corners stay sharp at any size
 
+    -- the colour each tinted layer takes from the theme (by the layer's name)
+    function K.tintFor(name)
+        local t = Theme.current
+        if name:find("Fill", 1, true) then return t.surface end
+        return t.accent -- rims, strips
+    end
+
+    -- a themeable panel inside parent: body + lines, both 9-sliced; returns the body
+    function K.panel(parent, z)
+        local img = K.img
+        local fill = make("ImageLabel", { Name = TAG .. "PanelFill", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+            Image = img.panelFill or "", ImageColor3 = K.tintFor("Fill"), ScaleType = Enum.ScaleType.Slice,
+            SliceCenter = K.PANEL_SLICE, ZIndex = z or 0, Active = false }, parent)
+        make("ImageLabel", { Name = TAG .. "PanelRim", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+            Image = img.panelRim or "", ImageColor3 = K.tintFor("Rim"), ScaleType = Enum.ScaleType.Slice,
+            SliceCenter = K.PANEL_SLICE, ZIndex = z or 0, Active = false }, parent)
+        return fill
+    end
+
+    function K.strip(parent, size, pos, z)
+        return make("ImageLabel", { Name = TAG .. "HeaderStrip", Size = size, Position = pos, BackgroundTransparency = 1,
+            Image = K.img.header or "", ImageColor3 = K.tintFor("Strip"), ZIndex = z or 0, Active = false }, parent)
+    end
+
+    -- re-tint every themed layer under root (theme changed)
+    function K.retint(root)
+        for _, d in ipairs(root:GetDescendants()) do
+            if d:IsA("ImageLabel") and d.Name:sub(1, #TAG) == TAG and d.Name ~= TAG .. "Glove" and d.Name ~= TAG .. "Light" then
+                d.ImageColor3 = K.tintFor(d.Name)
+            end
+        end
+    end
+
     local function frameWindow(f)
-        if f:FindFirstChild(TAG .. "Frame") then return end
-        if K.img.panel then
-            make("ImageLabel", { Name = TAG .. "Frame", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-                Image = K.img.panel, ScaleType = Enum.ScaleType.Slice, SliceCenter = K.PANEL_SLICE, ZIndex = 0, Active = false }, f)
-        end
-        if K.img.header then
-            make("ImageLabel", { Name = TAG .. "Header", Size = UDim2.new(0.75, 0, 0, 30), Position = UDim2.fromOffset(8, 6),
-                BackgroundTransparency = 1, Image = K.img.header, ZIndex = 0, Active = false }, f)
-        end
+        if f:FindFirstChild(TAG .. "PanelFill") then return end
+        if K.img.panelFill then K.panel(f, 0) end
+        if K.img.header then K.strip(f, UDim2.new(0.75, 0, 0, 30), UDim2.fromOffset(8, 6), 0) end
     end
 
     local function styleTitle(l)
@@ -12636,16 +12666,26 @@ do
         K.light.Visible = K.glove.Visible
     end
 
-    local function decorateAll()
-        for _, root in ipairs(Theme.roots) do
-            if root.Parent then
-                for _, d in ipairs(root:GetDescendants()) do pcall(decorate, d) end
-                table.insert(K.conns, root.DescendantAdded:Connect(function(d)
-                    task.defer(function() if d.Parent then pcall(decorate, d) end end)
-                end))
-            end
-        end
+    -- shading + the pointing glove for every button under root (main UI, windows, the self HUD)
+    function K.decorateRoot(root)
+        if not K.on or not root.Parent then return end
+        for _, d in ipairs(root:GetDescendants()) do pcall(decorate, d) end
+        table.insert(K.conns, root.DescendantAdded:Connect(function(d)
+            task.defer(function() if d.Parent then pcall(decorate, d) end end)
+        end))
     end
+
+    local function decorateAll()
+        for _, root in ipairs(Theme.roots) do K.decorateRoot(root) end
+    end
+
+    -- theme changes re-tint the panels (windows and the self HUD)
+    table.insert(Theme.listeners, function()
+        if K.on then
+            for _, root in ipairs(Theme.roots) do if root.Parent then pcall(K.retint, root) end end
+        end
+        if UIAPI.SelfHud and UIAPI.SelfHud.gui then pcall(UIAPI.SelfHud.applyTheme) end
+    end)
 
     local function undecorate()
         for _, c in ipairs(K.conns) do pcall(function() c:Disconnect() end) end
@@ -12727,12 +12767,6 @@ do
     S.SEGMENTS = 36
     S.COMMANDS = { { "Commands", "help" }, { "Settings", "settings" }, { "Reanim", "reanim" }, { "Alts", "alts" } }
 
-    local function segColor(frac)
-        if frac > 0.5 then return Color3.fromRGB(120, 230, 90) end
-        if frac > 0.25 then return Color3.fromRGB(250, 210, 70) end
-        return Color3.fromRGB(240, 80, 80)
-    end
-
     -- pure: how many of n segments are lit for health h of max m
     function S.litCount(h, m, n)
         if not (type(h) == "number" and type(m) == "number") or m <= 0 or h ~= h then return 0 end
@@ -12745,19 +12779,33 @@ do
         S.gui, S.segs, S.lit = nil, {}, -1
     end
 
-    local function bar(parent, y, h, color, text)
+    local function bar(parent, y, h, text)
         local back = make("Frame", { Position = UDim2.fromOffset(0, y), Size = UDim2.new(1, 0, 0, h),
-            BackgroundColor3 = Color3.fromRGB(8, 12, 34), BackgroundTransparency = 0.15, BorderSizePixel = 0 }, parent)
-        make("UIStroke", { Color = Color3.fromRGB(80, 130, 220), Thickness = 1, Transparency = 0.2 }, back)
-        local fill = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = color, BorderSizePixel = 0 }, back)
+            BackgroundTransparency = 0.15, BorderSizePixel = 0 }, parent)
+        local edge = make("UIStroke", { Thickness = 1, Transparency = 0.2 }, back)
+        local fill = make("Frame", { Size = UDim2.fromScale(1, 1), BorderSizePixel = 0 }, back)
         local lbl = make("TextLabel", { Size = UDim2.new(1, -8, 1, 0), Position = UDim2.fromOffset(6, 0), BackgroundTransparency = 1,
-            Text = text, TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.GothamBlack, TextSize = h - 3,
+            Text = text, Font = Enum.Font.GothamBlack, TextSize = h - 3,
             TextXAlignment = Enum.TextXAlignment.Left, TextStrokeTransparency = 0.4 }, back)
-        return fill, lbl
+        return { back = back, edge = edge, fill = fill, text = lbl }
+    end
+
+    -- every colour comes from the current theme, so presets and single colours apply here too
+    function S.colors()
+        local t = Theme.current
+        return { bg = t.bg, surface = t.surface, accent = t.accent, text = t.text, dim = t.dim, border = t.border,
+            on = t.on, off = t.elevated or t.surface }
+    end
+
+    function S.healthColor(frac)
+        if frac > 0.5 then return Theme.current.on end
+        if frac > 0.25 then return Color3.fromRGB(250, 210, 70) end
+        return Color3.fromRGB(240, 80, 80)
     end
 
     function S.build()
-        local img = UIAPI.KHStyle.loadArt()
+        local K = UIAPI.KHStyle
+        K.loadArt()
         S.gui = Instance.new("ScreenGui")
         S.gui.Name = "PuppyAdminHud"
         S.gui.ResetOnSpawn = false
@@ -12766,39 +12814,37 @@ do
         local root = make("Frame", { Size = UDim2.fromOffset(440, 168), AnchorPoint = Vector2.new(1, 1),
             Position = UDim2.new(1, -14, 1, -14), BackgroundTransparency = 1, Active = true }, S.gui)
         S.root = root
-        -- COMMAND panel
-        local cmd = make("ImageLabel", { Size = UDim2.fromOffset(200, 118), BackgroundTransparency = img.panel and 1 or 0.2,
-            BackgroundColor3 = Color3.fromRGB(12, 20, 56), Image = img.panel or "", ScaleType = Enum.ScaleType.Slice,
-            SliceCenter = UIAPI.KHStyle.PANEL_SLICE, Active = true }, root)
-        make("ImageLabel", { Size = UDim2.fromOffset(180, 24), Position = UDim2.fromOffset(8, 6), BackgroundTransparency = 1,
-            Image = img.header or "" }, cmd)
-        local title = make("TextLabel", { Size = UDim2.fromOffset(170, 24), Position = UDim2.fromOffset(16, 5), BackgroundTransparency = 1,
-            Text = "COMMAND", TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.GothamBlack, TextSize = 14,
-            TextXAlignment = Enum.TextXAlignment.Left }, cmd)
-        title:SetAttribute("PuppyAdminKeepFont", true)
-        local face = UIFont.make("KH Gummi", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-        if face then pcall(function() title.FontFace = face end) end
+        -- COMMAND panel (themeable art)
+        local cmd = make("Frame", { Size = UDim2.fromOffset(200, 118), BackgroundTransparency = 1, Active = true }, root)
+        K.panel(cmd, 1)
+        K.strip(cmd, UDim2.fromOffset(180, 24), UDim2.fromOffset(8, 6), 1)
+        S.title = make("TextLabel", { Size = UDim2.fromOffset(170, 24), Position = UDim2.fromOffset(16, 5), BackgroundTransparency = 1,
+            Text = "COMMAND", Font = Enum.Font.GothamBlack, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, cmd)
         makeDraggable(cmd, root)
+        S.buttons = {}
         for i, c in ipairs(S.COMMANDS) do
             local b = make("TextButton", { Size = UDim2.fromOffset(170, 19), Position = UDim2.fromOffset(18, 30 + (i - 1) * 20),
-                BackgroundColor3 = Color3.fromRGB(40, 80, 170), BackgroundTransparency = 0.8, BorderSizePixel = 0, AutoButtonColor = true,
-                Text = "  " .. c[1], TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.GothamBold, TextSize = 13,
-                TextXAlignment = Enum.TextXAlignment.Left }, cmd)
+                BackgroundTransparency = 0.8, BorderSizePixel = 0, AutoButtonColor = true, ZIndex = 2,
+                Text = "  " .. c[1], Font = Enum.Font.GothamBold, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left }, cmd)
             b.MouseButton1Click:Connect(function() pcall(UIAPI.openForCommand, c[2]) end)
+            S.buttons[i] = b
         end
         -- bars and name
         local bars = make("Frame", { Size = UDim2.fromOffset(300, 40), Position = UDim2.fromOffset(0, 126), BackgroundTransparency = 1 }, root)
-        S.fpsFill, S.fpsText = bar(bars, 0, 15, Color3.fromRGB(40, 130, 240), "FPS")
-        S.hpFill, S.hpText = bar(bars, 20, 18, Color3.fromRGB(120, 230, 90), "HP")
+        S.fps = bar(bars, 0, 15, "FPS")
+        S.hp = bar(bars, 20, 18, "HP")
         S.name = make("TextLabel", { Size = UDim2.fromOffset(200, 18), Position = UDim2.fromOffset(206, 104), BackgroundTransparency = 1,
-            Text = plr.DisplayName, TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.GothamBlack, TextSize = 14,
+            Text = plr.DisplayName, Font = Enum.Font.GothamBlack, TextSize = 14,
             TextXAlignment = Enum.TextXAlignment.Right, TextStrokeTransparency = 0.5 }, root)
-        -- avatar in the HP ring
-        local ring = make("ImageLabel", { Size = UDim2.fromOffset(150, 150), Position = UDim2.fromOffset(290, 10), BackgroundTransparency = 1,
-            Image = img.ringback or "" }, root)
-        local face2 = make("ImageLabel", { Size = UDim2.fromOffset(96, 96), Position = UDim2.fromOffset(27, 27), BackgroundTransparency = 1,
-            Image = "rbxthumb://type=AvatarHeadShot&id=" .. plr.UserId .. "&w=150&h=150" }, ring)
-        make("UICorner", { CornerRadius = UDim.new(1, 0) }, face2)
+        -- avatar in the HP ring (themeable backing)
+        local ring = make("Frame", { Size = UDim2.fromOffset(150, 150), Position = UDim2.fromOffset(290, 10), BackgroundTransparency = 1 }, root)
+        make("ImageLabel", { Name = "PuppyKHRingFill", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+            Image = K.img.ringFill or "", ImageColor3 = K.tintFor("Fill") }, ring)
+        make("ImageLabel", { Name = "PuppyKHRingRim", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+            Image = K.img.ringRim or "", ImageColor3 = K.tintFor("Rim") }, ring)
+        local face = make("ImageLabel", { Size = UDim2.fromOffset(96, 96), Position = UDim2.fromOffset(27, 27), BackgroundTransparency = 1,
+            Image = "rbxthumb://type=AvatarHeadShot&id=" .. plr.UserId .. "&w=150&h=150", ZIndex = 2 }, ring)
+        make("UICorner", { CornerRadius = UDim.new(1, 0) }, face)
         S.segs = {}
         local n, cx, cy, r = S.SEGMENTS, 75, 75, 62
         for i = 1, n do
@@ -12806,38 +12852,65 @@ do
             local a = math.rad(90 + (i - 0.5) * 360 / n)
             local seg = make("Frame", { Size = UDim2.fromOffset(6, 13), AnchorPoint = Vector2.new(0.5, 0.5),
                 Position = UDim2.fromOffset(cx + math.cos(a) * r, cy + math.sin(a) * r), Rotation = math.deg(a) + 90,
-                BackgroundColor3 = Color3.fromRGB(30, 40, 70), BorderSizePixel = 0 }, ring)
+                BorderSizePixel = 0, ZIndex = 2 }, ring)
             make("UICorner", { CornerRadius = UDim.new(0, 2) }, seg)
             S.segs[i] = seg
         end
         S.lit = -1
-        local acc, frames, fps = 0, 0, 60
+        S.applyTheme()
+        -- the chosen font and text size apply here too, and the KH glove points at these buttons
+        pcall(UIFont.attach, S.gui)
+        pcall(K.decorateRoot, S.gui)
+        local acc, frames = 0, 0
         S.conn = RunService.RenderStepped:Connect(function(dt)
             acc, frames = acc + dt, frames + 1
             if acc < 0.15 then return end
-            fps = frames / acc
+            local fps = frames / acc
             acc, frames = 0, 0
             pcall(S.update, fps)
         end)
         S.update(60)
     end
 
+    -- repaint with the current theme (called on every theme change)
+    function S.applyTheme()
+        if not S.gui then return end
+        local c = S.colors()
+        local K = UIAPI.KHStyle
+        pcall(K.retint, S.gui) -- panel, strip and ring layers
+        S.title.TextColor3 = c.text
+        S.name.TextColor3 = c.text
+        for _, b in ipairs(S.buttons) do
+            b.BackgroundColor3 = c.accent
+            b.TextColor3 = c.text
+        end
+        for _, br in ipairs({ S.fps, S.hp }) do
+            br.back.BackgroundColor3 = c.bg
+            br.edge.Color = c.border
+            br.text.TextColor3 = c.text
+        end
+        S.fps.fill.BackgroundColor3 = c.accent
+        S.lit = -1 -- repaint the ring
+        S.update(S.lastFps or 60)
+    end
+
     function S.update(fps)
         if not S.gui then return end
+        S.lastFps = fps
         local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
         local h, m = hum and hum.Health or 0, hum and hum.MaxHealth or 100
         local frac = (m > 0 and math.clamp(h / m, 0, 1)) or 0
-        S.hpFill.Size = UDim2.fromScale(frac, 1)
-        S.hpFill.BackgroundColor3 = segColor(frac)
-        S.hpText.Text = string.format("HP  %d / %d", math.floor(h + 0.5), math.floor(m + 0.5))
+        S.hp.fill.Size = UDim2.fromScale(frac, 1)
+        S.hp.fill.BackgroundColor3 = S.healthColor(frac)
+        S.hp.text.Text = string.format("HP  %d / %d", math.floor(h + 0.5), math.floor(m + 0.5))
         local f = math.clamp(fps or 60, 0, 999)
-        S.fpsFill.Size = UDim2.fromScale(math.clamp(f / 60, 0, 1), 1)
-        S.fpsText.Text = string.format("FPS  %d", math.floor(f + 0.5))
+        S.fps.fill.Size = UDim2.fromScale(math.clamp(f / 60, 0, 1), 1)
+        S.fps.text.Text = string.format("FPS  %d", math.floor(f + 0.5))
         S.name.Text = plr.DisplayName
         local lit = S.litCount(h, m, S.SEGMENTS)
         if lit ~= S.lit then
             S.lit = lit
-            local on, offc = segColor(frac), Color3.fromRGB(30, 40, 70)
+            local on, offc = S.healthColor(frac), S.colors().off
             for i, seg in ipairs(S.segs) do seg.BackgroundColor3 = (i <= lit) and on or offc end
         end
     end

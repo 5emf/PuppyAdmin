@@ -49,8 +49,9 @@ local rs = sig()
 local applied = {}
 local env = setmetatable({
     UIAPI = { Cursor = { set = function(n) applied.cursor = n return true end } }, Cfg = { uiStyle = "Standard", uiFont = "Default", cursor = "Default", theme = { preset = "Midnight" } },
-    Theme = { roots = { screen }, usePreset = function(n) applied.preset = n return true end },
-    UIFont = { set = function(n) applied.font = n return true end, make = function(n) return { family = n } end, applyTo = function() end },
+    Theme = { roots = { screen }, usePreset = function(n) applied.preset = n return true end, listeners = {},
+        current = { bg = "bg1", surface = "surf1", accent = "acc1", text = "txt1", dim = "dim1", border = "bor1", on = "on1", elevated = "elev1" } },
+    UIFont = { set = function(n) applied.font = n return true end, make = function(n) return { family = n } end, applyTo = function() end, attach = function(r) applied.fontRoot = r end },
     Rect = { new = function(...) return { ... } end }, Font = { fromEnum = function() return { family = "Gotham" } end },
     plr = { UserId = 42, DisplayName = "Pup", Character = nil }, makeDraggable = function() end,
     Instance = { new = function(c) return new(c) end }, make = function(c, p, parent) local o = new(c, p); if parent then o.Parent = parent end return o end,
@@ -73,7 +74,8 @@ check(applied.preset == "Kingdom Hearts" and applied.font == "KH Menu" and appli
 check(env.Cfg.khPrev.preset == "Midnight" and env.Cfg.khPrev.font == "Default", "previous look remembered")
 check(btn:FindFirstChildOfClass("UIGradient") and win:FindFirstChildOfClass("UIGradient"), "button and window shaded")
 check(not small:FindFirstChildOfClass("UIGradient"), "small frames left alone")
-check(win:FindFirstChild("PuppyKHFrame") and win:FindFirstChild("PuppyKHHeader"), "windows get the ornate panel and title strip")
+check(win:FindFirstChild("PuppyKHPanelFill") and win:FindFirstChild("PuppyKHPanelRim") and win:FindFirstChild("PuppyKHHeaderStrip"), "windows get the ornate panel and title strip")
+check(win:FindFirstChild("PuppyKHPanelFill").ImageColor3 == "surf1" and win:FindFirstChild("PuppyKHPanelRim").ImageColor3 == "acc1", "window panel tinted by the theme")
 check(title.Text == "SETTINGS" and title.FontFace and title.FontFace.family == "KH Gummi", "window titles in KH Gummi capitals")
 btn.MouseEnter:fire(); rs:fire()
 check(K.glove.Visible and K.glove.Position.X < 140 and math.abs(K.glove.Position.Y - (90 + 36 + 14 - K.glove.Size.Y * 0.39)) < 1e-6, "glove points at the hovered button (inset counted)")
@@ -85,7 +87,7 @@ applied = {}
 K.set("Standard")
 check(env.Cfg.uiStyle == "Standard" and applied.preset == "Midnight" and applied.font == "Default" and applied.cursor == "Default", "off restores the previous look")
 check(not btn:FindFirstChildOfClass("UIGradient") and not win:FindFirstChildOfClass("UIGradient") and K.gui == nil, "all KH decorations removed")
-check(not win:FindFirstChild("PuppyKHFrame") and title.Text == "Settings" and not title:GetAttribute("PuppyAdminKeepFont"), "window frame removed, title restored")
+check(not win:FindFirstChild("PuppyKHPanelFill") and title.Text == "Settings" and not title:GetAttribute("PuppyAdminKeepFont"), "window frame removed, title restored")
 
 -- self HUD
 local S = env.UIAPI.SelfHud
@@ -101,8 +103,20 @@ env.UIAPI.openForCommand = function(n) applied.opened = n end
 local okHud = S.set(true)
 check(okHud and env.Cfg.selfHud == true and S.gui ~= nil and #S.segs == 36, "self HUD builds with 36 segments")
 S.update(30)
-check(S.lit == 9 and S.hpText.Text == "HP  25 / 100" and S.fpsText.Text == "FPS  30", "HUD shows health, segments and FPS")
-check(S.segs[9].BackgroundColor3 ~= S.segs[10].BackgroundColor3, "lit and unlit segments differ")
+check(S.lit == 9 and S.hp.text.Text == "HP  25 / 100" and S.fps.text.Text == "FPS  30", "HUD shows health, segments and FPS")
+check(S.fps.fill.BackgroundColor3 == "acc1" and S.hp.back.BackgroundColor3 == "bg1" and S.title.TextColor3 == "txt1"
+    and S.segs[30].BackgroundColor3 == "elev1", "HUD takes its colours from the theme")
+check(applied.fontRoot == S.gui, "HUD follows the chosen font and text size")
+-- a theme change repaints everything, including the tinted art
+env.Theme.current = { bg = "bg2", surface = "surf2", accent = "acc2", text = "txt2", dim = "dim2", border = "bor2", on = "on2", elevated = "elev2" }
+for _, fn in ipairs(env.Theme.listeners) do fn() end
+local fillImg
+for _, d in ipairs(S.gui:GetDescendants()) do if d.Name == "PuppyKHPanelFill" then fillImg = d end end
+check(S.fps.fill.BackgroundColor3 == "acc2" and S.title.TextColor3 == "txt2" and fillImg and fillImg.ImageColor3 == "surf2", "theme change repaints the HUD and its panels")
+hum.Health = 90
+S.update(60)
+check(S.segs[1].BackgroundColor3 == "on2", "full-health segments use the theme's 'on' colour")
+check(S.segs[1].BackgroundColor3 ~= S.segs[36].BackgroundColor3, "lit and unlit segments differ")
 K.set("Standard")
 check(S.gui == nil and env.Cfg.selfHud == true, "turning the KH style off hides the HUD but remembers it")
 K.set("Kingdom Hearts")
