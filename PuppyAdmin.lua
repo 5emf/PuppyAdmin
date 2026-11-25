@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.25-75" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.25-76" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -14000,8 +14000,13 @@ do
     -- ornate panel art (assets/hud, drawn by tools/make_hud_art.py), shared with the self HUD
     -- white / grey layers tinted with ImageColor3: fill = theme surface, rim and strip = theme accent,
     -- so the panels follow every theme change (preset, single colours)
-    K.ART = { panelFill = "panel_fill_v1.png", panelRim = "panel_rim_v1.png", ringFill = "ring_fill_v1.png",
-        ringRim = "ring_rim_v1.png", header = "header_tint_v1.png", pill = "pill_v1.png", underline = "underline_v1.png" }
+    K.ART = { panelFill = "panel_fill_v1.png", panelRim = "panel_rim_v1.png", header = "header_tint_v1.png", pill = "pill_v1.png", underline = "underline_v1.png",
+        -- Puppy Companion's KH shapes (tools/make_kh_shapes.py, from companion khart.py), drawn at 2x
+        slab = "slab_v1.png", slabHover = "slab_hover_v1.png", slabSel = "slab_sel_v1.png", cardHead = "cardhead_v1.png",
+        boxFill = "box_fill_v1.png", boxRim = "box_rim_v1.png" }
+    K.SLAB_SLICE = Rect.new(30, 30, 90, 42)
+    K.BOX_SLICE = Rect.new(32, 32, 64, 64)
+    K.DESC = Color3.fromRGB(130, 200, 255) -- description text, like the KH menu's help line
     -- menu look: a glossy capsule behind titles, an orange line under them, and the
     -- hovered button turns deep red with a bright red rounded outline
     K.UNDERLINE = Color3.fromRGB(255, 140, 40)
@@ -14021,6 +14026,7 @@ do
     function K.tintFor(name)
         local t = Theme.current
         if name:find("Underline", 1, true) then return K.UNDERLINE end
+        if name:find("Slab", 1, true) or name:find("CardHead", 1, true) then return Color3.new(1, 1, 1) end -- fixed colours
         if name:find("Fill", 1, true) then return t.surface end
         return t.accent -- rims, strips
     end
@@ -14046,6 +14052,50 @@ do
             Position = pos + UDim2.fromOffset(4, size.Y.Offset + 2), BackgroundTransparency = 1,
             Image = K.img.underline or "", ImageColor3 = K.UNDERLINE, ZIndex = z or 0, Active = false }, parent)
     end
+
+    -- a framed box (the companion's panel): body tinted with the theme's surface, rim with its accent
+    function K.box(parent, z)
+        local img = K.img
+        local fill = make("ImageLabel", { Name = TAG .. "BoxFill", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+            Image = img.boxFill or "", ImageColor3 = K.tintFor("Fill"), ScaleType = Enum.ScaleType.Slice,
+            SliceCenter = K.BOX_SLICE, SliceScale = 0.5, ZIndex = z or 0, Active = false }, parent)
+        make("ImageLabel", { Name = TAG .. "BoxRim", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+            Image = img.boxRim or "", ImageColor3 = K.tintFor("Rim"), ScaleType = Enum.ScaleType.Slice,
+            SliceCenter = K.BOX_SLICE, SliceScale = 0.5, ZIndex = z or 0, Active = false }, parent)
+        return fill
+    end
+
+    -- a KH menu entry: a dark slab (red when chosen) with its text on top. The button itself is
+    -- see-through; the glove still points at it, and hovering lights the slab instead of the
+    -- red-rectangle hover other buttons get. Returns the button.
+    function K.slabButton(parent, text, size, pos, onClick, z)
+        z = z or 2
+        local b = make("TextButton", { Name = "PuppyAdminSlab", Size = size, Position = pos, BackgroundTransparency = 1,
+            Text = "", AutoButtonColor = false, ZIndex = z }, parent)
+        b:SetAttribute("PuppyKHSlab", true)
+        make("ImageLabel", { Name = TAG .. "Slab", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+            Image = K.img.slab or "", ScaleType = Enum.ScaleType.Slice, SliceCenter = K.SLAB_SLICE, SliceScale = 0.5,
+            ZIndex = z, Active = false }, b)
+        local l = make("TextLabel", { Name = "Text", Size = UDim2.new(1, -18, 1, 0), Position = UDim2.fromOffset(14, 0),
+            BackgroundTransparency = 1, Text = text, TextColor3 = Color3.fromRGB(216, 220, 240), TextSize = math.max(11, size.Y.Offset - 14),
+            Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = z + 1 }, b)
+        if onClick then b.MouseButton1Click:Connect(onClick) end
+        b.MouseEnter:Connect(function() K.slabState(b, "hover") end)
+        b.MouseLeave:Connect(function() K.slabState(b, nil) end)
+        return b, l
+    end
+    -- state: "chosen" (stays red), "hover" (lit while the mouse is on it), nil (mouse left)
+    function K.slabState(b, state)
+        if state == "chosen" or state == "plain" then b:SetAttribute("PuppyKHChosen", state == "chosen") end
+        local chosen = b:GetAttribute("PuppyKHChosen") == true
+        local img = b:FindFirstChild(TAG .. "Slab")
+        local txt = b:FindFirstChild("Text")
+        local key = chosen and "slabSel" or (state == "hover" and "slabHover" or "slab")
+        if img then img.Image = K.img[key] or "" end
+        if txt then txt.TextColor3 = (chosen or state == "hover") and Color3.new(1, 1, 1) or Color3.fromRGB(216, 220, 240) end
+    end
+    -- the glove rests on this button when nothing is hovered (the menu's chosen entry)
+    K.restTarget = nil
 
     function K.strip(parent, size, pos, z)
         return make("ImageLabel", { Name = TAG .. "HeaderStrip", Size = size, Position = pos, BackgroundTransparency = 1,
@@ -14112,7 +14162,10 @@ do
         if not K.on or skip(inst) then return end
         if inst:GetAttribute("PuppyAdminWindow") then pcall(frameWindow, inst) end
         if inst:GetAttribute("PuppyAdminTitle") then pcall(styleTitle, inst); return end
-        if inst:IsA("TextButton") then
+        if inst:IsA("TextButton") and inst:GetAttribute("PuppyKHSlab") then
+            table.insert(K.conns, inst.MouseEnter:Connect(function() K.target = inst end))
+            table.insert(K.conns, inst.MouseLeave:Connect(function() if K.target == inst then K.target = nil end end))
+        elseif inst:IsA("TextButton") then
             shade(inst, Color3.fromRGB(160, 175, 225))
             table.insert(K.conns, inst.MouseEnter:Connect(function() K.target = inst; pcall(K.select, inst, true) end))
             table.insert(K.conns, inst.MouseLeave:Connect(function()
@@ -14127,6 +14180,10 @@ do
 
     local function place()
         local b = K.target
+        if not b and K.restTarget then
+            local ok, r = pcall(K.restTarget)
+            b = ok and r or nil
+        end
         local show = b and b.Parent and b.Visible and b.AbsoluteSize.X > 0 and b:IsDescendantOf(game)
         if show then
             local sg = b:FindFirstAncestorOfClass("ScreenGui")
@@ -14241,9 +14298,10 @@ do
 end
 
 -- Self HUD (Settings > Look, `selfhud`): an optional display of your own character in
--- the same panel art: your avatar inside a ring of HP segments (green, then yellow and
--- red as health drops), HP and FPS bars, your name, and a COMMAND list that opens the
--- main windows. Bottom-right, draggable. Original art (assets/hud).
+-- the KH shapes shared with Puppy Companion: a COMMAND list of menu slabs that opens the
+-- main windows, and a status card (name plate, square framed portrait, HP and FPS rows,
+-- PUPPYTIME, and a bar of HP segments: green, then yellow and red as health drops).
+-- Bottom-right, draggable by the COMMAND panel. Original art (assets/hud).
 do
     local S = { gui = nil, conn = nil, segs = {}, lit = -1 }
     UIAPI.SelfHud = S
@@ -14304,43 +14362,46 @@ do
         S.title = make("TextLabel", { Size = UDim2.fromOffset(170, 24), Position = UDim2.fromOffset(16, 5), BackgroundTransparency = 1,
             Text = "COMMAND", Font = Enum.Font.GothamBlack, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, cmd)
         makeDraggable(cmd, root)
-        S.buttons = {}
+        S.buttons, S.labels = {}, {}
         for i, c in ipairs(S.COMMANDS) do
-            local b = make("TextButton", { Size = UDim2.fromOffset(170, 19), Position = UDim2.fromOffset(18, 30 + (i - 1) * 20),
-                BackgroundTransparency = 0.8, BorderSizePixel = 0, AutoButtonColor = true, ZIndex = 2,
-                Text = "  " .. c[1], Font = Enum.Font.GothamBold, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left }, cmd)
-            b.MouseButton1Click:Connect(function()
+            local b, l = K.slabButton(cmd, c[1], UDim2.fromOffset(172, 20), UDim2.fromOffset(16, 31 + (i - 1) * 21), function()
                 if type(c[2]) == "function" then pcall(c[2]) else pcall(UIAPI.openForCommand, c[2]) end
-            end)
-            S.buttons[i] = b
+            end, 2)
+            S.buttons[i], S.labels[i] = b, l
         end
-        -- bars and name
-        local bars = make("Frame", { Size = UDim2.fromOffset(300, 40), Position = UDim2.fromOffset(0, 126), BackgroundTransparency = 1 }, root)
-        S.fps = bar(bars, 0, 15, "FPS")
-        S.hp = bar(bars, 20, 18, "HP")
-        S.name = make("TextLabel", { Size = UDim2.fromOffset(200, 18), Position = UDim2.fromOffset(206, 104), BackgroundTransparency = 1,
-            Text = plr.DisplayName, Font = Enum.Font.GothamBlack, TextSize = 14,
-            TextXAlignment = Enum.TextXAlignment.Right, TextStrokeTransparency = 0.5 }, root)
-        -- avatar in the HP ring (themeable backing)
-        local ring = make("Frame", { Size = UDim2.fromOffset(150, 150), Position = UDim2.fromOffset(290, 10), BackgroundTransparency = 1 }, root)
-        make("ImageLabel", { Name = "PuppyKHRingFill", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-            Image = K.img.ringFill or "", ImageColor3 = K.tintFor("Fill") }, ring)
-        make("ImageLabel", { Name = "PuppyKHRingRim", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-            Image = K.img.ringRim or "", ImageColor3 = K.tintFor("Rim") }, ring)
-        local face = make("ImageLabel", { Size = UDim2.fromOffset(96, 96), Position = UDim2.fromOffset(27, 27), BackgroundTransparency = 1,
-            Image = "rbxthumb://type=AvatarHeadShot&id=" .. plr.UserId .. "&w=150&h=150", ZIndex = 2 }, ring)
-        make("UICorner", { CornerRadius = UDim.new(1, 0) }, face)
+        -- status card: name plate, square framed portrait, HP / FPS rows, PUPPYTIME, HP segment bar
+        local card = make("Frame", { Size = UDim2.fromOffset(232, 168), Position = UDim2.fromOffset(208, 0), BackgroundTransparency = 1 }, root)
+        S.card = card
+        make("ImageLabel", { Name = "PuppyKHCardHead", Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1,
+            Image = K.img.cardHead or "", ScaleType = Enum.ScaleType.Slice, SliceCenter = K.SLAB_SLICE, SliceScale = 0.5 }, card)
+        S.name = make("TextLabel", { Size = UDim2.new(1, -12, 0, 28), Position = UDim2.fromOffset(6, 0), BackgroundTransparency = 1,
+            Text = plr.DisplayName, Font = Enum.Font.GothamBlack, TextSize = 15, ZIndex = 2,
+            TextXAlignment = Enum.TextXAlignment.Center, TextTruncate = Enum.TextTruncate.AtEnd }, card)
+        local body = make("Frame", { Position = UDim2.fromOffset(0, 28), Size = UDim2.new(1, 0, 1, -28), BackgroundTransparency = 1 }, card)
+        K.box(body, 0)
+        local pf = make("Frame", { Position = UDim2.fromOffset(10, 10), Size = UDim2.fromOffset(72, 72), BackgroundTransparency = 1 }, body)
+        K.box(pf, 1)
+        local face = make("ImageLabel", { Size = UDim2.fromOffset(60, 60), Position = UDim2.fromOffset(6, 6), BackgroundTransparency = 1,
+            Image = "rbxthumb://type=AvatarHeadShot&id=" .. plr.UserId .. "&w=150&h=150", ZIndex = 2 }, pf)
+        make("UICorner", { CornerRadius = UDim.new(0, 6) }, face)
+        local rows = make("Frame", { Position = UDim2.fromOffset(92, 12), Size = UDim2.fromOffset(130, 70), BackgroundTransparency = 1 }, body)
+        S.hp = bar(rows, 0, 18, "HP")
+        S.fps = bar(rows, 24, 15, "FPS")
+        S.ptime = make("TextLabel", { Position = UDim2.fromOffset(0, 46), Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1,
+            Text = "PUPPYTIME 0:00", Font = Enum.Font.GothamBold, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
+            TextColor3 = Color3.fromRGB(90, 200, 255), ZIndex = 2 }, rows)
+        -- HP segments in a straight bar (they were a ring)
         S.segs = {}
-        local n, cx, cy, r = S.SEGMENTS, 75, 75, 62
+        local n, x0, w = S.SEGMENTS, 10, 212
+        local step = w / n
         for i = 1, n do
-            -- clockwise from the bottom, like a filling gauge
-            local a = math.rad(90 + (i - 0.5) * 360 / n)
-            local seg = make("Frame", { Size = UDim2.fromOffset(6, 13), AnchorPoint = Vector2.new(0.5, 0.5),
-                Position = UDim2.fromOffset(cx + math.cos(a) * r, cy + math.sin(a) * r), Rotation = math.deg(a) + 90,
-                BorderSizePixel = 0, ZIndex = 2 }, ring)
+            local seg = make("Frame", { Size = UDim2.fromOffset(math.max(2, step - 1.5), 14),
+                Position = UDim2.fromOffset(x0 + (i - 1) * step, 96), BorderSizePixel = 0, ZIndex = 2 }, body)
             make("UICorner", { CornerRadius = UDim.new(0, 2) }, seg)
             S.segs[i] = seg
         end
+        S.segLabel = make("TextLabel", { Position = UDim2.fromOffset(10, 114), Size = UDim2.fromOffset(212, 14), BackgroundTransparency = 1,
+            Text = "HP", Font = Enum.Font.GothamBold, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, body)
         S.lit = -1
         S.applyTheme()
         -- the chosen font and text size apply here too, and the KH glove points at these buttons
@@ -14364,11 +14425,8 @@ do
         local K = UIAPI.KHStyle
         pcall(K.retint, S.gui) -- panel, strip and ring layers
         S.title.TextColor3 = c.text
-        S.name.TextColor3 = c.text
-        for _, b in ipairs(S.buttons) do
-            b.BackgroundColor3 = c.accent
-            b.TextColor3 = c.text
-        end
+        S.name.TextColor3 = Color3.new(1, 1, 1) -- on the dark name plate
+        S.segLabel.TextColor3 = c.dim
         for _, br in ipairs({ S.fps, S.hp }) do
             br.back.BackgroundColor3 = c.bg
             br.edge.Color = c.border
@@ -14392,6 +14450,9 @@ do
         S.fps.fill.Size = UDim2.fromScale(math.clamp(f / 60, 0, 1), 1)
         S.fps.text.Text = string.format("FPS  %d", math.floor(f + 0.5))
         S.name.Text = plr.DisplayName
+        local Mn = UIAPI.Menu
+        if Mn and Mn.formatDuration then S.ptime.Text = "PUPPYTIME " .. Mn.formatDuration(Mn.session or 0) end
+        S.segLabel.Text = string.format("HP %d%%", math.floor(frac * 100 + 0.5))
         local lit = S.litCount(h, m, S.SEGMENTS)
         if lit ~= S.lit then
             S.lit = lit
@@ -14728,57 +14789,165 @@ do
         if type(target) == "function" then pcall(target) else pcall(UIAPI.openForCommand, target) end
     end
 
+    -- pure: the party cards: you first, then your alts from Puppy Companion's roster (up to n)
+    function M.partyIds(myId, roster, n)
+        local out = { myId }
+        for _, id in ipairs(type(roster) == "table" and type(roster.alts) == "table" and roster.alts or {}) do
+            if #out >= n then break end
+            if id ~= myId then out[#out + 1] = id end
+        end
+        if type(roster) == "table" and roster.main and roster.main ~= myId and #out < n then table.insert(out, 2, roster.main) end
+        return out
+    end
+
+    -- Laid out like the KH menu screen (owner's KH2 screenshot, shapes only; the same layout as
+    -- Puppy Companion's KH style): MENU capsule (the window title), the game's name in orange top
+    -- right, categories as stacked slabs on the left (the chosen one red, the glove resting on it),
+    -- that category's windows in the middle, a PLAYERS / TIME / PUPPYTIME box bottom left, and
+    -- party cards (you and your alts) above a description box bottom right.
     function UIAPI.buildMenuPanel(screenGui)
-        local W, HGT = 560, 560 -- 8 categories (37 px each) above the info block
+        local K = UIAPI.KHStyle
+        pcall(K.loadArt)
+        local W, HGT = 720, 580
         local f = uiWindow(screenGui, "menu", "Menu", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2, 0.5, -HGT / 2))
-        local desc = label(f, { Position = UDim2.fromOffset(210, HGT - 64), Size = UDim2.fromOffset(W - 226, 48), TextSize = 15,
-            TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = PAL.ACCENT, Text = "" })
+        local ORANGE, GOLD, GREEN = K.UNDERLINE, Color3.fromRGB(255, 200, 40), Color3.fromRGB(90, 224, 90)
+        local BLUE, CYAN, PINK = Color3.fromRGB(60, 140, 255), Color3.fromRGB(90, 200, 255), Color3.fromRGB(255, 150, 200)
+        -- the game's name, like the KH menu's place name
+        local place = label(f, { Position = UDim2.fromOffset(W - 330, 6), Size = UDim2.fromOffset(280, 24), TextSize = 17,
+            TextXAlignment = Enum.TextXAlignment.Right, TextColor3 = ORANGE, Text = "", TextTruncate = Enum.TextTruncate.AtEnd })
+        make("ImageLabel", { Name = "PuppyKHUnderlinePlace", Size = UDim2.fromOffset(300, 5), Position = UDim2.fromOffset(W - 350, 32),
+            BackgroundTransparency = 1, Image = K.img.underline or "", ImageColor3 = ORANGE, Rotation = 180 }, f)
+        task.spawn(function()
+            local ok, info = pcall(function() return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId) end)
+            place.Text = (ok and type(info) == "table" and info.Name) or "This game"
+        end)
+        -- description box (bottom right)
+        local dbox = make("Frame", { Position = UDim2.fromOffset(216, HGT - 92), Size = UDim2.fromOffset(W - 232, 78),
+            BackgroundTransparency = 1 }, f)
+        K.box(dbox, 1)
+        local desc = label(dbox, { Position = UDim2.fromOffset(16, 8), Size = UDim2.new(1, -32, 1, -16), TextSize = 17,
+            TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = K.DESC, Text = "", ZIndex = 2 })
         local function say(text) desc.Text = text or "" end
-        local sub = make("Frame", { Position = UDim2.fromOffset(222, 56), Size = UDim2.fromOffset(W - 238, HGT - 136),
+        -- windows of the chosen category (middle)
+        local sub = make("Frame", { Position = UDim2.fromOffset(220, 56), Size = UDim2.fromOffset(250, HGT - 240),
             BackgroundTransparency = 1 }, f)
         local catBtns = {}
         local function showCategory(i)
             local cat = M.CATEGORIES[i]
             for _, c in ipairs(sub:GetChildren()) do c:Destroy() end
             for k, it in ipairs(cat[3]) do
-                local b = uiButton(sub, "  " .. it[1], UDim2.fromOffset(200, 34), UDim2.fromOffset(0, (k - 1) * 40), function()
+                local b = K.slabButton(sub, it[1], UDim2.fromOffset(240, 32), UDim2.fromOffset(0, (k - 1) * 38), function()
                     M.open(it[2])
                     f.Visible = false
                 end)
-                b.TextXAlignment = Enum.TextXAlignment.Left
-                b.TextSize = 15
                 b.MouseEnter:Connect(function() say(it[3]) end)
+                b.MouseLeave:Connect(function() say(M.CATEGORIES[M.current or 1][2]) end)
             end
-            for k, b in ipairs(catBtns) do b.TextColor3 = (k == i) and PAL.ACCENT or PAL.TEXT end
+            for k, b in ipairs(catBtns) do K.slabState(b, k == i and "chosen" or "plain") end
             say(cat[2])
             M.current = i
         end
         for i, cat in ipairs(M.CATEGORIES) do
-            local b = uiButton(f, "  " .. cat[1], UDim2.fromOffset(190, 32), UDim2.fromOffset(16, 56 + (i - 1) * 37), function() showCategory(i) end)
-            b.TextXAlignment = Enum.TextXAlignment.Left
-            b.TextSize = 16
+            local b = K.slabButton(f, cat[1], UDim2.fromOffset(176, 32), UDim2.fromOffset(36, 56 + (i - 1) * 37),
+                function() showCategory(i) end)
             b.MouseEnter:Connect(function() say(cat[2]) end)
+            b.MouseLeave:Connect(function() say(M.CATEGORIES[M.current or 1][2]) end)
             catBtns[i] = b
         end
-        -- info: players here and your session time
-        local function info(text, y, color, size)
-            return label(f, { Position = UDim2.fromOffset(16, y), Size = UDim2.fromOffset(180, size + 4), TextSize = size,
-                Text = text, TextColor3 = color, TextXAlignment = Enum.TextXAlignment.Left })
+        -- the glove rests on the chosen category while the menu is open and nothing is hovered
+        K.restTarget = function()
+            return f.Visible and Cfg.uiStyle == "Kingdom Hearts" and catBtns[M.current or 1] or nil
         end
-        local pTitle = info("PLAYERS", HGT - 172, Color3.fromRGB(255, 150, 50), 14)
-        local pValue = info("0", HGT - 154, Color3.fromRGB(255, 210, 70), 22)
-        local tTitle = info("TIME", HGT - 124, Color3.fromRGB(80, 150, 255), 14)
-        local tValue = info(M.clockText(), HGT - 106, Color3.fromRGB(90, 200, 255), 22) -- your local time
-        local uTitle = info("PUPPYTIME", HGT - 76, Color3.fromRGB(255, 130, 190), 14)
-        local uValue = info("0:00", HGT - 58, Color3.fromRGB(255, 170, 215), 22) -- active use, this session
-        local uTotal = info("total 0:00", HGT - 30, PAL.DIM, 12)
-        local function restyle()
-            local kh = Cfg.uiStyle == "Kingdom Hearts"
-            for _, l in ipairs({ pTitle, pValue, tTitle, tValue, uTitle, uValue, uTotal }) do
-                l:SetAttribute("PuppyAdminKeepFont", kh or nil)
-                local face = kh and UIFont.make("KH Gummi", Enum.FontWeight.Regular, Enum.FontStyle.Italic) or nil
-                if face then pcall(function() l.FontFace = face end) elseif not kh then pcall(UIFont.applyTo, l) end
+        -- PLAYERS / TIME / PUPPYTIME box (bottom left)
+        local ibox = make("Frame", { Position = UDim2.fromOffset(16, HGT - 182), Size = UDim2.fromOffset(190, 168),
+            BackgroundTransparency = 1 }, f)
+        K.box(ibox, 1)
+        local infoLabels = {}
+        local function group(y, title, colour, valueColour)
+            local t = label(ibox, { Position = UDim2.fromOffset(14, y), Size = UDim2.fromOffset(120, 16), TextSize = 13,
+                Text = title, TextColor3 = colour, ZIndex = 2 })
+            make("Frame", { Position = UDim2.fromOffset(8, y + 18), Size = UDim2.new(1, -16, 0, 2), BorderSizePixel = 0,
+                BackgroundColor3 = colour, ZIndex = 2 }, ibox)
+            local v = label(ibox, { Position = UDim2.fromOffset(10, y + 18), Size = UDim2.new(1, -22, 0, 26), TextSize = 22,
+                Text = "", TextColor3 = valueColour, TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 2 })
+            infoLabels[#infoLabels + 1] = t
+            infoLabels[#infoLabels + 1] = v
+            return v, t
+        end
+        local pValue = group(6, "PLAYERS", ORANGE, GOLD)
+        local tValue = group(58, "TIME", BLUE, CYAN)
+        local uValue = group(110, "PUPPYTIME", PINK, Color3.fromRGB(255, 190, 225))
+        local uTotal = label(ibox, { Position = UDim2.fromOffset(60, 110), Size = UDim2.fromOffset(118, 16), TextSize = 10,
+            Text = "", TextColor3 = PAL.DIM, TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 2 })
+        -- party cards: you and your alts (above the description)
+        local cards = {}
+        local CW, CN = 118, 4
+        for i = 1, CN do
+            local c = make("Frame", { Position = UDim2.fromOffset(216 + (i - 1) * (CW + 6), HGT - 176), Size = UDim2.fromOffset(CW, 78),
+                BackgroundTransparency = 1, Visible = false }, f)
+            make("ImageLabel", { Name = "PuppyKHCardHead", Size = UDim2.new(1, 0, 0, 24), BackgroundTransparency = 1,
+                Image = K.img.cardHead or "", ScaleType = Enum.ScaleType.Slice, SliceCenter = K.SLAB_SLICE, SliceScale = 0.5,
+                ZIndex = 1 }, c)
+            local body = make("Frame", { Position = UDim2.fromOffset(0, 24), Size = UDim2.new(1, 0, 0, 54), BackgroundTransparency = 1 }, c)
+            K.box(body, 1)
+            local card = { frame = c }
+            card.name = label(c, { Size = UDim2.new(1, -8, 0, 24), Position = UDim2.fromOffset(4, 0), TextSize = 13,
+                TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = Color3.new(1, 1, 1), Text = "", ZIndex = 2,
+                TextTruncate = Enum.TextTruncate.AtEnd })
+            local function row(y, colour)
+                local k = label(body, { Position = UDim2.fromOffset(8, y), Size = UDim2.new(0.45, 0, 0, 16), TextSize = 11,
+                    TextColor3 = colour, Text = "", ZIndex = 2 })
+                local v = label(body, { Position = UDim2.new(0.3, 0, 0, y), Size = UDim2.new(0.7, -8, 0, 16), TextSize = 11,
+                    TextColor3 = colour, Text = "", TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 2,
+                    TextTruncate = Enum.TextTruncate.AtEnd })
+                local line = make("Frame", { Position = UDim2.fromOffset(8, y + 16), Size = UDim2.new(1, -16, 0, 1),
+                    BorderSizePixel = 0, BackgroundColor3 = colour, ZIndex = 2 }, body)
+                return { k = k, v = v, line = line }
             end
+            card.role = row(6, GOLD)
+            card.status = row(28, GREEN)
+            cards[i] = card
+        end
+        local function fillCards()
+            local A = UIAPI.Alts
+            local roster = nil
+            if A and A.loadRoster then pcall(function() roster = A.loadRoster() end) end
+            local ids = M.partyIds(plr.UserId, roster, CN)
+            for i, card in ipairs(cards) do
+                local id = ids[i]
+                card.frame.Visible = id ~= nil
+                if id then
+                    local p = Players:GetPlayerByUserId(id)
+                    local names = roster and roster.names or {}
+                    card.name.Text = (id == plr.UserId and plr.DisplayName) or (p and p.DisplayName) or names[id] or tostring(id)
+                    local role = (id == plr.UserId and "you") or (roster and roster.main == id and "main") or "alt"
+                    card.role.k.Text, card.role.v.Text = "ROLE", role
+                    local text, good = "here", p ~= nil
+                    if id == plr.UserId then
+                        local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+                        text = hum and string.format("HP %d/%d", math.floor(hum.Health + 0.5), math.floor(hum.MaxHealth + 0.5)) or "HP -"
+                        good = true
+                    elseif A and A.describe then
+                        local ok, t = pcall(A.describe, id)
+                        text = ok and tostring(t):gsub("^limbs: ", "") or (p and "here" or "away")
+                        good = ok and (tostring(t):find("ready", 1, true) ~= nil or tostring(t):find("limbs", 1, true) ~= nil)
+                    else
+                        text = p and "here" or "away"
+                    end
+                    local col = good and GREEN or PAL.DIM
+                    card.status.k.Text, card.status.v.Text = "STATUS", text
+                    card.status.k.TextColor3, card.status.v.TextColor3, card.status.line.BackgroundColor3 = col, col, col
+                end
+            end
+        end
+        local function restyle()
+            local face = UIFont.make("KH Gummi", Enum.FontWeight.Regular, Enum.FontStyle.Italic)
+            for _, l in ipairs(infoLabels) do
+                l:SetAttribute("PuppyAdminKeepFont", true)
+                if face then pcall(function() l.FontFace = face end) end
+            end
+            local plain = UIFont.make("KH Gummi", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+            if plain then pcall(function() place.FontFace = plain; place:SetAttribute("PuppyAdminKeepFont", true) end) end
         end
         UIAPI.syncFns.menu = function()
             if not f.Visible then return end
@@ -14787,6 +14956,7 @@ do
             tValue.Text = M.clockText()
             uValue.Text = M.formatDuration(M.session)
             uTotal.Text = "total " .. M.formatDuration(M.total())
+            pcall(fillCards)
         end
         f:GetPropertyChangedSignal("Visible"):Connect(function() if f.Visible then UIAPI.syncFns.menu() end end)
         task.spawn(function()

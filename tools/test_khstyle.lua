@@ -113,6 +113,30 @@ env.plr.Character = new("Model"); hum.Parent = env.plr.Character
 env.UIAPI.openForCommand = function(n) applied.opened = n end
 local okHud = S.set(true)
 check(okHud and env.Cfg.selfHud == true and S.gui ~= nil and #S.segs == 36, "self HUD builds with 36 segments")
+-- the ring is gone: the companion's KH shapes instead (status card, square portrait, straight HP bar, slab commands)
+local names = {}
+for _, d in ipairs(S.gui:GetDescendants()) do names[d.Name] = true end
+check(not names.PuppyKHRingFill and not names.PuppyKHRingRim and names.PuppyKHCardHead and names.PuppyKHBoxFill and names.PuppyKHBoxRim,
+    "no ring: a status card with a name plate and framed boxes")
+local sameRow = true
+for i = 2, #S.segs do if S.segs[i].Position.Y.Offset ~= S.segs[1].Position.Y.Offset or S.segs[i].Position.X.Offset <= S.segs[i - 1].Position.X.Offset then sameRow = false end end
+check(sameRow and (S.segs[1].Rotation or 0) == 0, "HP segments run in a straight bar, left to right")
+local slab = S.buttons[1]
+check(slab:GetAttribute("PuppyKHSlab") and slab:FindFirstChild("PuppyKHSlab") and slab.BackgroundTransparency == 1, "COMMAND entries are menu slabs")
+slab.MouseEnter:fire(); rs:fire(1 / 60)
+check(K.target == slab and K.glove.Visible and slab.BackgroundTransparency == 1 and slab:FindFirstChild("PuppyKHSelect") == nil,
+    "hovering a slab: the glove points, no red rectangle")
+check(slab:FindFirstChild("PuppyKHSlab").Image == K.img.slabHover, "the slab lights up")
+slab.MouseLeave:fire(); rs:fire(1 / 60)
+check(slab:FindFirstChild("PuppyKHSlab").Image == K.img.slab and not K.glove.Visible, "and goes back")
+K.slabState(slab, "chosen")
+check(slab:FindFirstChild("PuppyKHSlab").Image == K.img.slabSel, "the chosen entry is red")
+K.restTarget = function() return slab end
+rs:fire(1 / 60)
+check(K.glove.Visible, "the glove rests on the chosen entry when nothing is hovered")
+K.restTarget = nil
+K.slabState(slab, "plain")
+rs:fire(1 / 60)
 S.update(30)
 check(S.lit == 9 and S.hp.text.Text == "HP  25 / 100" and S.fps.text.Text == "FPS  30", "HUD shows health, segments and FPS")
 check(S.fps.fill.BackgroundColor3 == "acc1" and S.hp.back.BackgroundColor3 == "bg1" and S.title.TextColor3 == "txt1"
@@ -158,6 +182,11 @@ check(Mn.session == 2 and Mn.total() == 102, "tabbed out: not counted")
 Mn.focused = true
 Mn.tick(600)
 check(Mn.session == 2, "a long hitch (sleep, freeze) is not counted")
+
+-- party cards: you first, the main next (when you are an alt), then the alts
+check(table.concat(Mn.partyIds(5, { main = 5, alts = { 6, 7, 8, 9 } }, 4), ",") == "5,6,7,8", "party: you (the main) and three alts")
+check(table.concat(Mn.partyIds(7, { main = 5, alts = { 6, 7, 8 } }, 4), ",") == "7,5,6,8", "party on an alt: you, the main, the others")
+check(table.concat(Mn.partyIds(7, nil, 4), ",") == "7", "no roster: just you")
 
 -- the menu belongs to the Kingdom Hearts style
 local menuPanel = { Visible = false }
