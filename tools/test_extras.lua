@@ -256,6 +256,14 @@ do
     mH.menusounds({ "reload" })
     check(made[1].gone and MS.play("denied") == true and played[#played] == "asset://PuppyAdmin/sounds/Menu_Denied.ogg", "reload picks up new files (yours over the built-in)")
     check(mcmds[1] == "menusounds" and malias.khsounds == "menusounds" and mdocs.menusounds, "menusounds command registered")
+    Cfg.uiStyle = "Sword Art Online"
+    FS["PuppyAdmin/sounds/SAO_Select.ogg"] = true
+    MS.reload()
+    clock = clock + 1
+    check(MS.fileName("move") == "SAO_Move" and MS.play("select") == true and played[#played] == "asset://PuppyAdmin/sounds/SAO_Select.ogg",
+        "SAO style: its own SAO_* files")
+    clock = clock + 1
+    check(MS.play("move") == false, "no SAO_Move: silent (the KH files are not used for SAO)")
 end
 
 -- shutdown restores without errors

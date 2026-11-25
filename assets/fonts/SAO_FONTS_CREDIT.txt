@@ -1,0 +1,6 @@
+SAO UI and SAO Welcome (SAOUI*.ttf, SAOWelcome*.ttf; the TrueType "TT" versions, v3.200)
+Fan-made fonts in the style of Sword Art Online's interface, supplied by the project owner.
+Credited by the SAO-UI resource project (github.com/SAO-UI/sao-assets) to the DeviantArt artist
+"darkblackswords". No licence text came with the files or is stated by that project; if the
+author's terms do not allow redistribution, remove these files and load the fonts locally instead.
+Sword Art Online is a trademark of its owners; this project is not affiliated with them.

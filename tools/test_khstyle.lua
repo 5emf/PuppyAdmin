@@ -229,4 +229,20 @@ env.H.menu()
 check(menuPanel.Visible == true, "KH style: menu opens")
 K.set("Standard")
 check(menuPanel.Visible == false and env.UIAPI.menuBtn.Visible == false, "leaving the KH style closes the menu and hides MENU")
+-- three styles: Standard, Kingdom Hearts, Sword Art Online (KHStyle.set switches between them)
+local saoOn
+env.UIAPI.SAOStyle = { apply = function(on) saoOn = on end }
+env.Cfg.theme = { preset = "Forest" }; env.Cfg.uiFont = "Gotham"; env.Cfg.cursor = "Light"
+applied = {}
+K.set("Sword Art Online")
+check(env.Cfg.uiStyle == "Sword Art Online" and saoOn == true and K.on == false and K.gui == nil, "SAO style on: the KH look is off")
+check(env.Cfg.khPrev.preset == "Forest" and env.Cfg.khPrev.font == "Gotham", "the look before it is remembered")
+K.set("Kingdom Hearts")
+check(env.Cfg.uiStyle == "Kingdom Hearts" and saoOn == false and K.on and env.Cfg.khPrev.preset == "Forest", "SAO -> KH keeps the remembered look")
+applied = {}
+K.set("Standard")
+check(env.Cfg.uiStyle == "Standard" and saoOn == false and applied.preset == "Forest" and applied.font == "Gotham" and applied.cursor == "Light",
+    "Standard brings the remembered look back")
+K.set("nonsense")
+check(env.Cfg.uiStyle == "Standard", "unknown style names fall back to Standard")
 print("ALL OK")

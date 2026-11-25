@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.25-80" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.25-81" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -5388,9 +5388,12 @@ ALIASES.bar = "togglebar"
 -- uistyle [standard|kh]
 function H.uistyle(a)
     local want = (a[1] or ""):lower()
-    local name = (want == "kh" or want:find("kingdom", 1, true)) and "Kingdom Hearts" or (want == "standard" and "Standard") or nil
-    if not name then
-        name = Cfg.uiStyle == "Kingdom Hearts" and "Standard" or "Kingdom Hearts" -- no argument: switch
+    local name = (want == "kh" or want:find("kingdom", 1, true)) and "Kingdom Hearts"
+        or ((want == "sao" or want:find("sword", 1, true)) and "Sword Art Online")
+        or (want == "standard" and "Standard") or nil
+    if not name then -- no argument: the next style
+        local nextOf = { Standard = "Kingdom Hearts", ["Kingdom Hearts"] = "Sword Art Online", ["Sword Art Online"] = "Standard" }
+        name = nextOf[Cfg.uiStyle] or "Kingdom Hearts"
     end
     task.spawn(function()
         local ok, msg = UIAPI.KHStyle.set(name)
@@ -5413,7 +5416,8 @@ table.insert(cmds, "selfhud")
 cmdDocs.selfhud = "selfhud [on|off] - Kingdom Hearts style only: your avatar in an HP ring, HP / FPS bars and a COMMAND list"
 ALIASES.khhud = "selfhud"
 ALIASES.myhud = "selfhud"
-cmdDocs.uistyle = "uistyle [standard|kh] - Kingdom Hearts style menus (blue panels, KH font, pointing glove) or the standard look"
+cmdDocs.uistyle = "uistyle [standard|kh|sao] - UI style: Kingdom Hearts (blue menus, pointing glove), Sword Art Online (light panels, icon menu) or standard"
+ALIASES.saostyle = "uistyle"
 ALIASES.khstyle = "uistyle"
 ALIASES.khui = "uistyle"
 cmdDocs.cursor = "cursor [default|glove|light|keyblade|image id/URL] [size] - Mouse cursor image (also in Settings > Look)"
@@ -5424,8 +5428,8 @@ function UIAPI.showDirectory()
 end
 
 function H.help()
-    -- the Kingdom Hearts style's help is its menu screen
-    if Cfg.uiStyle == "Kingdom Hearts" and H.menu then H.menu(); return end
+    -- in the Kingdom Hearts and Sword Art Online styles, help is their menu
+    if (Cfg.uiStyle == "Kingdom Hearts" or Cfg.uiStyle == "Sword Art Online") and H.menu then H.menu(); return end
     if helpFrame then helpFrame.Visible = not helpFrame.Visible end
 end
 
@@ -5650,6 +5654,15 @@ do
         ["KH Title"] = "KHTitle.ttf",
         ["KH Scala"] = "KHScala.ttf",
         ["KH Scala Script"] = "KHScalaScript.ttf",
+        -- Sword Art Online-style fan fonts supplied by the owner (assets/fonts/SAO_FONTS_CREDIT.txt)
+        ["SAO UI"] = {
+            { file = "SAOUI.ttf", weight = 400, style = "normal" },
+            { file = "SAOUIBold.ttf", weight = 700, style = "normal" },
+        },
+        ["SAO Welcome"] = {
+            { file = "SAOWelcome.ttf", weight = 400, style = "normal" },
+            { file = "SAOWelcomeBold.ttf", weight = 700, style = "normal" },
+        },
     }
     local DIR = "PuppyAdmin/fonts"
     local ROBLOX = {
@@ -5906,6 +5919,7 @@ do
         { name = "Forest", bg = { 16, 24, 18 }, surface = { 24, 36, 27 }, accent = { 120, 210, 140 }, text = { 232, 245, 234 }, dim = { 150, 180, 155 }, border = { 52, 78, 58 }, on = { 80, 200, 110 } },
         { name = "Crimson", bg = { 24, 12, 14 }, surface = { 38, 18, 22 }, accent = { 235, 80, 90 }, text = { 250, 234, 236 }, dim = { 190, 150, 155 }, border = { 86, 40, 46 }, on = { 230, 70, 80 } },
         { name = "Light", bg = { 240, 240, 244 }, surface = { 226, 226, 232 }, accent = { 60, 110, 230 }, text = { 24, 24, 28 }, dim = { 100, 100, 110 }, border = { 190, 190, 200 }, on = { 60, 170, 90 } },
+        { name = "Sword Art Online", bg = { 232, 234, 238 }, surface = { 248, 248, 250 }, accent = { 245, 155, 40 }, text = { 62, 64, 72 }, dim = { 128, 132, 142 }, border = { 194, 198, 206 }, on = { 110, 200, 80 } },
         { name = "Kingdom Hearts", bg = { 6, 10, 40 }, surface = { 12, 24, 96 }, accent = { 60, 130, 255 }, text = { 255, 255, 255 }, dim = { 170, 190, 240 }, border = { 40, 90, 240 }, on = { 255, 214, 92 } },
     }
 
@@ -12711,6 +12725,438 @@ do
     table.insert(cleanups, C.off)
 end
 
+-- Sword Art Online-inspired UI style (`UIAPI.SAOStyle`; Settings > Look > UI style, `uistyle sao`).
+-- Original (no art or text from the show): light panels, square corners, thin lines, orange
+-- highlights, the owner's SAO UI fan font, and
+--   * the menu (`menu` / `help` / MENU): laid out like the owner's reference screenshot (shapes
+--     only): a dark backdrop with an orange stripe on the left edge, a centre column of round
+--     icon buttons (the categories; the chosen one orange with a ring), an info card on the left
+--     (your name, your avatar inside a ring of 12 dots that light orange with your HP, and a grey
+--     strip describing the hovered entry), and that category's windows as grey plates on the
+--     right (the chosen one orange), each with a pointer toward the column;
+--   * the self HUD: a slanted HP bar at the top left with your name, a level box and HP numbers.
+-- Art: assets/sao (tools/make_sao_art.py). Everything it adds is named PuppySAO* and removed when off.
+;(function() -- own function scope: the main chunk is at the 200-local limit
+    local A = { on = false, conns = {}, img = {} }
+    UIAPI.SAOStyle = A
+    local TAG = "PuppySAO"
+    A.NAME = "Sword Art Online"
+    A.FONT = "SAO UI"
+    A.ORANGE = Color3.fromRGB(238, 166, 0)
+    A.PLATE = Color3.fromRGB(150, 150, 150)       -- grey menu plates
+    A.CARD = Color3.fromRGB(250, 250, 250)        -- white cards
+    A.CARD_LOW = Color3.fromRGB(216, 216, 216)    -- the card's lower strip
+    A.INK = Color3.fromRGB(70, 70, 70)            -- dark text / icons on white
+    A.ART = { icons = "assets/sao/icons_v1.png", hpFrame = "assets/sao/hp_frame_v1.png", hpFill = "assets/sao/hp_fill_v1.png" }
+    A.ICONS = { "character", "look", "alts", "games", "server", "owner", "commands", "config", "close" }
+    A.DOTS = 12
+
+    ------------------------------------------------------------ pure helpers (tested)
+    function A.iconOffset(name)
+        for i, n in ipairs(A.ICONS) do if n == name then return (i - 1) * 64 end end
+        return 6 * 64 -- the list icon
+    end
+    -- the icon for a menu category (by its position in Menu.CATEGORIES)
+    function A.categoryIcon(i) return A.ICONS[i] or "commands" end
+    -- HP colour like the game's bar: green, yellow under half, red under a fifth
+    function A.hpRGB(frac)
+        if frac > 0.5 then return 110, 200, 80 end
+        if frac > 0.2 then return 240, 205, 60 end
+        return 230, 70, 60
+    end
+    -- the level box: one level per hour of PUPPYTIME, starting at 1
+    function A.level(seconds) return math.floor(math.max(0, tonumber(seconds) or 0) / 3600) + 1 end
+    -- where dot i of n sits on a ring (degrees clockwise from the top)
+    function A.dotAngle(i, n) return (i - 1) * 360 / n end
+    -- how many of n ring dots are lit for health h of max m
+    function A.litDots(h, m, n)
+        if not (type(h) == "number" and type(m) == "number") or m <= 0 or h ~= h then return 0 end
+        return math.max(0, math.min(n, math.ceil(n * math.max(0, math.min(1, h / m)) - 1e-9)))
+    end
+    -- the icons drop in one after another
+    function A.dropDelay(i) return (i - 1) * 0.04 end
+
+    function A.loadArt()
+        for key, path in pairs(A.ART) do
+            if not A.img[key] then A.img[key] = urlImageAsset(SETTINGS.Auras.assetBase .. path, "sao") end
+        end
+        return A.img
+    end
+    function A.sound(kind)
+        local M = UIAPI.MenuSound
+        if M then pcall(M.play, kind) end
+    end
+    local function fontFace(bold)
+        return UIFont.make(A.FONT, bold and Enum.FontWeight.Bold or Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+    end
+    local function sao(l, bold)
+        local f = fontFace(bold)
+        if f then pcall(function() l.FontFace = f; l:SetAttribute("PuppyAdminKeepFont", true) end) end
+        return l
+    end
+    local function iconLabel(parent, name, size, pos, colour, z)
+        return make("ImageLabel", { Size = UDim2.fromOffset(size, size), Position = pos, BackgroundTransparency = 1,
+            Image = A.img.icons or "", ImageRectSize = Vector2.new(64, 64), ImageRectOffset = Vector2.new(A.iconOffset(name), 0),
+            ImageColor3 = colour, ZIndex = z or 2 }, parent)
+    end
+    -- the small triangle that points from a card / plate toward the column
+    local function pointer(parent, pos, colour, left, z)
+        local holder = make("Frame", { Size = UDim2.fromOffset(12, 24), Position = pos, BackgroundTransparency = 1,
+            ClipsDescendants = true, ZIndex = z or 2 }, parent)
+        make("Frame", { Size = UDim2.fromOffset(17, 17), Position = UDim2.fromOffset(left and 4 or -9, 3.5), Rotation = 45,
+            BackgroundColor3 = colour, BorderSizePixel = 0, ZIndex = z or 2 }, holder)
+        return holder
+    end
+
+    ------------------------------------------------------------ the look on every window
+    local function skip(inst)
+        local n = inst.Name
+        return n:sub(1, 7) == "PuppyKH" or n:sub(1, #TAG) == TAG or n == "PuppyAdminSwatch"
+            or inst:FindFirstAncestor("PuppyAdminGameBoard") ~= nil or inst:FindFirstAncestor("PuppyAdminCursor") ~= nil
+    end
+    function A.hover(b, on)
+        if on then
+            if b:GetAttribute(TAG .. "Bg") ~= nil or b.BackgroundTransparency >= 0.95 then return end
+            b:SetAttribute(TAG .. "Bg", b.BackgroundColor3)
+            b:SetAttribute(TAG .. "Tx", b.TextColor3)
+            b.BackgroundColor3, b.TextColor3 = A.ORANGE, Color3.new(1, 1, 1)
+        else
+            local bg = b:GetAttribute(TAG .. "Bg")
+            if bg == nil then return end
+            b.BackgroundColor3 = bg
+            b.TextColor3 = b:GetAttribute(TAG .. "Tx") or b.TextColor3
+            b:SetAttribute(TAG .. "Bg", nil)
+            b:SetAttribute(TAG .. "Tx", nil)
+        end
+    end
+    function A.decorate(inst)
+        if not A.on or skip(inst) then return end
+        if inst:IsA("UICorner") then
+            -- square corners (the radius is kept and restored when the style is off)
+            if inst:GetAttribute(TAG .. "R") == nil and not (inst.Parent and skip(inst.Parent)) then
+                local r = inst.CornerRadius
+                inst:SetAttribute(TAG .. "R", r.Scale .. "," .. r.Offset)
+                inst.CornerRadius = UDim.new(0, 0)
+            end
+        elseif inst:GetAttribute("PuppyAdminWindow") then
+            if not inst:FindFirstChild(TAG .. "Line") then
+                make("Frame", { Name = TAG .. "Line", Size = UDim2.new(1, -24, 0, 1), Position = UDim2.fromOffset(12, 40),
+                    BorderSizePixel = 0, BackgroundColor3 = A.ORANGE, ZIndex = 2 }, inst)
+            end
+        elseif inst:GetAttribute("PuppyAdminTitle") then
+            if inst:GetAttribute(TAG .. "Text") == nil then
+                inst:SetAttribute(TAG .. "Text", inst.Text)
+                inst.Text = inst.Text:upper()
+            end
+        elseif inst:IsA("TextButton") then
+            table.insert(A.conns, inst.MouseEnter:Connect(function() A.hover(inst, true); A.sound("move") end))
+            table.insert(A.conns, inst.MouseLeave:Connect(function() A.hover(inst, false) end))
+            table.insert(A.conns, inst.MouseButton1Click:Connect(function() A.sound("select") end))
+        end
+    end
+    function A.decorateRoot(root)
+        if not A.on or not root.Parent then return end
+        for _, d in ipairs(root:GetDescendants()) do pcall(A.decorate, d) end
+        table.insert(A.conns, root.DescendantAdded:Connect(function(d)
+            task.defer(function() if d.Parent then pcall(A.decorate, d) end end)
+        end))
+    end
+    function A.undecorate()
+        for _, c in ipairs(A.conns) do pcall(function() c:Disconnect() end) end
+        A.conns = {}
+        for _, root in ipairs(Theme.roots) do
+            if root.Parent then
+                for _, d in ipairs(root:GetDescendants()) do
+                    pcall(function()
+                        if d:GetAttribute(TAG .. "Bg") ~= nil then A.hover(d, false) end
+                        local r = d:GetAttribute(TAG .. "R")
+                        if r ~= nil then
+                            local sc, off = tostring(r):match("^([%-%d%.e]+),([%-%d%.e]+)$")
+                            d.CornerRadius = UDim.new(tonumber(sc) or 0, tonumber(off) or 0)
+                            d:SetAttribute(TAG .. "R", nil)
+                        end
+                        local t = d:GetAttribute(TAG .. "Text")
+                        if t ~= nil then d.Text = t; d:SetAttribute(TAG .. "Text", nil) end
+                        if d.Name:sub(1, #TAG) == TAG then d:Destroy() end
+                    end)
+                end
+            end
+        end
+    end
+
+    -- on / off (called by KHStyle.set, which owns the choice of style). quiet = at start-up.
+    function A.apply(on, quiet)
+        A.undecorate()
+        A.closeMenu()
+        A.on = on
+        if on then
+            pcall(A.loadArt)
+            if not quiet then
+                Theme.usePreset(A.NAME)
+                pcall(UIFont.set, A.FONT, true)
+                pcall(UIAPI.Cursor.set, "Default", true)
+            end
+            for _, root in ipairs(Theme.roots) do A.decorateRoot(root) end
+        end
+    end
+
+    ------------------------------------------------------------ the menu
+    function A.closeMenu()
+        if A.menu and A.menu.gui then A.menu.gui.Enabled = false end
+    end
+    function A.buildMenu()
+        pcall(A.loadArt)
+        local Mn = UIAPI.Menu
+        local cats = Mn.CATEGORIES
+        local gui = Instance.new("ScreenGui")
+        gui.Name = TAG .. "Menu"
+        gui.ResetOnSpawn = false
+        gui.IgnoreGuiInset = true
+        gui.DisplayOrder = 40
+        gui.Enabled = false
+        parentGui(gui)
+        local m = { gui = gui, icons = {}, rows = {}, current = 1 }
+        A.menu = m
+        -- dark backdrop (click it to close) and the orange stripe on the left edge
+        local back = make("TextButton", { Name = "Backdrop", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+            BackgroundTransparency = 0.25, Text = "", AutoButtonColor = false }, gui)
+        back.MouseButton1Click:Connect(function() A.sound("select"); A.closeMenu() end)
+        make("Frame", { Name = "Stripe", Size = UDim2.new(0, 110, 1, 0), BackgroundColor3 = A.ORANGE, BorderSizePixel = 0 }, gui)
+        local stripeText = make("TextLabel", { Size = UDim2.fromOffset(400, 40), Position = UDim2.new(0, 55, 0.5, 0), AnchorPoint = Vector2.new(0.5, 0.5),
+            Rotation = -90, BackgroundTransparency = 1, Text = "PUPPY ADMIN", TextColor3 = Color3.fromRGB(255, 240, 210),
+            TextTransparency = 0.25, TextSize = 30, Font = Enum.Font.GothamBold }, gui)
+        sao(stripeText, true)
+
+        local N = #cats
+        local STEP = 66
+        local colH = N * STEP + STEP
+        local root = make("Frame", { Name = "Root", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 55, 0.5, 0),
+            Size = UDim2.fromOffset(900, math.max(colH, 520)), BackgroundTransparency = 1 }, gui)
+        local cx = 390 -- the column's centre (x) inside root
+        local top = (math.max(colH, 520) - colH) / 2
+
+        -- info card (left)
+        local card = make("Frame", { Name = "Card", Size = UDim2.fromOffset(282, 490), Position = UDim2.fromOffset(cx - 60 - 282, top),
+            BackgroundColor3 = A.CARD, BorderSizePixel = 0 }, root)
+        local name = sao(label(card, { Position = UDim2.fromOffset(20, 10), Size = UDim2.new(1, -40, 0, 30), Text = plr.DisplayName,
+            TextSize = 20, TextColor3 = A.INK, TextXAlignment = Enum.TextXAlignment.Center }), true)
+        make("Frame", { Position = UDim2.fromOffset(20, 48), Size = UDim2.new(1, -40, 0, 1), BorderSizePixel = 0,
+            BackgroundColor3 = Color3.fromRGB(120, 120, 120) }, card)
+        local ring = make("Frame", { Position = UDim2.fromOffset(141 - 115, 60), Size = UDim2.fromOffset(230, 230), BackgroundTransparency = 1 }, card)
+        make("ImageLabel", { Size = UDim2.fromOffset(150, 150), Position = UDim2.fromOffset(40, 40), BackgroundTransparency = 1,
+            Image = "rbxthumb://type=Avatar&id=" .. plr.UserId .. "&w=352&h=352", ZIndex = 2 }, ring)
+        m.dots = {}
+        for i = 1, A.DOTS do
+            local a = math.rad(A.dotAngle(i, A.DOTS) - 90)
+            local dot = make("Frame", { Size = UDim2.fromOffset(24, 24), AnchorPoint = Vector2.new(0.5, 0.5),
+                Position = UDim2.fromOffset(115 + math.cos(a) * 103, 115 + math.sin(a) * 103), BackgroundColor3 = Color3.fromRGB(80, 80, 80),
+                BorderSizePixel = 0, ZIndex = 2 }, ring)
+            make("UICorner", { Name = TAG .. "Round", CornerRadius = UDim.new(1, 0) }, dot)
+            make("UIStroke", { Color = Color3.fromRGB(60, 60, 60), Thickness = 2 }, dot)
+            m.dots[i] = dot
+        end
+        local low = make("Frame", { Position = UDim2.fromOffset(0, 300), Size = UDim2.new(1, 0, 1, -300), BackgroundColor3 = A.CARD_LOW,
+            BorderSizePixel = 0 }, card)
+        pointer(low, UDim2.fromOffset(28, -12), A.CARD_LOW, true).Rotation = -90
+        local lowIcon = iconLabel(low, "commands", 26, UDim2.fromOffset(18, 16), A.INK)
+        m.lowTitle = sao(label(low, { Position = UDim2.fromOffset(54, 12), Size = UDim2.new(1, -70, 0, 32), TextSize = 20,
+            TextColor3 = A.INK, Text = "" }), false)
+        m.lowText = sao(label(low, { Position = UDim2.fromOffset(54, 48), Size = UDim2.new(1, -70, 1, -56), TextSize = 14,
+            TextColor3 = Color3.fromRGB(80, 80, 80), TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, Text = "" }), false)
+        m.stats = sao(label(low, { Position = UDim2.new(0, 18, 1, -30), Size = UDim2.new(1, -36, 0, 22), TextSize = 13,
+            TextColor3 = Color3.fromRGB(110, 110, 110), Text = "" }), false)
+        pointer(card, UDim2.new(1, 0, 0, 228), A.CARD, false)
+        function m.describe(iconName, title, text)
+            lowIcon.ImageRectOffset = Vector2.new(A.iconOffset(iconName), 0)
+            m.lowTitle.Text, m.lowText.Text = title or "", text or ""
+        end
+
+        -- the right-hand list: that category's windows
+        local list = make("Frame", { Name = "List", Position = UDim2.fromOffset(cx + 60, top), Size = UDim2.fromOffset(230, 400),
+            BackgroundTransparency = 1 }, root)
+        local function fillList(i)
+            for _, r in ipairs(m.rows) do r:Destroy() end
+            m.rows = {}
+            local cat = cats[i]
+            local y = math.max(0, (i - 1) * STEP + 33 - #cat[3] * 28)  -- centred on the chosen icon
+            for k, it in ipairs(cat[3]) do
+                local row = make("TextButton", { Name = "Row" .. k, Size = UDim2.fromOffset(220, 52), Position = UDim2.fromOffset(10, y + (k - 1) * 56),
+                    BackgroundColor3 = A.PLATE, BorderSizePixel = 0, AutoButtonColor = false, Text = "" }, list)
+                local disc = make("Frame", { Size = UDim2.fromOffset(32, 32), Position = UDim2.fromOffset(10, 10), BackgroundColor3 = Color3.fromRGB(70, 70, 70),
+                    BorderSizePixel = 0 }, row)
+                make("UICorner", { Name = TAG .. "Round", CornerRadius = UDim.new(1, 0) }, disc)
+                iconLabel(disc, A.categoryIcon(i), 20, UDim2.fromOffset(6, 6), Color3.fromRGB(235, 235, 235))
+                local txt = sao(label(row, { Position = UDim2.fromOffset(52, 0), Size = UDim2.new(1, -60, 1, 0), Text = it[1], TextSize = 18,
+                    TextColor3 = Color3.fromRGB(245, 245, 245) }), true)
+                local tip = pointer(row, UDim2.fromOffset(-12, 14), A.ORANGE, true)
+                tip.Visible = false
+                row.MouseEnter:Connect(function()
+                    A.sound("move")
+                    row.BackgroundColor3, tip.Visible = A.ORANGE, true
+                    m.describe(A.categoryIcon(i), it[1], it[3])
+                end)
+                row.MouseLeave:Connect(function()
+                    row.BackgroundColor3, tip.Visible = A.PLATE, false
+                    m.describe(A.categoryIcon(i), cat[1], cat[2])
+                end)
+                row.MouseButton1Click:Connect(function()
+                    A.sound("select")
+                    A.closeMenu()
+                    Mn.open(it[2])
+                end)
+                m.rows[k] = row
+                txt.ZIndex = 2
+            end
+        end
+
+        -- the centre column of round icons
+        local function styleIcon(k, chosen)
+            local e = m.icons[k]
+            e.btn.BackgroundColor3 = chosen and A.ORANGE or Color3.fromRGB(150, 150, 150)
+            e.btn.BackgroundTransparency = chosen and 0 or 0.25
+            e.ring.Color = chosen and A.ORANGE or Color3.fromRGB(200, 200, 200)
+            e.ring.Thickness = chosen and 2 or 3
+            e.halo.Visible = chosen
+            e.icon.ImageColor3 = chosen and Color3.new(1, 1, 1) or Color3.fromRGB(205, 205, 205)
+        end
+        function m.choose(i)
+            m.current = i
+            for k in ipairs(m.icons) do styleIcon(k, k == i) end
+            fillList(i)
+            m.describe(A.categoryIcon(i), cats[i][1], cats[i][2])
+        end
+        local function iconButton(k, iconName, y, onClick, hoverTitle, hoverText)
+            local b = make("ImageButton", { Name = "Icon" .. k, Size = UDim2.fromOffset(56, 56), Position = UDim2.fromOffset(cx - 28, y),
+                BackgroundColor3 = Color3.fromRGB(150, 150, 150), BorderSizePixel = 0, AutoButtonColor = false, Image = "" }, root)
+            make("UICorner", { Name = TAG .. "Round", CornerRadius = UDim.new(1, 0) }, b)
+            local ringStroke = make("UIStroke", { Color = Color3.fromRGB(200, 200, 200), Thickness = 3, Transparency = 0.1 }, b)
+            local halo = make("Frame", { Size = UDim2.fromOffset(70, 70), Position = UDim2.fromOffset(-7, -7), BackgroundTransparency = 1, Visible = false }, b)
+            make("UICorner", { Name = TAG .. "Round", CornerRadius = UDim.new(1, 0) }, halo)
+            make("UIStroke", { Color = A.ORANGE, Thickness = 1.5 }, halo)
+            local ic = iconLabel(b, iconName, 30, UDim2.fromOffset(13, 13), Color3.fromRGB(205, 205, 205), 2)
+            b.MouseEnter:Connect(function() A.sound("move"); m.describe(iconName, hoverTitle, hoverText) end)
+            b.MouseButton1Click:Connect(function() A.sound("select"); onClick() end)
+            return { btn = b, icon = ic, ring = ringStroke, halo = halo, y = y }
+        end
+        for i, cat in ipairs(cats) do
+            m.icons[i] = iconButton(i, A.categoryIcon(i), top + (i - 1) * STEP + 5, function() m.choose(i) end, cat[1], cat[2])
+        end
+        local closeBtn = iconButton(N + 1, "close", top + N * STEP + 5, function() A.closeMenu() end, "Close", "Back to the game.")
+        m.close = closeBtn
+
+        function m.refresh()
+            local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+            local h, mx = hum and hum.Health or 0, hum and hum.MaxHealth or 100
+            local lit = A.litDots(h, mx, A.DOTS)
+            for i, dot in ipairs(m.dots) do dot.BackgroundColor3 = i <= lit and A.ORANGE or Color3.fromRGB(80, 80, 80) end
+            name.Text = plr.DisplayName
+            m.stats.Text = string.format("HP %d/%d   Lv %d   %s", math.floor(h + 0.5), math.floor(mx + 0.5), A.level(Mn.total()),
+                Mn.clockText())
+        end
+        -- the icons drop in one after another
+        function m.dropIn()
+            for i, e in ipairs(m.icons) do
+                local target = UDim2.fromOffset(cx - 28, e.y)
+                e.btn.Position = target + UDim2.fromOffset(0, -46)
+                e.btn.BackgroundTransparency = 1
+                e.icon.ImageTransparency = 1
+                task.delay(A.dropDelay(i), function()
+                    if not gui.Enabled then return end
+                    TweenService:Create(e.btn, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { Position = target,
+                        BackgroundTransparency = (i == m.current) and 0 or 0.25 }):Play()
+                    TweenService:Create(e.icon, TweenInfo.new(0.18), { ImageTransparency = 0 }):Play()
+                end)
+            end
+        end
+        pcall(UIFont.attach, gui)
+        task.spawn(function()
+            while gui.Parent do
+                task.wait(1)
+                if gui.Enabled then pcall(m.refresh) end
+            end
+        end)
+        m.choose(1)
+        return m
+    end
+    function A.toggleMenu()
+        if not (A.menu and A.menu.gui and A.menu.gui.Parent) then A.buildMenu() end
+        local m = A.menu
+        m.gui.Enabled = not m.gui.Enabled
+        if m.gui.Enabled then
+            pcall(m.refresh)
+            m.choose(m.current or 1)
+            m.dropIn()
+        end
+        return m.gui.Enabled
+    end
+
+    ------------------------------------------------------------ the self HUD: a slanted HP bar
+    A.BAR_W, A.BAR_H = 400, 28
+    function A.hudOff()
+        if A.hud then
+            if A.hud.conn then A.hud.conn:Disconnect() end
+            pcall(function() A.hud.gui:Destroy() end)
+            A.hud = nil
+        end
+    end
+    function A.hudOn()
+        A.hudOff()
+        pcall(A.loadArt)
+        local gui = Instance.new("ScreenGui")
+        gui.Name = TAG .. "Hud"
+        gui.ResetOnSpawn = false
+        gui.DisplayOrder = 5
+        parentGui(gui)
+        local root = make("Frame", { Name = "Root", Position = UDim2.fromOffset(16, 14), Size = UDim2.fromOffset(A.BAR_W + 70, 70),
+            BackgroundTransparency = 1, Active = true }, gui)
+        makeDraggable(root, root)
+        local name = sao(label(root, { Position = UDim2.fromOffset(66, 0), Size = UDim2.fromOffset(300, 20), TextSize = 17,
+            TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.55, Text = plr.DisplayName }), true)
+        local lvBox = make("Frame", { Position = UDim2.fromOffset(0, 22), Size = UDim2.fromOffset(58, A.BAR_H), BackgroundColor3 = A.CARD,
+            BackgroundTransparency = 0.1, BorderSizePixel = 0 }, root)
+        make("UIStroke", { Color = Color3.fromRGB(190, 190, 196), Thickness = 1 }, lvBox)
+        local lv = sao(label(lvBox, { Size = UDim2.fromScale(1, 1), TextSize = 15, TextColor3 = A.INK, Text = "Lv 1",
+            TextXAlignment = Enum.TextXAlignment.Center }), true)
+        local bar = make("Frame", { Position = UDim2.fromOffset(62, 22), Size = UDim2.fromOffset(A.BAR_W, A.BAR_H), BackgroundTransparency = 1 }, root)
+        make("ImageLabel", { Name = "Frame", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Image = A.img.hpFrame or "" }, bar)
+        local clip = make("Frame", { Name = "Clip", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ClipsDescendants = true, ZIndex = 2 }, bar)
+        local fill = make("ImageLabel", { Name = "Fill", Size = UDim2.fromOffset(A.BAR_W, A.BAR_H), BackgroundTransparency = 1,
+            Image = A.img.hpFill or "", ZIndex = 2 }, clip)
+        local hpText = sao(label(root, { Position = UDim2.fromOffset(62, 22 + A.BAR_H + 2), Size = UDim2.fromOffset(A.BAR_W - 20, 16),
+            TextSize = 14, TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.55, TextXAlignment = Enum.TextXAlignment.Right,
+            Text = "" }), true)
+        local hud = { gui = gui, clip = clip, fill = fill, hpText = hpText, lv = lv, name = name }
+        A.hud = hud
+        function hud.update()
+            local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+            local h, mx = hum and hum.Health or 0, hum and hum.MaxHealth or 100
+            local frac = (mx > 0 and math.max(0, math.min(1, h / mx))) or 0
+            clip.Size = UDim2.new(0, math.floor(A.BAR_W * frac + 0.5), 1, 0)
+            fill.ImageColor3 = Color3.fromRGB(A.hpRGB(frac))
+            hpText.Text = string.format("%d / %d", math.floor(h + 0.5), math.floor(mx + 0.5))
+            local Mn = UIAPI.Menu
+            lv.Text = "Lv " .. A.level(Mn and Mn.total and Mn.total() or 0)
+            name.Text = plr.DisplayName
+        end
+        local acc = 0
+        hud.conn = RunService.Heartbeat:Connect(function(dt)
+            acc = acc + dt
+            if acc < 0.1 then return end
+            acc = 0
+            pcall(hud.update)
+        end)
+        pcall(hud.update)
+        return hud
+    end
+
+    table.insert(cleanups, function()
+        A.hudOff()
+        if A.menu and A.menu.gui then pcall(function() A.menu.gui:Destroy() end) end
+        A.on = false
+        A.undecorate()
+    end)
+end)()
+
 -- Extra commands (`UIAPI.Extra`): camera, world, character, player info and logs.
 -- Written for Puppy Admin; the feature list was compared with another admin script's
 -- command names, nothing of its code is used. Everything here is client-side: what it
@@ -13990,7 +14436,14 @@ end)()
     MS.BUILTIN = { move = "assets/sounds/menu_move_v1.mp3", select = "assets/sounds/menu_select_v1.mp3",
         denied = "assets/sounds/menu_denied_v1.mp3" }
 
-    function MS.enabled() return Cfg.uiStyle == "Kingdom Hearts" and Cfg.menuSounds ~= false end
+    function MS.enabled() return (Cfg.uiStyle == "Kingdom Hearts" or Cfg.uiStyle == "Sword Art Online") and Cfg.menuSounds ~= false end
+    -- each style has its own files: Menu_Move... (Kingdom Hearts), SAO_Move... (Sword Art Online)
+    MS.PREFIX = { ["Kingdom Hearts"] = "Menu_", ["Sword Art Online"] = "SAO_" }
+    function MS.fileName(kind)
+        local base = MS.NAMES[kind]
+        if not base then return nil end
+        return (MS.PREFIX[Cfg.uiStyle] or "Menu_") .. base:sub(6)
+    end
 
     -- pure: may this kind play now (the same sound right after itself is skipped)?
     function MS.ready(kind, now)
@@ -14003,9 +14456,10 @@ end)()
 
     -- the Sound for a kind: the first of .ogg / .mp3 / .wav that exists and Roblox accepts
     function MS.load(kind)
-        local e = MS.sounds[kind]
+        local key = MS.fileName(kind) or kind
+        local e = MS.sounds[key]
         if e ~= nil then return e or nil end
-        MS.sounds[kind] = false
+        MS.sounds[key] = false
         local getAsset = (type(getcustomasset) == "function" and getcustomasset) or (type(getsynasset) == "function" and getsynasset)
         if not (getAsset and type(isfile) == "function") then return nil end
         local function make(id, path)
@@ -14014,11 +14468,11 @@ end)()
             snd.SoundId = id
             snd.Volume = MS.VOLUME
             snd.Parent = game:GetService("SoundService")
-            MS.sounds[kind] = { snd = snd, path = path }
-            return MS.sounds[kind]
+            MS.sounds[key] = { snd = snd, path = path }
+            return MS.sounds[key]
         end
         for _, ext in ipairs(MS.EXTS) do
-            local path = MS.DIR .. "/" .. MS.NAMES[kind] .. "." .. ext
+            local path = MS.DIR .. "/" .. MS.fileName(kind) .. "." .. ext
             local okF, has = pcall(isfile, path)
             if okF and has then
                 local okA, id = pcall(getAsset, path)
@@ -14026,7 +14480,7 @@ end)()
             end
         end
         -- none of the player's own: the built-in sound from the repository (downloaded once, then cached)
-        local url = MS.USE_BUILTIN and MS.BUILTIN[kind] and (SETTINGS.Auras.assetBase .. MS.BUILTIN[kind])
+        local url = MS.USE_BUILTIN and Cfg.uiStyle == "Kingdom Hearts" and MS.BUILTIN[kind] and (SETTINGS.Auras.assetBase .. MS.BUILTIN[kind])
         local id = url and urlImageAsset(url, "sound")
         if id then return make(id, "built-in " .. MS.BUILTIN[kind]:match("[^/]+$")) end
         return nil
@@ -14054,7 +14508,7 @@ end)()
             local e = MS.load(kind)
             local text
             if not e then
-                text = MS.NAMES[kind] .. ": no file (put it in " .. MS.DIR .. " as .ogg, .mp3 or .wav)"
+                text = MS.fileName(kind) .. ": no file (put it in " .. MS.DIR .. " as .ogg, .mp3 or .wav)"
             else
                 local len = 0
                 pcall(function() len = e.snd.TimeLength end)
@@ -14101,7 +14555,7 @@ end)()
 do
     local K = { on = false, conns = {}, gui = nil, glove = nil, light = nil, target = nil }
     UIAPI.KHStyle = K
-    K.STYLES = { "Standard", "Kingdom Hearts" }
+    K.STYLES = { "Standard", "Kingdom Hearts", "Sword Art Online" }
     local TAG = "PuppyKH"
     local GuiService = game:GetService("GuiService")
 
@@ -14501,14 +14955,18 @@ do
     -- name: "Standard" or "Kingdom Hearts". quiet = at start-up (theme, font and cursor are
     -- already the saved ones). Yields while the font / images download.
     function K.set(name, quiet)
+        if name ~= "Kingdom Hearts" and name ~= "Sword Art Online" then name = "Standard" end
         local on = name == "Kingdom Hearts"
-        if on and not quiet and Cfg.uiStyle ~= "Kingdom Hearts" then
+        -- the look before any styled UI is kept, so Standard brings it back (KH <-> SAO keeps it)
+        if name ~= "Standard" and not quiet and (Cfg.uiStyle or "Standard") == "Standard" then
             local preset = type(Cfg.theme) == "table" and Cfg.theme.preset or nil
             Cfg.khPrev = { preset = preset, font = Cfg.uiFont, cursor = Cfg.cursor }
         end
-        Cfg.uiStyle = on and "Kingdom Hearts" or "Standard"
+        Cfg.uiStyle = name
         undecorate()
         K.on = on
+        if UIAPI.SAOStyle then pcall(UIAPI.SAOStyle.apply, name == "Sword Art Online", quiet) end
+        if UIAPI.MenuSound then pcall(UIAPI.MenuSound.reload) end -- each style has its own sound files
         if on then
             pcall(K.loadArt)
             if not quiet then
@@ -14518,7 +14976,7 @@ do
             end
             decorateAll()
             pointerGui()
-        elseif not quiet then
+        elseif name == "Standard" and not quiet then
             local prev = type(Cfg.khPrev) == "table" and Cfg.khPrev or {}
             if not (prev.preset and Theme.usePreset(prev.preset)) then Theme.usePreset("Default") end
             pcall(UIFont.set, prev.font or "Default", true)
@@ -14700,18 +15158,22 @@ do
 
     -- The self HUD belongs to the Kingdom Hearts UI style: it only shows while that style
     -- is on. Cfg.selfHud remembers the choice, so it comes back with the style.
-    function S.allowed() return Cfg.uiStyle == "Kingdom Hearts" end
+    function S.allowed() return Cfg.uiStyle == "Kingdom Hearts" or Cfg.uiStyle == "Sword Art Online" end
 
     function S.refresh()
         S.off()
-        if Cfg.selfHud and S.allowed() then S.build() end
+        local SAO = UIAPI.SAOStyle
+        if SAO then pcall(SAO.hudOff) end
+        if Cfg.selfHud and S.allowed() then
+            if Cfg.uiStyle == "Sword Art Online" and SAO then pcall(SAO.hudOn) else S.build() end
+        end
         if UIAPI.selfHudChanged then pcall(UIAPI.selfHudChanged) end
     end
 
     -- returns ok, message. Yields while the art downloads.
     function S.set(on, quiet)
         if on and not S.allowed() then
-            return false, "The self HUD is part of the Kingdom Hearts UI style: turn it on first (Settings > Look > UI style, or uistyle kh)"
+            return false, "The self HUD is part of the Kingdom Hearts and Sword Art Online UI styles: turn one on first (Settings > Look > UI style, uistyle kh / sao)"
         end
         Cfg.selfHud = on == true
         if not quiet then cfgSave() end
@@ -15206,13 +15668,14 @@ do
     end
 
     -- the menu belongs to the Kingdom Hearts style
-    function M.allowed() return Cfg.uiStyle == "Kingdom Hearts" end
+    function M.allowed() return Cfg.uiStyle == "Kingdom Hearts" or Cfg.uiStyle == "Sword Art Online" end
 
     function H.menu()
         if not M.allowed() then
-            note("Menu", "The menu is part of the Kingdom Hearts UI style: turn it on with uistyle kh (Settings > Look)", RED)
+            note("Menu", "The menu is part of the Kingdom Hearts and Sword Art Online UI styles: uistyle kh or uistyle sao (Settings > Look)", RED)
             return
         end
+        if Cfg.uiStyle == "Sword Art Online" and UIAPI.SAOStyle then UIAPI.SAOStyle.toggleMenu(); return end
         local p = UIAPI.panels.menu
         if p then p.Visible = not p.Visible; UIAPI.sync() end
     end
@@ -15220,7 +15683,7 @@ do
     -- the style changed: the MENU button follows it, and the menu closes without it
     function M.styleChanged()
         if UIAPI.menuBtn then UIAPI.menuBtn.Visible = M.allowed() end
-        if not M.allowed() then
+        if Cfg.uiStyle ~= "Kingdom Hearts" then
             local p = rawget(UIAPI.panels, "menu")
             if p then p.Visible = false end
         end
@@ -15392,7 +15855,7 @@ local function createUI()
     }, frame)
     menuBtn.MouseButton1Click:Connect(function() if H.menu then H.menu() end end)
     UIAPI.menuBtn = menuBtn
-    menuBtn.Visible = Cfg.uiStyle == "Kingdom Hearts"
+    menuBtn.Visible = Cfg.uiStyle == "Kingdom Hearts" or Cfg.uiStyle == "Sword Art Online"
 
     local inputContainer = make("Frame", {
         Size = UDim2.new(1, -30, 0, 35),
@@ -15843,7 +16306,7 @@ local function createUI()
 
     ---------------------------------------------------------------- Look
     local look = pages.Look
-    fieldLabel(look, "UI style (Kingdom Hearts: blue menus, KH font, pointing glove)", 4)
+    fieldLabel(look, "UI style (Kingdom Hearts: blue menus, glove / Sword Art Online: light panels, icon menu)", 4)
     local KH = UIAPI.KHStyle
     uiDropdown(look, "UI style: ", UDim2.new(1, -30, 0, 28), UDim2.new(0, 15, 0, 24), KH.STYLES,
         table.find(KH.STYLES, Cfg.uiStyle) or 1, function(_, name)
@@ -15856,7 +16319,7 @@ local function createUI()
     local sndBtn = actionButton(look, "", UDim2.new(0.5, 4, 0, 58), UDim2.new(0.5, -19, 0, 28))
     sndBtn.TextSize = 12
     local function sndText()
-        sndBtn.Text = "Menu sounds: " .. (Cfg.menuSounds ~= false and "on" or "off") .. (Cfg.uiStyle == "Kingdom Hearts" and "" or " (KH style)")
+        sndBtn.Text = "Menu sounds: " .. (Cfg.menuSounds ~= false and "on" or "off") .. (Cfg.uiStyle ~= "Standard" and "" or " (KH / SAO style)")
     end
     sndText()
     UIAPI.MenuSound.changed = sndText
@@ -15868,7 +16331,7 @@ local function createUI()
     hudBtn.TextSize = 12
     local function hudText()
         if not UIAPI.SelfHud.allowed() then
-            hudBtn.Text = "Self HUD: needs the Kingdom Hearts UI style"
+            hudBtn.Text = "Self HUD: needs the KH or SAO UI style"
             hudBtn.TextColor3 = Color3.fromRGB(150, 150, 160)
         else
             hudBtn.Text = Cfg.selfHud and "Self HUD: on" or "Self HUD: off (click to show)"
@@ -18382,8 +18845,9 @@ do
     if Cfg.cursor and Cfg.cursor ~= "Default" then
         task.spawn(function() pcall(UIAPI.Cursor.set, Cfg.cursor, true) end)
     end
-    if Cfg.uiStyle == "Kingdom Hearts" then
-        task.delay(0.5, function() pcall(UIAPI.KHStyle.set, "Kingdom Hearts", true) end)
+    if Cfg.uiStyle == "Kingdom Hearts" or Cfg.uiStyle == "Sword Art Online" then
+        local style = Cfg.uiStyle
+        task.delay(0.5, function() pcall(UIAPI.KHStyle.set, style, true) end)
     end
     if Cfg.barHidden then pcall(UIAPI.setBarVisible, false, true) end
 
