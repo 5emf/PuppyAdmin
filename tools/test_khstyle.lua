@@ -15,7 +15,8 @@ local function new(class, props)
     for k, v in pairs(props or {}) do o[k] = v end
     return o
 end
-function Inst:IsA(c) return self.ClassName == c end
+function Inst:IsA(c) return self.ClassName == c or (c == "GuiObject" and self.ClassName ~= "UICorner" and self.ClassName ~= "UIGradient" and self.ClassName ~= "UIStroke") end
+function Inst:GetChildren() local t = {} for i, c in ipairs(self.children) do t[i] = c end return t end
 function Inst:GetAttribute(k) return self.attrs and self.attrs[k] end
 function Inst:SetAttribute(k, v) self.attrs = self.attrs or {}; self.attrs[k] = v end
 function Inst:FindFirstChild(n) for _, ch in ipairs(self.children) do if ch.Name == n then return ch end end end
@@ -32,7 +33,8 @@ setmetatable(Inst, { __index = function(_, k) end })
 local _new = new
 new = function(class, props)
     local o = _new(class, props)
-    o.MouseEnter, o.MouseLeave, o.DescendantAdded, o.MouseButton1Click = sig(), sig(), sig(), sig()
+    o.MouseEnter, o.MouseLeave, o.DescendantAdded, o.MouseButton1Click, o.Changed = sig(), sig(), sig(), sig(), sig()
+    o.ZIndex = o.ZIndex or 1
     o.__newindexhook = true
     setmetatable(o, { __index = Inst, __newindex = function(t, k, v) if k == "Parent" and v then rawset(t, "Parent", v); table.insert(v.children, t) else rawset(t, k, v) end end })
     return o
@@ -45,6 +47,12 @@ title.attrs = { PuppyAdminTitle = true }
 new("UICorner").Parent = win
 local btn = new("TextButton", { AbsoluteSize = vec(120, 28), AbsolutePosition = vec(140, 90), BackgroundColor3 = "navy", BackgroundTransparency = 0.3 }); btn.Parent = win
 local small = new("Frame", { AbsoluteSize = vec(20, 20) }); small.Parent = win
+-- a rounded button and a rounded panel: they take the new shapes
+local rb = new("TextButton", { AbsoluteSize = vec(120, 28), BackgroundColor3 = "blue", BackgroundTransparency = 0.2, Text = "Go",
+    TextTransparency = 0, TextColor3 = "white" }); rb.Parent = win
+new("UICorner").Parent = rb
+local rf = new("Frame", { AbsoluteSize = vec(200, 40), BackgroundColor3 = "card", BackgroundTransparency = 0.1 }); rf.Parent = win
+new("UICorner").Parent = rf
 local rs = sig()
 -- UDim2 with Scale / Offset and +
 local u2mt = {}
@@ -91,6 +99,18 @@ check(K.glove.Visible and K.glove.Position.X.Offset < 140 and math.abs(K.glove.P
 check(btn.BackgroundColor3 == K.SELECT and btn:FindFirstChild("PuppyKHSelect") ~= nil, "hovered button turns red with a red outline")
 btn.MouseLeave:fire(); rs:fire()
 check(not K.glove.Visible, "glove hides when the mouse leaves")
+local face, rtext = rb:FindFirstChild("PuppyKHFace"), rb:FindFirstChild("PuppyKHText")
+check(face and rb:FindFirstChild("PuppyKHButtonRim") and rtext and not rb:FindFirstChildOfClass("UIGradient"), "rounded button: new face, rim and text")
+check(rb.BackgroundTransparency == 1 and rb.TextTransparency == 1 and face.ImageColor3 == "blue" and face.ImageTransparency == 0.2
+    and rtext.Text == "Go" and rtext.TextColor3 == "white" and rtext.ZIndex > face.ZIndex, "the face takes the button's colour, its text sits on top")
+rb.MouseEnter:fire(); rb.Changed:fire("BackgroundColor3"); rb.Changed:fire("BackgroundTransparency")
+check(face.ImageColor3 == K.SELECT and rb:FindFirstChild("PuppyKHSelect") and rb.BackgroundTransparency == 1, "hover: the face turns red, red outline")
+rb.MouseLeave:fire(); rb.Changed:fire("BackgroundColor3")
+check(face.ImageColor3 == "blue" and face.ImageTransparency == 0.2 and rb.BackgroundTransparency == 1, "leave: its own colour back")
+rb.Text = "Stop"; rb.Changed:fire("Text")
+check(rtext.Text == "Stop", "text changes follow")
+local box = rf:FindFirstChild("PuppyKHFace")
+check(box and rf:FindFirstChild("PuppyKHBoxRim") and box.ImageColor3 == "card" and rf.BackgroundTransparency == 1, "rounded panel: the framed box")
 check(btn.BackgroundColor3 ~= K.SELECT and btn:FindFirstChild("PuppyKHSelect") == nil, "leaving restores the button's own colours")
 local late = new("TextButton"); late.Parent = win; screen.DescendantAdded:fire(late)
 check(late:FindFirstChildOfClass("UIGradient") ~= nil, "buttons made later are styled too")
@@ -99,6 +119,8 @@ K.set("Standard")
 check(env.Cfg.uiStyle == "Standard" and applied.preset == "Midnight" and applied.font == "Default" and applied.cursor == "Default", "off restores the previous look")
 check(not btn:FindFirstChildOfClass("UIGradient") and not win:FindFirstChildOfClass("UIGradient") and K.gui == nil, "all KH decorations removed")
 check(not win:FindFirstChild("PuppyKHPanelFill") and title.Text == "Settings" and not title:GetAttribute("PuppyAdminKeepFont"), "window frame removed, title restored")
+check(rb.BackgroundTransparency == 0.2 and rb.TextTransparency == 0 and not rb:FindFirstChild("PuppyKHFace") and not rb:FindFirstChild("PuppyKHText")
+    and rf.BackgroundTransparency == 0.1 and not rf:FindFirstChild("PuppyKHFace"), "off: rounded buttons and panels as they were")
 
 -- self HUD
 local S = env.UIAPI.SelfHud

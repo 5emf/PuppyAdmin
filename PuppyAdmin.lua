@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.25-76" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.25-77" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -14003,7 +14003,8 @@ do
     K.ART = { panelFill = "panel_fill_v1.png", panelRim = "panel_rim_v1.png", header = "header_tint_v1.png", pill = "pill_v1.png", underline = "underline_v1.png",
         -- Puppy Companion's KH shapes (tools/make_kh_shapes.py, from companion khart.py), drawn at 2x
         slab = "slab_v1.png", slabHover = "slab_hover_v1.png", slabSel = "slab_sel_v1.png", cardHead = "cardhead_v1.png",
-        boxFill = "box_fill_v1.png", boxRim = "box_rim_v1.png" }
+        boxFill = "box_fill_v1.png", boxRim = "box_rim_v1.png", button = "button_v1.png", buttonRim = "button_rim_v1.png" }
+    K.BUTTON_SLICE = Rect.new(18, 18, 70, 42)
     K.SLAB_SLICE = Rect.new(30, 30, 90, 42)
     K.BOX_SLICE = Rect.new(32, 32, 64, 64)
     K.DESC = Color3.fromRGB(130, 200, 255) -- description text, like the KH menu's help line
@@ -14027,6 +14028,7 @@ do
         local t = Theme.current
         if name:find("Underline", 1, true) then return K.UNDERLINE end
         if name:find("Slab", 1, true) or name:find("CardHead", 1, true) then return Color3.new(1, 1, 1) end -- fixed colours
+        if name:find("ButtonRim", 1, true) then return t.border end
         if name:find("Fill", 1, true) then return t.surface end
         return t.accent -- rims, strips
     end
@@ -14105,7 +14107,8 @@ do
     -- re-tint every themed layer under root (theme changed)
     function K.retint(root)
         for _, d in ipairs(root:GetDescendants()) do
-            if d:IsA("ImageLabel") and d.Name:sub(1, #TAG) == TAG and d.Name ~= TAG .. "Glove" and d.Name ~= TAG .. "Light" then
+            if d:IsA("ImageLabel") and d.Name:sub(1, #TAG) == TAG and d.Name ~= TAG .. "Glove" and d.Name ~= TAG .. "Light"
+                and d.Name ~= TAG .. "Face" then
                 d.ImageColor3 = K.tintFor(d.Name)
             end
         end
@@ -14141,7 +14144,7 @@ do
         if on then
             if b:GetAttribute(TAG .. "Bg") ~= nil then return end
             b:SetAttribute(TAG .. "Bg", b.BackgroundColor3)
-            b:SetAttribute(TAG .. "BgT", b.BackgroundTransparency)
+            b:SetAttribute(TAG .. "BgT", b:GetAttribute(TAG .. "FaceBgT") or b.BackgroundTransparency)
             b.BackgroundColor3 = K.SELECT
             b.BackgroundTransparency = math.min(b.BackgroundTransparency, 0.1)
             make("UIStroke", { Name = TAG .. "Select", Color = K.SELECT_EDGE, Thickness = 2,
@@ -14150,13 +14153,112 @@ do
             local bg = b:GetAttribute(TAG .. "Bg")
             if bg == nil then return end
             b.BackgroundColor3 = bg
-            b.BackgroundTransparency = b:GetAttribute(TAG .. "BgT") or b.BackgroundTransparency
+            local t = b:GetAttribute(TAG .. "BgT") or b.BackgroundTransparency
+            local face = b:FindFirstChild(TAG .. "Face")
+            if face and b:GetAttribute(TAG .. "FaceBgT") ~= nil then
+                face.ImageTransparency = t -- faced button: its background stays invisible, the face shows it
+                b:SetAttribute(TAG .. "FaceBgT", t)
+                b.BackgroundTransparency = 1
+            else
+                b.BackgroundTransparency = t
+            end
             b:SetAttribute(TAG .. "Bg", nil)
             b:SetAttribute(TAG .. "BgT", nil)
             local st = b:FindFirstChild(TAG .. "Select")
             if st then st:Destroy() end
         end
     end
+
+    -- Rounded buttons and panels take the new shapes (shared with Puppy Companion). Buttons:
+    -- a shaded face tinted with the button's own colour + a rim in the theme's border colour;
+    -- the button's own background and text turn invisible and a copy of the text sits on the
+    -- face (children draw over their parent). Panels: the framed box. Everything follows the
+    -- widget's later changes (colour, hover tweens, text), and is undone when the style is off.
+    K.FACE_PROPS = { "Text", "TextColor3", "TextSize", "FontFace", "TextXAlignment", "TextYAlignment", "TextWrapped",
+        "TextScaled", "RichText", "TextTruncate", "TextStrokeColor3", "TextStrokeTransparency" }
+    K.FACE_SET = {}
+    for _, prop in ipairs(K.FACE_PROPS) do K.FACE_SET[prop] = true end
+    function K.underZ(inst)
+        local z
+        for _, c in ipairs(inst:GetChildren()) do
+            if c:IsA("GuiObject") and c.Name:sub(1, #TAG) ~= TAG and (not z or c.ZIndex < z) then z = c.ZIndex end
+        end
+        return (z or 1) - 1
+    end
+    function K.padOf(inst)
+        local p = inst:FindFirstChildOfClass("UIPadding")
+        if not p then return 0, 0, 0, 0 end
+        return p.PaddingLeft.Offset, p.PaddingRight.Offset, p.PaddingTop.Offset, p.PaddingBottom.Offset
+    end
+    function K.faceLayer(inst, name, image, slice, colour, transparency, z)
+        local l, r, t, b = K.padOf(inst)
+        return make("ImageLabel", { Name = name, Size = UDim2.new(1, l + r, 1, t + b), Position = UDim2.fromOffset(-l, -t),
+            BackgroundTransparency = 1, Image = image or "", ScaleType = Enum.ScaleType.Slice, SliceCenter = slice,
+            SliceScale = 0.5, ImageColor3 = colour, ImageTransparency = transparency, ZIndex = z, Active = false }, inst)
+    end
+    -- keeps the widget's own background invisible; its colour / transparency go to the face
+    function K.followBackground(inst, face, extra)
+        local busy = false
+        table.insert(K.conns, inst.Changed:Connect(function(prop)
+            if busy then return end
+            if prop == "BackgroundTransparency" then
+                local t = inst.BackgroundTransparency
+                if t ~= 1 then
+                    face.ImageTransparency = t
+                    inst:SetAttribute(TAG .. "FaceBgT", t)
+                    busy = true; inst.BackgroundTransparency = 1; busy = false
+                end
+            elseif prop == "BackgroundColor3" then
+                face.ImageColor3 = inst.BackgroundColor3
+            elseif extra then
+                busy = true; pcall(extra, prop); busy = false
+            end
+        end))
+    end
+    function K.faceButton(b)
+        if b:GetAttribute(TAG .. "FaceBgT") ~= nil or b:GetAttribute("PuppyKHSlab") then return end
+        local z = K.underZ(b)
+        local face = K.faceLayer(b, TAG .. "Face", K.img.button, K.BUTTON_SLICE, b.BackgroundColor3, b.BackgroundTransparency, z)
+        local rim = K.faceLayer(b, TAG .. "ButtonRim", K.img.buttonRim, K.BUTTON_SLICE, K.tintFor("ButtonRim"),
+            math.max(b.BackgroundTransparency, 0.15), z)
+        local text = make("TextLabel", { Name = TAG .. "Text", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+            ZIndex = z + 1, TextTransparency = b.TextTransparency, Active = false }, b)
+        for _, prop in ipairs(K.FACE_PROPS) do pcall(function() text[prop] = b[prop] end) end
+        text:SetAttribute("PuppyAdminKeepFont", true) -- it copies the button's font, whatever sets it
+        b:SetAttribute(TAG .. "FaceBgT", b.BackgroundTransparency)
+        b:SetAttribute(TAG .. "FaceTxT", b.TextTransparency)
+        b.BackgroundTransparency, b.TextTransparency = 1, 1
+        K.followBackground(b, face, function(prop)
+            if prop == "TextTransparency" then
+                if b.TextTransparency ~= 1 then
+                    text.TextTransparency = b.TextTransparency
+                    b:SetAttribute(TAG .. "FaceTxT", b.TextTransparency)
+                    b.TextTransparency = 1
+                end
+            elseif K.FACE_SET[prop] then
+                text[prop] = b[prop]
+            end
+        end)
+        return face, rim, text
+    end
+    function K.faceBox(f)
+        if f:GetAttribute(TAG .. "FaceBgT") ~= nil then return end
+        local z = K.underZ(f)
+        local face = K.faceLayer(f, TAG .. "Face", K.img.boxFill, K.BOX_SLICE, f.BackgroundColor3, f.BackgroundTransparency, z)
+        K.faceLayer(f, TAG .. "BoxRim", K.img.boxRim, K.BOX_SLICE, K.tintFor("Rim"), math.max(f.BackgroundTransparency, 0.2), z)
+        f:SetAttribute(TAG .. "FaceBgT", f.BackgroundTransparency)
+        f.BackgroundTransparency = 1
+        K.followBackground(f, face)
+        return face
+    end
+    function K.unface(inst)
+        local bt, tt = inst:GetAttribute(TAG .. "FaceBgT"), inst:GetAttribute(TAG .. "FaceTxT")
+        if bt ~= nil then inst.BackgroundTransparency = bt end
+        if tt ~= nil then inst.TextTransparency = tt end
+        inst:SetAttribute(TAG .. "FaceBgT", nil)
+        inst:SetAttribute(TAG .. "FaceTxT", nil)
+    end
+    function K.rounded(inst) return inst:FindFirstChildOfClass("UICorner") ~= nil end
 
     local function decorate(inst)
         if not K.on or skip(inst) then return end
@@ -14166,15 +14268,17 @@ do
             table.insert(K.conns, inst.MouseEnter:Connect(function() K.target = inst end))
             table.insert(K.conns, inst.MouseLeave:Connect(function() if K.target == inst then K.target = nil end end))
         elseif inst:IsA("TextButton") then
-            shade(inst, Color3.fromRGB(160, 175, 225))
+            if K.rounded(inst) then pcall(K.faceButton, inst) else shade(inst, Color3.fromRGB(160, 175, 225)) end
             table.insert(K.conns, inst.MouseEnter:Connect(function() K.target = inst; pcall(K.select, inst, true) end))
             table.insert(K.conns, inst.MouseLeave:Connect(function()
                 if K.target == inst then K.target = nil end
                 pcall(K.select, inst, false)
             end))
-        elseif inst:IsA("Frame") and inst.BackgroundTransparency < 0.9 and inst:FindFirstChildOfClass("UICorner")
-            and inst.AbsoluteSize.X >= 150 and inst.AbsoluteSize.Y >= 100 then
-            shade(inst, Color3.fromRGB(95, 120, 190)) -- window-sized panels: lighter at the top, deeper below
+        elseif inst:GetAttribute("PuppyAdminWindow") and inst.BackgroundTransparency < 0.9 then
+            shade(inst, Color3.fromRGB(95, 120, 190)) -- windows: lighter at the top, deeper below (plus the ornate panel)
+        elseif inst.ClassName == "Frame" and inst.BackgroundTransparency < 0.9 and K.rounded(inst)
+            and not inst:GetAttribute("PuppyAdminWindow") and inst.AbsoluteSize.X >= 40 and inst.AbsoluteSize.Y >= 24 then
+            pcall(K.faceBox, inst) -- rounded panels, cards, input boxes: the framed box
         end
     end
 
@@ -14233,6 +14337,7 @@ do
             if root.Parent then
                 for _, d in ipairs(root:GetDescendants()) do
                     if d:GetAttribute(TAG .. "Bg") ~= nil then pcall(K.select, d, false) end
+                    if d:GetAttribute(TAG .. "FaceBgT") ~= nil then pcall(K.unface, d) end
                     if d.Name:sub(1, #TAG) == TAG then pcall(function() d:Destroy() end)
                     elseif d:GetAttribute(TAG .. "Text") ~= nil then pcall(unstyleTitle, d) end
                 end

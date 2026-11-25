@@ -6,6 +6,9 @@ so both apps draw the same menu: written to assets/hud/ at 2x (used with SliceSc
   cardhead_v1.png                - a status card's name plate (dark, round top corners, fixed colours)
   box_fill_v1.png                - framed box body (white: tinted with the theme's surface)
   box_rim_v1.png                 - framed box rim + inner line (white: tinted with the theme's accent)
+  button_v1.png                  - button body: shaded top to bottom like Puppy Admin's buttons, light gloss
+                                   (light grey: tinted with the button's own colour)
+  button_rim_v1.png              - the button's outline (white: tinted with the theme's border colour)
 
 Each shape is drawn twice, on black and on white, and the alpha is recovered from the difference,
 so the anti-aliased edges are real transparency. Run: python3 tools/make_kh_shapes.py
@@ -54,6 +57,11 @@ def main():
     to_png(lambda back: khart.shape(s, s, 11 * K, WHITE, WHITE, WHITE, 0, back), "box_fill_v1.png")
     # rim only: the body is drawn in the background colour, so it comes out transparent
     to_png(lambda back: khart.panel(back, WHITE, back, K), "box_rim_v1.png")
+    body = (232, 232, 232)
+    bw, bh = round(44 * K), round(30 * K)
+    to_png(lambda back: khart.shape(bw, bh, 7 * K, body, khart.multiply(body, khart.BUTTON_SHADE), body, 0, back, gloss=0.14),
+           "button_v1.png")
+    to_png(lambda back: khart.shape(bw, bh, 7 * K, back, back, WHITE, 1.5 * K, back), "button_rim_v1.png")
 
 
 if __name__ == "__main__":
