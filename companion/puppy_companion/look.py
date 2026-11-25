@@ -29,6 +29,8 @@ PRESETS = [
                  "dim": (190, 150, 155), "border": (86, 40, 46), "on": (230, 70, 80)}),
     ("Light", {"bg": (240, 240, 244), "surface": (226, 226, 232), "accent": (60, 110, 230), "text": (24, 24, 28),
                "dim": (100, 100, 110), "border": (190, 190, 200), "on": (60, 170, 90)}),
+    ("Sword Art Online", {"bg": (232, 234, 238), "surface": (248, 248, 250), "accent": (245, 155, 40), "text": (62, 64, 72),
+                          "dim": (128, 132, 142), "border": (194, 198, 206), "on": (110, 200, 80)}),
     ("Kingdom Hearts", {"bg": (6, 10, 40), "surface": (12, 24, 96), "accent": (60, 130, 255), "text": (255, 255, 255),
                         "dim": (170, 190, 240), "border": (40, 90, 240), "on": (255, 214, 92)}),
 ]
@@ -142,5 +144,6 @@ def cursor_spec(choice, custom_path=""):
 STYLES = {
     "Standard": {"preset": "Companion", "font": "Default", "cursor": "Default"},
     "Kingdom Hearts": {"preset": "Kingdom Hearts", "font": "KH Menu", "cursor": "Glove"},
+    "Sword Art Online": {"preset": "Sword Art Online", "font": "SAO UI", "cursor": "Default"},
 }
 

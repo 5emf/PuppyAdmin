@@ -20,6 +20,9 @@ FONTS = {
     "Kingdom Hearts": ("Kingdom Hearts", ("KingdomHearts.ttf",)),
     "KH Scala (symbols)": ("KHScala", ("KHScala.ttf",)),
     "KH Scala Script (symbols)": ("KHScala KHScala", ("KHScalaScript.ttf",)),
+    # Sword Art Online-style fan fonts supplied by the owner (assets/fonts/SAO_FONTS_CREDIT.txt)
+    "SAO UI": ("SAO UI TT", ("SAOUI.ttf", "SAOUIBold.ttf")),
+    "SAO Welcome": ("SAO Welcome TT", ("SAOWelcome.ttf", "SAOWelcomeBold.ttf")),
 }
 
 _loaded = set()

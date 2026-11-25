@@ -71,6 +71,19 @@ class ShapesTest(unittest.TestCase):
         data = khart.rows_data([[(255, 0, 0), (0, 0, 255)]])
         self.assertEqual(data, "{#ff0000 #0000ff}")
 
+    def test_sao_helpers(self):
+        from puppy_companion import saostyle
+        self.assertEqual(saostyle.slanted(0, 0, 100, 20, 8), [8, 0, 100, 0, 92, 20, 0, 20])
+        self.assertEqual(saostyle.bar_rgb(0.9)[1], 200)
+        self.assertEqual(saostyle.bar_rgb(0.3), (240, 205, 60))
+        self.assertEqual(saostyle.icon_index("config"), 7)
+        self.assertEqual(saostyle.icon_index("nope"), 6)
+        rows = saostyle.button_face(BG, 1.0, "hover")
+        self.assertTrue(close(rows[len(rows) // 2][len(rows[0]) // 2], saostyle.ORANGE, 25), "hover is orange")
+        self.assertFalse(close(rows[0][0], BG, 5), "square corners: the corner is not background")
+        for sheet in ("grey", "white"):
+            self.assertTrue(os.path.isfile(os.path.join(saostyle.ICON_DIR, "icons_%s.png" % sheet)))
+
     def test_menu_item_and_clock(self):
         from puppy_companion import khmenu
         sel = khart.menu_item(BG, 1.0, "selected")
@@ -279,7 +292,8 @@ class KHWindowTest(unittest.TestCase):
         played_test = []
         self.assertFalse(self.app.kh_sound("select"), "standard style: silent")
         self.assertTrue(self.app.test_sound(), "the Test button plays even in the standard style")
-        self.assertIn("only play in the Kingdom Hearts style", self.app.log_text.get("1.0", "end"), "and says why menus are silent")
+        self.assertIn("only play in the Kingdom Hearts and Sword Art Online styles", self.app.log_text.get("1.0", "end"),
+                      "and says why menus are silent")
         self.app.set_style("Kingdom Hearts")
         self.app.sounds.last.clear()
         self.assertTrue(self.app.kh_sound("select"))
@@ -307,6 +321,67 @@ class KHWindowTest(unittest.TestCase):
             self.app.kh_sound("move")
         log = self.app.log_text.get("1.0", "end")
         self.assertEqual(log.count("Menu sounds: no Menu_Move (.wav or .mp3)"), 1, log)
+
+    def test_sword_art_online_style(self):
+        from puppy_companion import khmenu, saostyle
+        normal_button = self.style.layout("TButton")
+        self.app.set_preset("Forest")
+        self.app.set_style("Sword Art Online")
+        self.assertEqual(self.settings.get("ui_style"), "Sword Art Online")
+        self.assertEqual(self.settings.get("kh_prev")["theme_preset"], "Forest")
+        self.assertEqual(self.settings.get("font"), "SAO UI")
+        self.assertIn("SAOButton.bg", self.element_names(self.style.layout("TButton")))
+        self.assertIn("SAOFrame.border", self.element_names(self.style.layout("TLabelframe")))
+        self.assertEqual(str(self.app.nb.cget("style")), "SAOMenu.TNotebook")
+        self.root.update()
+        sao = self.app.sao
+        self.assertTrue(sao.active and sao.column.winfo_ismapped() and sao.stripe.winfo_ismapped() and sao.bottom.winfo_ismapped())
+        self.assertEqual([n for _, n in sao.buttons], ["Accounts", "Launch", "Manage", "Look", "Settings"], "one round icon per page")
+        self.assertFalse(self.app.khmenu.menu.winfo_ismapped(), "no KH menu list in the SAO style")
+        sao.choose(3)
+        self.assertEqual(self.app.nb.index("current"), 3, "an icon opens its page")
+        self.assertIn("UI STYLE", sao.bottom.cget("text").upper())
+        sao.set_hover("Launch")
+        self.assertIn("LAUNCH", sao.bottom.cget("text"))
+        sao.set_hover(None, "Launch")
+        self.assertIn("LOOK", sao.bottom.cget("text"), "the description falls back to the open page")
+        self.assertTrue(sao.hud.winfo_ismapped() and sao.hud.find_all(), "the slanted bar is drawn")
+        self.assertFalse(self.app.kh_glove_shown(), "no glove in the SAO style")
+        # SAO -> KH -> Standard: each switch puts its own look in place and the old look comes back
+        self.app.set_style("Kingdom Hearts")
+        self.root.update()
+        self.assertFalse(sao.active or sao.column.winfo_ismapped())
+        self.assertIn("KHButton.bg", self.element_names(self.style.layout("TButton")))
+        self.assertEqual(self.settings.get("kh_prev")["theme_preset"], "Forest", "KH after SAO keeps the look from before")
+        self.app.set_style("Sword Art Online")
+        self.app.set_style("Standard")
+        self.root.update()
+        self.assertEqual(self.style.layout("TButton"), normal_button)
+        self.assertEqual(str(self.app.nb.cget("style")), "TNotebook")
+        self.assertEqual(self.settings.get("theme_preset"), "Forest")
+        self.assertFalse(sao.column.winfo_ismapped())
+        self.assertTrue(self.app.title_lbl.winfo_ismapped() and self.app.version_lbl.winfo_ismapped())
+
+    def test_sao_sound_files(self):
+        from puppy_companion import khmenu
+        ws = os.path.join(self.tmp, "ws")
+        os.makedirs(khmenu.sound_dir(ws))
+        self.settings.set("workspace", ws)
+        for name in ("Menu_Select.wav", "SAO_Select.mp3"):
+            open(os.path.join(khmenu.sound_dir(ws), name), "wb").close()
+        played = []
+        self.app.sounds = khmenu.MenuSounds(player=lambda p: played.append(os.path.basename(p)) or True)
+        self.app.set_style("Kingdom Hearts")
+        self.app.sounds.last.clear()
+        self.app.kh_sound("select")
+        self.app.set_style("Sword Art Online")
+        self.app.sounds.last.clear()
+        self.app.kh_sound("select")
+        self.assertEqual(played, ["Menu_Select.wav", "SAO_Select.mp3"], "each style plays its own files")
+        self.app.sounds.last.clear()
+        self.assertFalse(self.app.kh_sound("move"), "no SAO_Move: silent")
+        self.assertEqual(khmenu.file_prefix("C:/x/9b93-SAO_Denied.mp3"), "SAO_")
+        self.assertEqual(khmenu.style_name("denied", "SAO_"), "SAO_Denied")
 
     def test_style_survives_a_restart(self):
         self.app.set_style("Kingdom Hearts")

@@ -10,7 +10,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from tkinter import font as tkfont
 
-from . import fonts, kh_data, khart, khmenu, launch, look, manage, update, workspace
+from . import fonts, kh_data, khart, khmenu, launch, look, manage, saostyle, update, workspace
 from .icon_data import ICON_32, ICON_64
 from .launch_queue import LaunchJob, LaunchQueue
 from .redact import redact
@@ -246,6 +246,7 @@ class CompanionApp:
         self.log_text.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
         self.khmenu = khmenu.KHMenu(self)  # the KH style's menu screen (shown by apply_kh)
+        self.sao = saostyle.SAOStyle(self)  # the Sword Art Online style (shown by apply_kh)
 
     def _build_accounts(self):
         tab = ttk.Frame(self.nb, padding=self.px(12))
@@ -468,11 +469,21 @@ class CompanionApp:
     def kh_on(self):
         return self.settings.get("ui_style") == "Kingdom Hearts"
 
+    def sao_on(self):
+        return self.settings.get("ui_style") == saostyle.NAME
+
+    def styled(self):
+        """Kingdom Hearts or Sword Art Online: the styles with menu sounds."""
+        return self.kh_on() or self.sao_on()
+
+    def sound_prefix(self):
+        return "SAO_" if self.sao_on() else "Menu_"
+
     def kh_sound(self, kind):
         """Menu sounds: Kingdom Hearts style only, with the setting on, files in PuppyAdmin/sounds."""
-        if getattr(self, "sounds", None) is None or not self.kh_on() or not self.settings.get("menu_sounds"):
+        if getattr(self, "sounds", None) is None or not self.styled() or not self.settings.get("menu_sounds"):
             return False
-        ok = self.sounds.play(self.settings.get("workspace"), kind)
+        ok = self.sounds.play(self.settings.get("workspace"), kind, prefix=self.sound_prefix())
         why = self.sounds.why
         if not ok and why and why not in self._sound_told:
             self._sound_told.add(why)  # say once why it is silent, never in a loop
@@ -482,14 +493,14 @@ class CompanionApp:
     def test_sound(self):
         """The Test button: plays Menu_Select whatever the style, and says exactly what happened."""
         ws = self.settings.get("workspace")
-        ok = self.sounds.play(ws, "select", force=True)
+        ok = self.sounds.play(ws, "select", force=True, prefix=self.sound_prefix())
         if ok:
             self.log("Menu sounds: played %s." % self.sounds.path, sound=False)
         else:
             self.log("Menu sounds test: %s" % self.sounds.why, sound=False)
         notes = []
-        if not self.kh_on():
-            notes.append("they only play in the Kingdom Hearts style")
+        if not self.styled():
+            notes.append("they only play in the Kingdom Hearts and Sword Art Online styles")
         if not self.settings.get("menu_sounds"):
             notes.append("the Menu sounds switch is off")
         if notes:
@@ -500,7 +511,7 @@ class CompanionApp:
     SOUND_CLASSES = ("TButton", "TCheckbutton", "TRadiobutton", "TCombobox")
 
     def _kh_sound_enter(self, e):
-        if self.kh_on():
+        if self.styled():
             self.kh_sound("move")
 
     def _kh_sound_click(self, e):
@@ -537,7 +548,12 @@ class CompanionApp:
                 st["active"] = False
             self._kh_target = None
             self._kh_hide_glove()
+            self.sao.apply(self.sao_on())
+            if self.sao_on():
+                self._bind_sounds()
             return
+        self.sao.apply(False)
+        self._bind_sounds()
         k = self.k
         bg, card, field, line = (khart.hex_rgb(c) for c in (BG, CARD, FIELD, LINE))
         accent, accent_lo = khart.hex_rgb(ACCENT), khart.hex_rgb(ACCENT_LO)
@@ -602,6 +618,15 @@ class CompanionApp:
             self._kh_ticking = True
             self._kh_tick()
 
+    def _bind_sounds(self):
+        """Menu sounds on hover / click of buttons and other controls (once, for both styles)."""
+        if getattr(self, "_sounds_bound", False):
+            return
+        self._sounds_bound = True
+        for cls in self.SOUND_CLASSES:
+            self.root.bind_class(cls, "<Enter>", self._kh_sound_enter, add="+")
+            self.root.bind_class(cls, "<ButtonRelease-1>", self._kh_sound_click, add="+")
+
     def _kh_draw_title(self, family, scale):
         k = self.k
         c = self.kh_title
@@ -649,9 +674,7 @@ class CompanionApp:
             for cls in ("TButton",):
                 self.root.bind_class(cls, "<Enter>", self._kh_enter, add="+")
                 self.root.bind_class(cls, "<Leave>", self._kh_leave, add="+")
-            for cls in self.SOUND_CLASSES:
-                self.root.bind_class(cls, "<Enter>", self._kh_sound_enter, add="+")
-                self.root.bind_class(cls, "<ButtonRelease-1>", self._kh_sound_click, add="+")
+
         self.kh_glove.configure(bg=BG)
         if self._kh_glove_win is not None:
             try:
@@ -797,14 +820,17 @@ class CompanionApp:
         ttk.Label(srow, text="UI style").pack(side="left", padx=self.pad(0, 8))
         ttk.Button(srow, text="Kingdom Hearts", style="Accent.TButton",
                    command=lambda: self.set_style("Kingdom Hearts")).pack(side="left", padx=self.pad(0, 6))
+        ttk.Button(srow, text="Sword Art Online", style="Accent.TButton",
+                   command=lambda: self.set_style("Sword Art Online")).pack(side="left", padx=self.pad(0, 6))
         ttk.Button(srow, text="Standard", command=lambda: self.set_style("Standard")).pack(side="left")
         ttk.Label(th, style="Dim.TLabel", wraplength=self.px(760), text="Kingdom Hearts = Puppy Admin's KH menu look: "
                   "red hover with a pointing glove, framed panels, the title capsule, plus the KH theme, font and cursor. "
-                  "Standard brings back your look from before.").pack(anchor="w", pady=self.pad(0, 8))
+                  "Sword Art Online = light square panels, orange highlights, a column of round page icons and a "
+                  "slanted bar, with the SAO UI font. Standard brings back your look from before.").pack(anchor="w", pady=self.pad(0, 8))
         snd = ttk.Frame(th)
         snd.pack(anchor="w", pady=self.pad(0, 8))
         self.menu_sounds_var = tk.BooleanVar(value=bool(self.settings.get("menu_sounds")))
-        ttk.Checkbutton(snd, text="Menu sounds (Kingdom Hearts style)", variable=self.menu_sounds_var,
+        ttk.Checkbutton(snd, text="Menu sounds (KH / SAO style)", variable=self.menu_sounds_var,
                         command=lambda: self.set_menu_sounds(self.menu_sounds_var.get())).pack(side="left")
         ttk.Button(snd, text="Add sound files...", command=self.import_sounds).pack(side="left", padx=self.pad(10, 0))
         ttk.Button(snd, text="Test sound", command=self.test_sound).pack(side="left", padx=self.pad(6, 0))
@@ -874,13 +900,13 @@ class CompanionApp:
         """Kingdom Hearts: saves the current look, then the KH theme, font, cursor and menu
         look (apply_kh). Standard: the look from before the KH style, else the app's default."""
         st = look.STYLES[name]
-        was_kh = self.kh_on()
-        if name == "Kingdom Hearts" and not was_kh:
+        was_styled = self.styled()
+        if name != "Standard" and not was_styled:  # KH <-> SAO keeps the look from before either
             self.settings.set("kh_prev", {key: self.settings.get(key) for key in self.LOOK_KEYS})
         values = {"theme_preset": st["preset"], "theme_colors": {}, "font": st["font"], "cursor": st["cursor"]}
         if name == "Standard":
             prev = self.settings.get("kh_prev") or {}
-            if was_kh and isinstance(prev, dict) and prev:
+            if was_styled and isinstance(prev, dict) and prev:
                 values.update({key: prev[key] for key in self.LOOK_KEYS if key in prev})
             self.settings.set("kh_prev", {})
         for key, value in values.items():
@@ -899,15 +925,18 @@ class CompanionApp:
 
     def update_sound_label(self):
         ws = self.settings.get("workspace")
-        found = self.sounds.found(ws) if ws else {k: False for k in khmenu.SOUND_FILES}
-        own = [khmenu.SOUND_FILES[k] for k in ("move", "select", "denied") if found[k]]
+        own = []
+        for prefix in ("Menu_", "SAO_"):
+            found = self.sounds.found(ws, prefix) if ws else {k: False for k in khmenu.SOUND_FILES}
+            own += [khmenu.style_name(k, prefix) for k in ("move", "select", "denied") if found[k]]
         text = ("Built-in menu sounds are included. " if khmenu.USE_BUILTIN else
                 "Menu sounds play from your own files only. ")
         if own:
-            text += "Your own files are used instead: %s (in %s). " % (", ".join(own), khmenu.sound_dir(ws))
+            text += "Found: %s (in %s). " % (", ".join(own), khmenu.sound_dir(ws))
         else:
-            text += ("To use your own, put Menu_Move, Menu_Select and Menu_Denied (.mp3 or .wav) in PuppyAdmin/sounds in "
-                     "your executor folder (Add sound files... copies them there; Puppy Admin uses the same .mp3 files).")
+            text += ("Put Menu_Move, Menu_Select and Menu_Denied (Kingdom Hearts) or SAO_Move, SAO_Select and SAO_Denied "
+                     "(Sword Art Online), .mp3 or .wav, in PuppyAdmin/sounds in your executor folder (Add sound files... "
+                     "copies them there; Puppy Admin uses the same .mp3 files).")
         try:
             self.sound_lbl.configure(text=text)
         except (tk.TclError, AttributeError):
@@ -927,13 +956,14 @@ class CompanionApp:
         for p in paths or ():
             kind = khmenu.kind_for_file(p)
             if not kind:
-                self.log("%s: name it Menu_Move, Menu_Select or Menu_Denied so it is clear which sound it is." % os.path.basename(p))
+                self.log("%s: name it Menu_Move / Menu_Select / Menu_Denied (Kingdom Hearts) or SAO_Move / SAO_Select / "
+                         "SAO_Denied (Sword Art Online) so it is clear which sound it is." % os.path.basename(p))
                 continue
             ext = os.path.splitext(p)[1].lower()
             if ext not in khmenu.SOUND_EXTS:
                 self.log("%s: only .wav and .mp3 files can be used." % os.path.basename(p))
                 continue
-            stem = os.path.splitext(khmenu.SOUND_FILES[kind])[0]
+            stem = khmenu.style_name(kind, khmenu.file_prefix(p))
             try:
                 for other in khmenu.SOUND_EXTS:  # one file per sound: the new one replaces the old
                     old = os.path.join(khmenu.sound_dir(ws), stem + other)
@@ -1217,6 +1247,7 @@ class CompanionApp:
         self.auto_rejoin_tick(now)
         if self._kh and self._kh.get("active"):
             self.khmenu.tick()
+        self.sao.tick()
 
     REJOIN_AFTER = 45      # seconds an alt must be gone before it is relaunched
     REJOIN_WAIT = 120      # seconds between two relaunches of the same alt

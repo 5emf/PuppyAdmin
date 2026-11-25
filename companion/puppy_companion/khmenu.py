@@ -268,14 +268,24 @@ def sound_dirs(workspace, extra=()):
 SOUND_EXTS = (".wav", ".mp3")  # .wav through PlaySound, .mp3 through Windows' MCI player
 
 
-def own_sound_path(workspace, kind, extra=()):
+def style_name(kind, prefix="Menu_"):
+    """The file name (no extension) of a sound kind for a style: Menu_Move (KH), SAO_Move (SAO)."""
+    name = SOUND_FILES.get(kind)
+    return (prefix + os.path.splitext(name)[0][5:]) if name else None
+
+
+def file_prefix(name):
+    """Which style a picked sound file is for, from its name: SAO_ files are the SAO style's."""
+    return "SAO_" if "sao" in os.path.basename(str(name)).lower() else "Menu_"
+
+
+def own_sound_path(workspace, kind, extra=(), prefix="Menu_"):
     """The player's own file for a sound kind, or None. The exact name first (Menu_Move.wav, then
     Menu_Move.mp3); otherwise any .wav / .mp3 in the folder whose name says which sound it is (a
     download may have added text to the name)."""
-    name = SOUND_FILES.get(kind)
-    if not name:
+    stem = style_name(kind, prefix)
+    if not stem:
         return None
-    stem = os.path.splitext(name)[0]
     for folder in sound_dirs(workspace, extra):
         for ext in SOUND_EXTS:
             path = os.path.join(folder, stem + ext)
@@ -287,7 +297,8 @@ def own_sound_path(workspace, kind, extra=()):
         except OSError:
             continue
         for n in names:
-            if n.lower().endswith(SOUND_EXTS) and kind_for_file(n) == kind and os.path.isfile(os.path.join(folder, n)):
+            if (n.lower().endswith(SOUND_EXTS) and kind_for_file(n) == kind and file_prefix(n) == prefix
+                    and os.path.isfile(os.path.join(folder, n))):
                 return os.path.join(folder, n)
     return None
 
@@ -298,11 +309,12 @@ def builtin_sound_path(kind):
     return path if path and os.path.isfile(path) else None
 
 
-def sound_path(workspace, kind, extra=(), builtin=None):
-    """The player's own file for a sound kind, else the built-in one when those are on (USE_BUILTIN)."""
+def sound_path(workspace, kind, extra=(), builtin=None, prefix="Menu_"):
+    """The player's own file for a sound kind, else the built-in one when those are on (USE_BUILTIN;
+    the built-in sounds are the Kingdom Hearts style's)."""
     if builtin is None:
-        builtin = USE_BUILTIN
-    return own_sound_path(workspace, kind, extra) or (builtin_sound_path(kind) if builtin else None)
+        builtin = USE_BUILTIN and prefix == "Menu_"
+    return own_sound_path(workspace, kind, extra, prefix) or (builtin_sound_path(kind) if builtin else None)
 
 
 def is_denied(text):
@@ -378,12 +390,12 @@ class MenuSounds:
         self.last = {}
         self.why = ""             # why the last sound did not play ("" when it did)
 
-    def play(self, workspace, kind, force=False):
+    def play(self, workspace, kind, force=False, prefix="Menu_"):
         """Plays a sound kind if its file is there and it did not just play; returns True if played.
         force skips the repeat gap (the Test button)."""
-        path = sound_path(workspace, kind, self.extra)
+        path = sound_path(workspace, kind, self.extra, prefix=prefix)
         if not path:
-            self.why = "no %s (.wav or .mp3) in %s" % (os.path.splitext(SOUND_FILES.get(kind, kind))[0],
+            self.why = "no %s (.wav or .mp3) in %s" % (style_name(kind, prefix) or kind,
                                                        " or ".join(sound_dirs(workspace, self.extra)) or
                                         "any folder (set the executor folder in Settings)")
             return False
@@ -401,6 +413,6 @@ class MenuSounds:
         self.path = path
         return ok
 
-    def found(self, workspace):
-        """Which sounds the player supplied (the rest use the built-in ones)."""
-        return {kind: own_sound_path(workspace, kind, self.extra) is not None for kind in SOUND_FILES}
+    def found(self, workspace, prefix="Menu_"):
+        """Which sounds the player supplied for a style."""
+        return {kind: own_sound_path(workspace, kind, self.extra, prefix) is not None for kind in SOUND_FILES}
