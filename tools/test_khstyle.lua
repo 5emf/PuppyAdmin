@@ -91,6 +91,10 @@ check(not win:FindFirstChild("PuppyKHFrame") and title.Text == "Settings" and no
 local S = env.UIAPI.SelfHud
 check(S.litCount(100, 100, 36) == 36 and S.litCount(50, 100, 36) == 18 and S.litCount(1, 100, 36) == 1, "HP ring: lit segments follow health")
 check(S.litCount(0, 100, 36) == 0 and S.litCount(150, 100, 36) == 36 and S.litCount(5, 0, 36) == 0 and S.litCount(0/0, 100, 36) == 0, "HP ring: odd values are safe")
+local refused, why = S.set(true)
+check(refused == false and why:find("Kingdom Hearts", 1, true) and S.gui == nil and not env.Cfg.selfHud, "self HUD is locked without the KH style")
+env.UIAPI.SelfHud = S
+K.set("Kingdom Hearts")
 local hum = new("Humanoid", { Health = 25, MaxHealth = 100 })
 env.plr.Character = new("Model"); hum.Parent = env.plr.Character
 env.UIAPI.openForCommand = function(n) applied.opened = n end
@@ -99,6 +103,11 @@ check(okHud and env.Cfg.selfHud == true and S.gui ~= nil and #S.segs == 36, "sel
 S.update(30)
 check(S.lit == 9 and S.hpText.Text == "HP  25 / 100" and S.fpsText.Text == "FPS  30", "HUD shows health, segments and FPS")
 check(S.segs[9].BackgroundColor3 ~= S.segs[10].BackgroundColor3, "lit and unlit segments differ")
+K.set("Standard")
+check(S.gui == nil and env.Cfg.selfHud == true, "turning the KH style off hides the HUD but remembers it")
+K.set("Kingdom Hearts")
+check(S.gui ~= nil, "turning the KH style back on brings the HUD back")
 S.set(false)
 check(S.gui == nil and env.Cfg.selfHud == false, "self HUD removed")
+K.set("Standard")
 print("ALL OK")

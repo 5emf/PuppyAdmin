@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-58" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-59" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -5291,7 +5291,7 @@ function H.selfhud(a)
     end)
 end
 table.insert(cmds, "selfhud")
-cmdDocs.selfhud = "selfhud [on|off] - Your avatar in an HP ring with HP / FPS bars and a COMMAND list (bottom-right, draggable)"
+cmdDocs.selfhud = "selfhud [on|off] - Kingdom Hearts style only: your avatar in an HP ring, HP / FPS bars and a COMMAND list"
 ALIASES.khhud = "selfhud"
 ALIASES.myhud = "selfhud"
 cmdDocs.uistyle = "uistyle [standard|kh] - Kingdom Hearts style menus (blue panels, KH font, pointing glove) or the standard look"
@@ -12710,6 +12710,7 @@ do
             Cfg.khPrev = nil
         end
         if not quiet then cfgSave() end
+        if UIAPI.SelfHud then pcall(UIAPI.SelfHud.refresh) end -- the self HUD comes and goes with this style
         return true, "UI style: " .. Cfg.uiStyle
     end
 
@@ -12841,12 +12842,24 @@ do
         end
     end
 
+    -- The self HUD belongs to the Kingdom Hearts UI style: it only shows while that style
+    -- is on. Cfg.selfHud remembers the choice, so it comes back with the style.
+    function S.allowed() return Cfg.uiStyle == "Kingdom Hearts" end
+
+    function S.refresh()
+        S.off()
+        if Cfg.selfHud and S.allowed() then S.build() end
+        if UIAPI.selfHudChanged then pcall(UIAPI.selfHudChanged) end
+    end
+
     -- returns ok, message. Yields while the art downloads.
     function S.set(on, quiet)
+        if on and not S.allowed() then
+            return false, "The self HUD is part of the Kingdom Hearts UI style: turn it on first (Settings > Look > UI style, or uistyle kh)"
+        end
         Cfg.selfHud = on == true
         if not quiet then cfgSave() end
-        S.off()
-        if Cfg.selfHud then S.build() end
+        S.refresh()
         return true, "Self HUD " .. (Cfg.selfHud and "on (drag it by its COMMAND panel)" or "off")
     end
 
@@ -13425,7 +13438,15 @@ local function createUI()
         end)
     local hudBtn = actionButton(look, "", UDim2.new(0, 15, 0, 58), UDim2.new(1, -30, 0, 28))
     hudBtn.TextSize = 12
-    local function hudText() hudBtn.Text = Cfg.selfHud and "Self HUD: on (avatar, HP ring, COMMAND list)" or "Self HUD: off (click for avatar, HP ring, COMMAND list)" end
+    local function hudText()
+        if not UIAPI.SelfHud.allowed() then
+            hudBtn.Text = "Self HUD: needs the Kingdom Hearts UI style"
+            hudBtn.TextColor3 = Color3.fromRGB(150, 150, 160)
+        else
+            hudBtn.Text = Cfg.selfHud and "Self HUD: on (avatar, HP ring, COMMAND list)" or "Self HUD: off (click for avatar, HP ring, COMMAND list)"
+            hudBtn.TextColor3 = Color3.new(1, 1, 1)
+        end
+    end
     hudText()
     hudBtn.MouseButton1Click:Connect(function()
         task.spawn(function()
@@ -15778,9 +15799,7 @@ do
     if Cfg.uiStyle == "Kingdom Hearts" then
         task.delay(0.5, function() pcall(UIAPI.KHStyle.set, "Kingdom Hearts", true) end)
     end
-    if Cfg.selfHud then
-        task.delay(0.6, function() pcall(UIAPI.SelfHud.set, true, true) end)
-    end
+
     Perf.since("Main UI (terminal, help, settings, panel registry)", uiStart)
 end
 Watch.start()
