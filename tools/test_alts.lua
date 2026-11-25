@@ -190,7 +190,19 @@ local function character(pos)
     for _, p in ipairs(parts) do descendants[#descendants + 1] = p end
     for _, m in ipairs(motors) do descendants[#descendants + 1] = m end
     descendants[#descendants + 1] = socket
-    return { root = root, hum = hum, parts = parts, motors = motors, socket = socket,
+    local extra = {}
+    local function addSockets(on)
+        if on then
+            for i = 1, 4 do
+                local e = { Enabled = true, IsA = function(_, c) return c == "BallSocketConstraint" end }
+                extra[#extra + 1] = e
+                descendants[#descendants + 1] = e
+            end
+        else
+            for _, e in ipairs(extra) do e.Enabled = false end
+        end
+    end
+    return { root = root, hum = hum, parts = parts, motors = motors, socket = socket, addSockets = addSockets,
         FindFirstChild = function(_, n) if n == "HumanoidRootPart" then return root end end,
         FindFirstChildOfClass = function(_, c) if c == "Humanoid" then return hum end end,
         GetDescendants = function() return descendants end }
@@ -518,6 +530,33 @@ do
     for _, p in pairs(PLAYERS) do
         if p.Character and p.Character.motors then for _, m in ipairs(p.Character.motors) do m.Enabled = true end end
     end
+end
+
+-- a ragdoll that adds ball sockets but leaves the Motor6Ds on (counts as ragdolled too)
+do
+    local fired = 0
+    REMOTES.RagdollEvent = { IsA = function(_, c) return c == "RemoteEvent" end,
+        FireServer = function()
+            fired = fired + 1
+            for _, p in pairs(PLAYERS) do
+                local ch = p.Character
+                if ch and ch.addSockets then ch.addSockets(fired % 2 == 1) end
+            end
+        end }
+    PLAYERS[2].Character = character(Vector3.new(0, 3, 0))
+    main.Cfg.altForm.limbs = true
+    main.H.alt({ "orbit1" }); runTasks()
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end -- the alt sees its new body
+    CLOCK = CLOCK + 3
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    local ch = PLAYERS[2].Character
+    local ls = alts[1].UIAPI.Alts.limbState
+    check(fired >= 1 and ls and ls.method == "ragdoll" and ls.phase == "free", "ball-socket ragdoll (motors kept) counts as separated")
+    check(ch.hum.Health == 100 and ch.motors[1].Enabled == false, "alive; leftover motors switched off locally")
+    main.H.unform(); runTasks()
+    check(ch.motors[1].Enabled == true, "stopping turns those motors back on")
+    main.Cfg.altForm.limbs = false
+    REMOTES.RagdollEvent = nil
 end
 
 -- no ragdoll, death allowed: the alt dies to separate; a respawned body settles first

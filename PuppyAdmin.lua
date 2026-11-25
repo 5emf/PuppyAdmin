@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-60" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-61" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -14612,6 +14612,16 @@ function UIAPI.altsSetup()
         return true
     end
 
+    -- ragdoll constraints in the body (a game's ragdoll adds these; some keep the Motor6Ds)
+    local function ragdollConstraints(char)
+        local n = 0
+        for _, d in ipairs(char:GetDescendants()) do
+            if (d:IsA("BallSocketConstraint") or d:IsA("HingeConstraint")) and d.Enabled then n = n + 1 end
+        end
+        return n
+    end
+    Alts.ragdollConstraints = ragdollConstraints
+
     local function ownsBody(root)
         if not root then return false end
         if type(isnetworkowner) ~= "function" then return true end -- cannot ask: rely on the settle time
@@ -14664,6 +14674,7 @@ function UIAPI.altsSetup()
                 return ls
             end
             if now - ls.born < Alts.SETTLE or not ownsBody(ls.root) then return ls end
+            ls.sockets0 = ragdollConstraints(char)
             if Alts.fireRagdoll(true) then
                 ls.phase, ls.method, ls.asked = "ragdoll", "ragdoll", now
             else
@@ -14671,7 +14682,18 @@ function UIAPI.altsSetup()
             end
         end
         if ls.phase == "ragdoll" then
-            if jointsLoose(char) then freeParts(ls); return ls end
+            -- the server ragdolled us: its Motor6Ds went off, or it added ragdoll constraints
+            if jointsLoose(char) or ragdollConstraints(char) >= (ls.sockets0 or 0) + 3 then
+                for _, d in ipairs(char:GetDescendants()) do
+                    if d:IsA("Motor6D") and d.Enabled then
+                        pcall(function() d.Enabled = false end)
+                        ls.motorsOff = ls.motorsOff or {}
+                        table.insert(ls.motorsOff, d)
+                    end
+                end
+                freeParts(ls)
+                return ls
+            end
             if now - ls.asked < Alts.RAGDOLL_WAIT then return ls end
             Alts.fireRagdoll(false) -- the game did not ragdoll us: undo the request
             ls.method = nil
@@ -14702,6 +14724,7 @@ function UIAPI.altsSetup()
         Alts.limbState = nil
         if not ls then return end
         for _, c in ipairs(ls.constraints or {}) do pcall(function() c.Enabled = true end) end
+        for _, m in ipairs(ls.motorsOff or {}) do pcall(function() m.Enabled = true end) end
         if ls.method == "ragdoll" and ls.char == plr.Character then
             for _, d in ipairs(ls.char:GetDescendants()) do
                 if d:IsA("JointInstance") then pcall(function() d.Enabled = true end) end
