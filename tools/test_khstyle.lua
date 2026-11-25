@@ -134,4 +134,19 @@ check(S.gui ~= nil, "turning the KH style back on brings the HUD back")
 S.set(false)
 check(S.gui == nil and env.Cfg.selfHud == false, "self HUD removed")
 K.set("Standard")
+-- the menu belongs to the Kingdom Hearts style
+local menuPanel = { Visible = false }
+env.UIAPI.panels = setmetatable({ menu = menuPanel }, { __index = function() return nil end })
+env.UIAPI.sync = function() end
+env.UIAPI.menuBtn = { Visible = true }
+local said
+env.note = function(_, m) said = m end
+env.H.menu()
+check(menuPanel.Visible == false and said and said:find("Kingdom Hearts", 1, true), "standard style: menu refused with a hint")
+K.set("Kingdom Hearts")
+check(env.UIAPI.menuBtn.Visible == true, "KH style shows the MENU button")
+env.H.menu()
+check(menuPanel.Visible == true, "KH style: menu opens")
+K.set("Standard")
+check(menuPanel.Visible == false and env.UIAPI.menuBtn.Visible == false, "leaving the KH style closes the menu and hides MENU")
 print("ALL OK")

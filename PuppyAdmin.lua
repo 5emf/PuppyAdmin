@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-68" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-69" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -4622,7 +4622,7 @@ local cmdDocs = {
     theme = "theme [preset | role color | reset | image <id|url|off> [0-100]] - Script UI colours and background image (also in Settings)",
     kill = "kill - Terminates the script and removes everything",
     stop = "stop - Terminates the script (also resets your character)",
-    help = "help - Toggles the command list menu",
+    help = "help - The command list (Kingdom Hearts style: the menu, with the command list inside)",
 }
 
 -- Which argument (after the command) is a player name, for autocomplete.
@@ -5414,7 +5414,14 @@ ALIASES.khstyle = "uistyle"
 ALIASES.khui = "uistyle"
 cmdDocs.cursor = "cursor [default|glove|light|keyblade|image id/URL] [size] - Mouse cursor image (also in Settings > Look)"
 
+-- the command list itself, in either style (the menu's "Command list" entry uses this)
+function UIAPI.showDirectory()
+    if helpFrame then helpFrame.Visible = true end
+end
+
 function H.help()
+    -- the Kingdom Hearts style's help is its menu screen
+    if Cfg.uiStyle == "Kingdom Hearts" and H.menu then H.menu(); return end
     if helpFrame then helpFrame.Visible = not helpFrame.Visible end
 end
 
@@ -12911,6 +12918,7 @@ do
         end
         if not quiet then cfgSave() end
         if UIAPI.SelfHud then pcall(UIAPI.SelfHud.refresh) end -- the self HUD comes and goes with this style
+        if UIAPI.Menu then pcall(UIAPI.Menu.styleChanged) end -- so does the menu
         return true, "UI style: " .. Cfg.uiStyle
     end
 
@@ -12925,7 +12933,7 @@ do
     local S = { gui = nil, conn = nil, segs = {}, lit = -1 }
     UIAPI.SelfHud = S
     S.SEGMENTS = 36
-    S.COMMANDS = { { "Menu", "menu" }, { "Commands", "help" }, { "Reanim", "reanim" }, { "Alts", "alts" } }
+    S.COMMANDS = { { "Menu", "menu" }, { "Commands", function() UIAPI.showDirectory() end }, { "Reanim", "reanim" }, { "Alts", "alts" } }
 
     -- pure: how many of n segments are lit for health h of max m
     function S.litCount(h, m, n)
@@ -12986,7 +12994,9 @@ do
             local b = make("TextButton", { Size = UDim2.fromOffset(170, 19), Position = UDim2.fromOffset(18, 30 + (i - 1) * 20),
                 BackgroundTransparency = 0.8, BorderSizePixel = 0, AutoButtonColor = true, ZIndex = 2,
                 Text = "  " .. c[1], Font = Enum.Font.GothamBold, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left }, cmd)
-            b.MouseButton1Click:Connect(function() pcall(UIAPI.openForCommand, c[2]) end)
+            b.MouseButton1Click:Connect(function()
+                if type(c[2]) == "function" then pcall(c[2]) else pcall(UIAPI.openForCommand, c[2]) end
+            end)
             S.buttons[i] = b
         end
         -- bars and name
@@ -13332,7 +13342,7 @@ do
             { "Blacklist", "blacklist", "Everyone banned from the script." },
         } },
         { "Commands", "Every command, grouped in tabs.", {
-            { "Command list", "help", "Search every command; click one to open it or type it." },
+            { "Command list", function() UIAPI.showDirectory() end, "Search every command; click one to open it or type it." },
         } },
         { "Config", "Change Puppy Admin's settings.", {
             { "General", function() UIAPI.settingsTab("General") end, "Prefixes, UI key, intro, anti-AFK, nametags." },
@@ -13412,12 +13422,28 @@ do
         showCategory(1)
     end
 
+    -- the menu belongs to the Kingdom Hearts style
+    function M.allowed() return Cfg.uiStyle == "Kingdom Hearts" end
+
     function H.menu()
+        if not M.allowed() then
+            note("Menu", "The menu is part of the Kingdom Hearts UI style: turn it on with uistyle kh (Settings > Look)", RED)
+            return
+        end
         local p = UIAPI.panels.menu
         if p then p.Visible = not p.Visible; UIAPI.sync() end
     end
+
+    -- the style changed: the MENU button follows it, and the menu closes without it
+    function M.styleChanged()
+        if UIAPI.menuBtn then UIAPI.menuBtn.Visible = M.allowed() end
+        if not M.allowed() then
+            local p = rawget(UIAPI.panels, "menu")
+            if p then p.Visible = false end
+        end
+    end
     table.insert(cmds, "menu")
-    cmdDocs.menu = "menu - The main menu: every window grouped by category (Kingdom Hearts style: a menu screen)"
+    cmdDocs.menu = "menu - Kingdom Hearts style: the menu screen, every window grouped by category (help opens it too)"
 end
 
 -- Command directory tabs: every command has one category (explicit list first,
@@ -13468,7 +13494,7 @@ do
         tools = "tools", moveui = "move", infbaseplate = "floor", esp = "esp", superfly = true, reanim = true,
         tagui = true, taglist = true, owner = true, blacklist = true, performance = true,
         games = true, gameboy = true, gba = true, doom = true, finder = true, antivcban = true,
-        alts = true, altcmds = true, settings = true, theme = true, help = true, limbs = "limbs", menu = "menu",
+        alts = true, altcmds = true, settings = true, theme = true, help = true, limbs = "limbs", menu = true,
     }
     -- "off" commands are shown inside their "on" command's row: unX belongs to X, plus a
     -- few pairs whose names differ. Returns the on-command, or nil.
@@ -13579,6 +13605,8 @@ local function createUI()
         Text = "MENU", TextColor3 = GREY, Font = Enum.Font.Code, TextSize = 11,
     }, frame)
     menuBtn.MouseButton1Click:Connect(function() if H.menu then H.menu() end end)
+    UIAPI.menuBtn = menuBtn
+    menuBtn.Visible = Cfg.uiStyle == "Kingdom Hearts"
 
     local inputContainer = make("Frame", {
         Size = UDim2.new(1, -30, 0, 35),
@@ -14193,7 +14221,7 @@ local function createUI()
     local win = pages.Windows
     fieldLabel(win, "Every window in Puppy Admin (also: click a command with 'Open' in help)", 4)
     local WINDOWS = {
-        { "Menu", "menu" },
+        { "Menu (KH style)", function() H.menu() end },
         { "Commands", function() if helpFrame then helpFrame.Visible = true end end },
         { "Tools", "tools" }, { "Movement", "move" }, { "Superfly", "superfly" }, { "Floor", "floor" },
         { "ESP", "esp" }, { "Reanim", "reanim" }, { "Limbs", "limbs" }, { "Alts", "alts" }, { "Alt commands", "altcmds" },
@@ -14201,7 +14229,7 @@ local function createUI()
         { "Tag editor", "tagui" }, { "Tags", "taglist" }, { "Mini games", "games" }, { "Game Boy", "gameboy" },
         { "GBA", "gba" }, { "Doom", "doom" }, { "Owner", "owner" }, { "Blacklist", "blacklist" },
     }
-    local PANEL_OF = { tools = "tools", move = "move", floor = "floor", esp = "esp", menu = "menu" }
+    local PANEL_OF = { tools = "tools", move = "move", floor = "floor", esp = "esp" }
     local bw = (380 - 30 - 12) / 3
     for i, w in ipairs(WINDOWS) do
         local col, row = (i - 1) % 3, math.floor((i - 1) / 3)
