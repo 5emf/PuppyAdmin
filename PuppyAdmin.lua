@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-67" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-68" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -368,7 +368,8 @@ local Cfg = {
     barKey = "",        -- Settings > General: key / mouse button that shows or hides the command bar ("" = none)
     barHidden = false,  -- command bar hidden (the rest of the UI stays)
     selfHud = false,    -- Settings > Look: your avatar, HP ring, HP / FPS bars and a COMMAND list
-    khPrev = nil,       -- theme / font / cursor to go back to when the Kingdom Hearts style is turned off
+    khPrev = {},        -- theme / font / cursor to go back to when the Kingdom Hearts style is turned off
+                        -- (a table, not nil: cfgLoad only keeps fields whose default has a type)
     games = {},        -- mini game best scores: game id -> number
     fpsCounter = { on = false }, -- Performance > FPS counter: on, x, y (pixels)
     gbVolume = 1,      -- Game Boy sound level (0 = off)
@@ -5207,10 +5208,75 @@ function UIAPI.setBarVisible(on, quiet)
     Cfg.barHidden = not on
     bar.Visible = on
     if not quiet then cfgSave() end
-    if on and UIAPI.cmdInput then
-        task.defer(function() pcall(function() UIAPI.cmdInput:CaptureFocus() end) end) -- ready to type
+    if on and UIAPI.cmdInput and not UIAPI.isTypingKey(Cfg.barKey) then
+        -- ready to type; with a typing key as the bar key the box stays unfocused, or the
+        -- next press would type into it instead of hiding the bar again
+        task.defer(function() pcall(function() UIAPI.cmdInput:CaptureFocus() end) end)
+    elseif not on and UIAPI.cmdInput then
+        pcall(function() UIAPI.cmdInput:ReleaseFocus() end)
     end
     if UIAPI.barKeyChanged then pcall(UIAPI.barKeyChanged) end
+end
+
+-- keys that type a character into a text box (a bar key like these can't also hide the
+-- bar while you are typing in it)
+do
+    local TYPING = { Space = true, Semicolon = true, Quote = true, Comma = true, Period = true, Slash = true,
+        BackSlash = true, LeftBracket = true, RightBracket = true, Minus = true, Equals = true, Backquote = true,
+        Zero = true, One = true, Two = true, Three = true, Four = true, Five = true, Six = true, Seven = true,
+        Eight = true, Nine = true }
+    function UIAPI.isTypingKey(name)
+        name = tostring(name or "")
+        return #name == 1 or TYPING[name] == true
+    end
+end
+
+-- Press-to-bind: click the button, then press a key (or the middle / right mouse button).
+-- Esc cancels, Backspace clears (when allowed). onSet(name or "") saves it; label(name)
+-- gives the button's text. Returns a function that refreshes the text.
+function UIAPI.keyCapture(button, getName, onSet, labelFor, canClear)
+    local listening, conn = false, nil
+    local function show()
+        button.Text = listening and "Press a key...  (Esc cancels" .. (canClear and ", Backspace clears)" or ")") or labelFor(getName())
+    end
+    local function stop()
+        listening = false
+        UIAPI.capturingKey = false
+        if conn then conn:Disconnect(); conn = nil end
+        show()
+    end
+    button.MouseButton1Click:Connect(function()
+        if listening then stop(); return end
+        listening = true
+        UIAPI.capturingKey = true -- the old bindings stay quiet while you pick the new one
+        show()
+        task.defer(function() -- skip the click that started listening
+            if not listening then return end
+            conn = UserInputService.InputBegan:Connect(function(input)
+                local t = input.UserInputType
+                local name
+                if t == Enum.UserInputType.Keyboard then
+                    local kc = input.KeyCode
+                    if kc == Enum.KeyCode.Unknown then return end
+                    if kc == Enum.KeyCode.Escape then stop(); return end
+                    if kc == Enum.KeyCode.Backspace or kc == Enum.KeyCode.Delete then
+                        if canClear then onSet(""); stop() end
+                        return
+                    end
+                    name = kc.Name
+                elseif t == Enum.UserInputType.MouseButton2 or t == Enum.UserInputType.MouseButton3 then
+                    name = t.Name
+                else
+                    return
+                end
+                onSet(name)
+                stop()
+            end)
+            table.insert(conns, conn)
+        end)
+    end)
+    show()
+    return show
 end
 
 -- "F2", "Semicolon", "MouseButton3" (middle), "MouseButton2" (right) or "off"
@@ -12841,7 +12907,7 @@ do
             if not (prev.preset and Theme.usePreset(prev.preset)) then Theme.usePreset("Default") end
             pcall(UIFont.set, prev.font or "Default", true)
             pcall(UIAPI.Cursor.set, prev.cursor or "Default", true)
-            Cfg.khPrev = nil
+            Cfg.khPrev = {}
         end
         if not quiet then cfgSave() end
         if UIAPI.SelfHud then pcall(UIAPI.SelfHud.refresh) end -- the self HUD comes and goes with this style
@@ -13861,27 +13927,25 @@ local function createUI()
         note("Prefix", table.concat(list, "  "), LIGHT)
     end)
 
-    fieldLabel(gen, "Show/hide UI key (KeyCode name, e.g. RightControl)", 64)
-    local keyBox = fieldBox(gen, 84, Cfg.uiKey)
-    local keyApply = actionButton(gen, "Apply", UDim2.new(1, -85, 0, 84), UDim2.new(0, 70, 0, 28))
-    keyApply.MouseButton1Click:Connect(function()
-        local kc = resolveKeyCode(keyBox.Text)
-        if not kc then note("UI Key", "Unknown key", RED); return end
-        Cfg.uiKey = kc.Name
-        keyBox.Text = kc.Name
+    fieldLabel(gen, "Show/hide the whole UI: click, then press the key", 64)
+    local uiKeyBtn = actionButton(gen, "", UDim2.new(0, 15, 0, 84), UDim2.new(1, -30, 0, 28))
+    UIAPI.keyCapture(uiKeyBtn, function() return Cfg.uiKey end, function(name)
+        if name:find("MouseButton", 1, true) then note("UI Key", "Pick a keyboard key for the whole UI", RED); return end
+        if name == Cfg.barKey then note("UI Key", name .. " already shows/hides the command bar", RED); return end
+        Cfg.uiKey = name
         cfgSave()
-        note("UI Key", kc.Name, LIGHT)
-    end)
+        note("UI Key", name, LIGHT)
+    end, function(name) return "Whole UI: " .. tostring(name) .. "   (click to change)" end, false)
 
-    fieldLabel(gen, "Command bar key: show/hide just the bar (F2, MouseButton3, ... ; empty = none)", 124)
-    local barBox = fieldBox(gen, 144, Cfg.barKey or "")
-    barBox.PlaceholderText = "e.g. F2"
-    local barApply = actionButton(gen, "Apply", UDim2.new(1, -85, 0, 144), UDim2.new(0, 70, 0, 28))
-    barApply.MouseButton1Click:Connect(function()
-        H.barkey({ barBox.Text ~= "" and barBox.Text or "off" })
-        barBox.Text = Cfg.barKey or ""
-    end)
-    UIAPI.barKeyChanged = function() if not barBox:IsFocused() then barBox.Text = Cfg.barKey or "" end end
+    fieldLabel(gen, "Show/hide just the command bar: click, then press a key or mouse button", 124)
+    local barKeyBtn = actionButton(gen, "", UDim2.new(0, 15, 0, 144), UDim2.new(1, -30, 0, 28))
+    local refreshBar = UIAPI.keyCapture(barKeyBtn, function() return Cfg.barKey end, function(name)
+        H.barkey({ name ~= "" and name or "off" })
+    end, function(name)
+        if name == "" then return "Command bar: no key   (click to set)" end
+        return "Command bar: " .. name .. "   (click to change, Backspace clears)"
+    end, true)
+    UIAPI.barKeyChanged = function() pcall(refreshBar) end
 
     local introBtn = actionButton(gen, "", UDim2.new(0, 15, 0, 184), UDim2.new(0.5, -19, 0, 28))
     introBtn.TextSize = 11
@@ -16451,9 +16515,17 @@ end)
 Chat.start()
 
 table.insert(conns, UserInputService.InputBegan:Connect(function(input, processed)
-    if processed then return end
+    if UIAPI.capturingKey then return end -- a key is being picked in Settings
+    local barKey = Cfg.barKey ~= "" and (input.KeyCode.Name == Cfg.barKey or input.UserInputType.Name == Cfg.barKey)
+    if processed then
+        -- typing in the bar: a non-typing bar key (F2, a mouse button...) still hides it
+        if barKey and not UIAPI.isTypingKey(Cfg.barKey) and UIAPI.cmdInput and UIAPI.cmdInput:IsFocused() then
+            pcall(UIAPI.setBarVisible, false)
+        end
+        return
+    end
     -- the command bar key may be a keyboard key or the middle / right mouse button
-    if Cfg.barKey ~= "" and (input.KeyCode.Name == Cfg.barKey or input.UserInputType.Name == Cfg.barKey) then
+    if barKey then
         pcall(UIAPI.setBarVisible, Cfg.barHidden)
         return
     end

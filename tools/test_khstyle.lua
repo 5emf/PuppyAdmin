@@ -77,6 +77,7 @@ local function check(c, m) print((c and "ok   " or "FAIL ") .. m) if not c then 
 check(ok and env.Cfg.uiStyle == "Kingdom Hearts", "style on")
 check(applied.preset == "Kingdom Hearts" and applied.font == "KH Menu" and applied.cursor == "Glove", "theme, font and glove cursor chosen")
 check(env.Cfg.khPrev.preset == "Midnight" and env.Cfg.khPrev.font == "Default", "previous look remembered")
+check(type(env.Cfg.khPrev) == "table", "kept in a table so it survives a re-execute")
 check(btn:FindFirstChildOfClass("UIGradient") and win:FindFirstChildOfClass("UIGradient"), "button and window shaded")
 check(not small:FindFirstChildOfClass("UIGradient"), "small frames left alone")
 check(win:FindFirstChild("PuppyKHPanelFill") and win:FindFirstChild("PuppyKHPanelRim") and win:FindFirstChild("PuppyKHPill")
