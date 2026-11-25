@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.25-83" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.25-84" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -12933,10 +12933,10 @@ end
         parentGui(gui)
         local m = { gui = gui, icons = {}, rows = {}, current = 1 }
         A.menu = m
-        -- no backdrop: the game stays visible and playable around the menu (close with the X icon or menu)
+        -- no backdrop: the game stays visible and playable around the menu (menu / help / MENU closes it)
         local N = #cats
         local STEP = 66
-        local colH = N * STEP + STEP
+        local colH = N * STEP -- no close icon: menu / help / MENU closes it again
         local rootH = math.max(colH, 520)
         local root = make("Frame", { Name = "Root", Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(900, rootH),
             BackgroundTransparency = 1 }, gui)
@@ -13050,8 +13050,6 @@ end
         for i, cat in ipairs(cats) do
             m.icons[i] = iconButton(i, A.categoryIcon(i), top + (i - 1) * STEP + 5, function() m.choose(i) end, cat[1], cat[2])
         end
-        local closeBtn = iconButton(N + 1, "close", top + N * STEP + 5, function() A.closeMenu() end, "Close", "Back to the game.")
-        m.close = closeBtn
 
         function m.refresh()
             local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")

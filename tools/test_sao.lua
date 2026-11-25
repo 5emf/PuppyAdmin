@@ -136,7 +136,7 @@ check(A.toggleMenu() == true, "menu opens")
 local m = A.menu
 check(m.root.Position.X.Offset + 390 == 900 + A.HEAD_GAP, "the menu opens beside the head")
 check(m.gui:FindFirstChild("Backdrop") == nil and m.gui:FindFirstChild("Stripe") == nil, "no backdrop or stripe: the game stays visible")
-check(#m.icons == 2 and m.close and #m.dots == 12, "one round icon per category, a close icon, 12 dots")
+check(#m.icons == 2 and m.close == nil and #m.dots == 12, "one round icon per category, no close icon, 12 dots")
 check(#m.rows == 2 and m.icons[1].btn.BackgroundColor3 == A.ORANGE and m.icons[1].halo.Visible, "first category chosen: orange with a ring, its windows listed")
 check(m.lowTitle.Text == "Character", "the card describes the chosen category")
 m.icons[2].btn.MouseButton1Click:fire()
@@ -150,8 +150,8 @@ m.refresh()
 local lit = 0
 for _, d in ipairs(m.dots) do if d.BackgroundColor3 == A.ORANGE then lit = lit + 1 end end
 check(lit == 6 and m.stats.Text:find("HP 50/100", 1, true) and m.stats.Text:find("Lv 3", 1, true), "ring dots and stats follow HP and PUPPYTIME")
-m.close.btn.MouseButton1Click:fire()
-check(m.gui.Enabled == false, "the close icon closes it")
+A.toggleMenu()
+check(m.gui.Enabled == false, "menu again closes it")
 
 -- the HUD
 local hud = A.hudOn()
