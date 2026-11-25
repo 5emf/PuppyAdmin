@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-70" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-71" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -13348,14 +13348,13 @@ ALIASES.breaklimbs = "limbs"
 
 -- Main menu (`menu`, MENU on the bar, the self HUD): every window grouped by what it is
 -- for, in both UI styles. Left: categories; middle: that category's windows; bottom: what
--- the hovered entry does, players in the server and your session time. In the Kingdom
+-- the hovered entry does, players in the server and your local time. In the Kingdom
 -- Hearts style the same window becomes a menu screen: the MENU capsule and ornate frame
 -- (KHStyle frames every window), red selected tabs with the pointing glove, and the info
 -- labels in KH Gummi.
 do
     local M = {}
     UIAPI.Menu = M
-    M.started = os.clock()
     -- { category, description, { { label, command / function, description } } }
     M.CATEGORIES = {
         { "Character", "Reanimate, animate your limbs, fly and move.", {
@@ -13399,6 +13398,21 @@ do
             { "Windows", function() UIAPI.settingsTab("Windows") end, "A button for every window." },
         } },
     }
+
+    -- pure: "9:41 PM" for 21:41 (12-hour clock, like the device shows it)
+    function M.formatClock(hour, minute)
+        local h = hour % 12
+        if h == 0 then h = 12 end
+        return string.format("%d:%02d %s", h, minute, hour < 12 and "AM" or "PM")
+    end
+
+    -- your own local time, from your device's clock and time zone
+    function M.clockText()
+        local ok, t = pcall(function() return DateTime.now():ToLocalTime() end)
+        if ok and type(t) == "table" and t.Hour then return M.formatClock(t.Hour, t.Minute) end
+        local d = os.date("*t") -- fallback: the device's local date
+        return M.formatClock(d.hour, d.min)
+    end
 
     function M.open(target)
         if type(target) == "function" then pcall(target) else pcall(UIAPI.openForCommand, target) end
@@ -13444,7 +13458,7 @@ do
         local pTitle = info("PLAYERS", HGT - 104, Color3.fromRGB(255, 150, 50), 14)
         local pValue = info("0", HGT - 86, Color3.fromRGB(255, 210, 70), 22)
         local tTitle = info("TIME", HGT - 58, Color3.fromRGB(80, 150, 255), 14)
-        local tValue = info("0:00", HGT - 40, Color3.fromRGB(90, 200, 255), 22)
+        local tValue = info(M.clockText(), HGT - 40, Color3.fromRGB(90, 200, 255), 22) -- your local time
         local function restyle()
             local kh = Cfg.uiStyle == "Kingdom Hearts"
             for _, l in ipairs({ pTitle, pValue, tTitle, tValue }) do
@@ -13457,9 +13471,7 @@ do
             if not f.Visible then return end
             restyle()
             pValue.Text = tostring(#Players:GetPlayers())
-            local t = math.floor(os.clock() - M.started)
-            tValue.Text = t >= 3600 and string.format("%d:%02d:%02d", math.floor(t / 3600), math.floor(t / 60) % 60, t % 60)
-                or string.format("%d:%02d", math.floor(t / 60), t % 60)
+            tValue.Text = M.clockText()
         end
         f:GetPropertyChangedSignal("Visible"):Connect(function() if f.Visible then UIAPI.syncFns.menu() end end)
         task.spawn(function()

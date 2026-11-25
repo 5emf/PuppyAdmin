@@ -134,6 +134,15 @@ check(S.gui ~= nil, "turning the KH style back on brings the HUD back")
 S.set(false)
 check(S.gui == nil and env.Cfg.selfHud == false, "self HUD removed")
 K.set("Standard")
+-- the menu's TIME is your local clock time
+local Mn = env.UIAPI.Menu
+check(Mn.formatClock(21, 41) == "9:41 PM" and Mn.formatClock(0, 5) == "12:05 AM" and Mn.formatClock(12, 0) == "12:00 PM"
+    and Mn.formatClock(9, 7) == "9:07 AM", "clock: 12-hour local time")
+env.DateTime = { now = function() return { ToLocalTime = function() return { Hour = 15, Minute = 4 } end } end }
+check(Mn.clockText() == "3:04 PM", "TIME reads the device's local time")
+env.DateTime = nil
+check(Mn.clockText():match("^%d+:%d%d [AP]M$") ~= nil, "falls back to the device date when DateTime is missing")
+
 -- the menu belongs to the Kingdom Hearts style
 local menuPanel = { Visible = false }
 env.UIAPI.panels = setmetatable({ menu = menuPanel }, { __index = function() return nil end })
