@@ -13,8 +13,8 @@
     },
     {
       "path": "puppy_companion/app.py",
-      "sha256": "834d404c26bbb4a6481809d90ff6f0a3da5ab0defc045671f1cbcf0b28c0714c",
-      "size": 80078
+      "sha256": "0a41ec6bf0f659e4644201403b5d87e7faf33149474e104edfdbbc0290bdd27d",
+      "size": 82182
     },
     {
       "path": "puppy_companion/cursors/glove.cur",
@@ -98,8 +98,13 @@
     },
     {
       "path": "puppy_companion/khart.py",
-      "sha256": "cb9a2f64e6cb4a69cd999e304a5a49338cd30366a79de99a842752dc3483fe4b",
-      "size": 7065
+      "sha256": "2fcf7fec491a316938aa373353410c768752821fb8083e4d13dc02a0b5f74870",
+      "size": 8015
+    },
+    {
+      "path": "puppy_companion/khmenu.py",
+      "sha256": "952bd608ad3f7404ff15a0074618f706458f5f43982f3ebf3610cf628af13cf4",
+      "size": 11246
     },
     {
       "path": "puppy_companion/launch.py",

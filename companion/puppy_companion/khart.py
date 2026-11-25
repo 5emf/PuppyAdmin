@@ -60,7 +60,12 @@ def shape(w, h, radius, top, bottom, edge, edge_w, back, corners="all", gloss=0.
     highlight over the top part. corners: "all" or "top" (square bottom, for tabs)."""
     w, h = max(2, int(w)), max(2, int(h))
     r = max(0.0, min(float(radius), w / 2.0, h / 2.0))
-    radii = (r, r, r, r) if corners == "all" else (r, r, 0.0, 0.0)
+    if corners == "all":
+        radii = (r, r, r, r)
+    elif corners == "top":
+        radii = (r, r, 0.0, 0.0)
+    else:  # per-corner factors of radius (tl, tr, br, bl)
+        radii = tuple(min(r, r * f) for f in corners)
     rows = []
     for y in range(h):
         t = y / (h - 1)
@@ -103,6 +108,22 @@ def tab(base, line, back, k=1.0, state="normal"):
     return shape(w, h, r, base, multiply(base, BUTTON_SHADE), line, max(1.0, k), back, corners="top", gloss=0.08)
 
 
+def menu_item(back, k=1.0, state="normal"):
+    """An entry of the KH menu list: a dark slab, light rim, round top-left corner;
+    selected = deep red with the bright red outline (the glove points at it)."""
+    w, h = round(60 * k), round(36 * k)
+    if state == "selected":
+        return shape(w, h, 12 * k, SELECT, multiply(SELECT, BUTTON_SHADE), SELECT_EDGE, max(2.0, 2 * k), back)
+    top, bottom = (58, 60, 72), (12, 12, 18)
+    if state == "hover":
+        top, bottom = mix(top, WHITE, 0.12), mix(bottom, WHITE, 0.06)
+    return shape(w, h, 14 * k, top, bottom, (150, 155, 175), max(1.0, k), back, corners=(1, 0.2, 0.2, 0.2), gloss=0.05)
+
+
+def menu_border(k=1.0):
+    return int(round(15 * k))
+
+
 def panel(fill, rim, back, k=1.0):
     """A framed panel: flat fill (children paint the same colour), accent rim, a thin
     lighter inner line. Square-ish so it 9-slices with border `panel_border(k)`."""
@@ -137,15 +158,16 @@ def capsule(width, accent, back, k=1.0):
     return shape(round(width), h, h / 2, top, bottom, mix(accent, WHITE, 0.35), max(1.0, k), back, gloss=0.35)
 
 
-def underline(width, back, k=1.0):
-    """The orange line under titles, fading out to the right."""
+def underline(width, back, k=1.0, reverse=False):
+    """The orange line under titles, fading out to the right (to the left with reverse)."""
     w, h = max(2, round(width)), max(2, round(4 * k))
     rows = []
     for y in range(h):
         edge = 1 - abs((y + 0.5) / h - 0.5) * 2  # soft top / bottom
         row = []
         for x in range(w):
-            fade = 1 - max(0.0, (x / (w - 1) - 0.55) / 0.45)
+            u = x / (w - 1)
+            fade = 1 - max(0.0, ((1 - u if reverse else u) - 0.55) / 0.45)
             row.append(mix(back, UNDERLINE, max(0.0, min(1.0, edge * 1.6)) * fade))
         rows.append(row)
     return rows

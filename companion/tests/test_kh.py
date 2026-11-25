@@ -71,6 +71,18 @@ class ShapesTest(unittest.TestCase):
         data = khart.rows_data([[(255, 0, 0), (0, 0, 255)]])
         self.assertEqual(data, "{#ff0000 #0000ff}")
 
+    def test_menu_item_and_clock(self):
+        from puppy_companion import khmenu
+        sel = khart.menu_item(BG, 1.0, "selected")
+        self.assertTrue(close(sel[18][1], khart.SELECT_EDGE, 70))
+        norm = khart.menu_item(BG, 1.0)
+        self.assertTrue(close(norm[0][0], BG), "round top-left")
+        self.assertGreater(sum(norm[1][-2]), sum(norm[1][1]) + 60, "top-right nearly square (rim shows), top-left round")
+        self.assertEqual(khmenu.uptime_text(3725), "1:02")
+        self.assertEqual(khmenu.uptime_text(-5), "0:00")
+        line = khart.underline(100, BG, 1.0, reverse=True)
+        self.assertTrue(close(line[len(line) // 2][0], BG, 3) and line[len(line) // 2][-5][0] > 200, "reversed line")
+
     def test_glove_sizes_and_bob(self):
         self.assertIn(khart.glove_size(1.0), kh_data.GLOVE)
         self.assertGreater(khart.glove_size(2.0), khart.glove_size(1.0))
@@ -128,7 +140,21 @@ class KHWindowTest(unittest.TestCase):
         self.assertIn("KHPanel.border", self.element_names(self.style.layout("TLabelframe")))
         self.assertEqual(self.style.lookup("TFrame", "background"), "#060a28")
         self.root.update()
-        self.assertTrue(self.app.kh_title.winfo_ismapped(), "title capsule shown")
+        self.assertTrue(self.app.kh_title.winfo_ismapped(), "MENU capsule shown")
+        menu = self.app.khmenu
+        self.assertEqual(menu.pages, ["Accounts", "Launch", "Manage", "Look", "Settings"])
+        self.assertTrue(menu.menu.winfo_ismapped() and menu.bottom.winfo_ismapped(), "menu list and bottom panels shown")
+        self.assertNotIn("Notebook.label", self.element_names(self.style.layout("KHMenu.TNotebook.Tab")), "notebook tabs hidden")
+        menu.buttons[3].invoke()
+        self.assertEqual(self.app.nb.index("current"), 3, "a menu entry opens its page")
+        self.assertIn("selected", menu.buttons[3].state())
+        self.assertNotIn("selected", menu.buttons[0].state())
+        self.assertIn("UI style", menu.desc.cget("text"))
+        menu.set_hover("Launch")
+        self.assertIn("Send your accounts", menu.desc.cget("text"))
+        menu.set_hover(None, "Launch")
+        self.assertIn("UI style", menu.desc.cget("text"), "description falls back to the open page")
+        menu.select(0)
         self.assertFalse(self.app.title_lbl.winfo_ismapped(), "plain title hidden")
 
         # a theme change while in the style redraws the same images (no new ttk elements)
@@ -149,7 +175,9 @@ class KHWindowTest(unittest.TestCase):
         gx = self.app.kh_glove.winfo_rootx() + self.app.kh_glove.winfo_width()
         self.assertLess(abs(gx - btn.winfo_rootx()), 12, "glove sits just left of the button")
         btn.event_generate("<Leave>")
-        self.assertTrue(self.pump(lambda: not self.app.kh_glove_shown()), "glove hides on leave")
+        sel = self.app.khmenu.selected_button()
+        self.assertTrue(self.pump(lambda: abs(self.app.kh_glove.winfo_rootx() + self.app.kh_glove.winfo_width()
+                                              - sel.winfo_rootx()) < 12), "the glove goes back to the menu choice")
 
         self.app.set_style("Standard")
         self.assertEqual(self.settings.get("ui_style"), "Standard")
@@ -159,6 +187,9 @@ class KHWindowTest(unittest.TestCase):
         self.root.update()
         self.assertTrue(self.app.title_lbl.winfo_ismapped())
         self.assertFalse(self.app.kh_title.winfo_ismapped())
+        self.assertFalse(self.app.khmenu.menu.winfo_ismapped(), "standard layout: no menu list")
+        self.assertTrue(self.app.version_lbl.winfo_ismapped())
+        self.assertEqual(str(self.app.nb.cget("style")), "TNotebook")
 
     def test_style_survives_a_restart(self):
         self.app.set_style("Kingdom Hearts")

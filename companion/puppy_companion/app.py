@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from tkinter import font as tkfont
 
-from . import fonts, kh_data, khart, launch, look, manage, update, workspace
+from . import fonts, kh_data, khart, khmenu, launch, look, manage, update, workspace
 from .icon_data import ICON_32, ICON_64
 from .launch_queue import LaunchJob, LaunchQueue
 from .redact import redact
@@ -208,6 +208,7 @@ class CompanionApp:
     def _build(self):
         top = ttk.Frame(self.root, padding=self.pad(16, 12, 16, 0))
         top.pack(fill="x")
+        self.top_frame = top
         self.title_lbl = ttk.Label(top, text="Puppy Companion", style="Title.TLabel")
         self.title_lbl.pack(side="left")
         # the Kingdom Hearts style's title: glossy capsule + orange line (packed by apply_kh)
@@ -229,6 +230,7 @@ class CompanionApp:
         self._build_settings()
 
         logf = ttk.Frame(self.root, padding=self.pad(16, 0, 16, 14))
+        self.log_frame = logf
         # packed before the tabs claim their space, so the log always stays on screen
         logf.pack(side="bottom", fill="x", before=self.nb)
         mono = ("Consolas", 9) if sys.platform == "win32" else ("DejaVu Sans Mono", 9)
@@ -240,6 +242,7 @@ class CompanionApp:
         self.log_text.configure(yscrollcommand=sb.set, state="disabled")
         self.log_text.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
+        self.khmenu = khmenu.KHMenu(self)  # the KH style's menu screen (shown by apply_kh)
 
     def _build_accounts(self):
         tab = ttk.Frame(self.nb, padding=self.px(12))
@@ -439,6 +442,26 @@ class CompanionApp:
         self.apply_header_image()
 
     # Kingdom Hearts style --------------------------------------------------------------
+    def colour(self, name):
+        return globals()[name]
+
+    def text_scale(self):
+        return look.text_scale(self.settings.get("text_scale"))
+
+    def font_family(self):
+        return self._font_family(self.settings.get("font"))
+
+    def version(self):
+        return update.running_version()
+
+    def is_online(self, user_id):
+        st = self.statuses.get(user_id)
+        return bool(st and st["fresh"] and st["online"])
+
+    def seen_text(self, user_id):
+        st = self.statuses.get(user_id)
+        return ago(time.time() - st["time"]) if st and st.get("time") else ""
+
     def kh_on(self):
         return self.settings.get("ui_style") == "Kingdom Hearts"
 
@@ -457,6 +480,7 @@ class CompanionApp:
                              "lf": (style.lookup("TLabelframe", "padding") or 0, style.lookup("TLabelframe", "labelmargins") or 0)}
         if not self.kh_on():
             if st["active"]:
+                self.khmenu.show(False)
                 for name, layout in st["saved"].items():
                     style.layout(name, layout)
                 style.configure("TLabelframe", padding=st["lf"][0], labelmargins=st["lf"][1])
@@ -476,6 +500,8 @@ class CompanionApp:
             "acc": khart.button(accent, accent_lo, bg, k), "dan": khart.button(danger, (92, 42, 51), bg, k),
             "tab": khart.tab(card, line, bg, k), "tab_h": khart.tab(card, line, bg, k, "hover"),
             "tab_s": khart.tab(card, line, bg, k, "selected"), "panel": khart.panel(bg, accent, bg, k),
+            "menu": khart.menu_item(bg, k), "menu_h": khart.menu_item(bg, k, "hover"),
+            "menu_s": khart.menu_item(bg, k, "selected"),
         }
         imgs = st["imgs"]
         for name, rows in pieces.items():
@@ -491,6 +517,8 @@ class CompanionApp:
             style.element_create("KHTab.bg", "image", imgs["tab"], ("selected", imgs["tab_s"]), ("active", imgs["tab_h"]),
                                  border=b, sticky="nsew")
             style.element_create("KHPanel.border", "image", imgs["panel"], border=khart.panel_border(k), sticky="nsew")
+            style.element_create("KHMenuItem.bg", "image", imgs["menu"], ("selected", imgs["menu_s"]),
+                                 ("active", imgs["menu_h"]), border=khart.menu_border(k), sticky="nsew")
             st["made"] = True
 
         def button_layout(el):
@@ -502,6 +530,10 @@ class CompanionApp:
         style.layout("TNotebook.Tab", [("KHTab.bg", {"sticky": "nsew", "children": [("Notebook.padding", {
             "side": "top", "sticky": "nsew", "children": [("Notebook.label", {"side": "top", "sticky": ""})]})]})])
         style.layout("TLabelframe", [("KHPanel.border", {"sticky": "nsew"})])
+        style.layout("KHMenu.TButton", button_layout("KHMenuItem.bg"))
+        style.layout("KHMenu.TNotebook.Tab", [])  # the menu list on the left replaces the tabs
+        style.configure("KHMenu.TNotebook", background=BG, bordercolor=ACCENT, lightcolor=ACCENT, darkcolor=ACCENT,
+                        tabmargins=(0, 0, 0, 0))
         style.map("TButton", foreground=[("disabled", DIM), ("active", "#ffffff")])
         style.map("Accent.TButton", foreground=[("disabled", DIM), ("active", "#ffffff")])
         style.map("TNotebook.Tab", foreground=[("selected", "#ffffff"), ("active", FG)])
@@ -516,14 +548,18 @@ class CompanionApp:
             self.title_lbl.pack_forget()
             self.kh_title.pack(side="left", before=self.version_lbl)
         st["active"] = True
+        self.khmenu.show(True)
         self._kh_make_glove()
+        if not self._kh_ticking:  # the glove always points at something: the hovered button or the menu choice
+            self._kh_ticking = True
+            self._kh_tick()
 
     def _kh_draw_title(self, family, scale):
         k = self.k
         c = self.kh_title
         c.delete("all")
         c.configure(bg=BG)
-        text = "PUPPY COMPANION"
+        text = "MENU"
         size = max(8, round(15 * scale))
         fnt = tkfont.Font(root=self.root, family=family, size=size)
         pad = self.px(18)
@@ -610,6 +646,11 @@ class CompanionApp:
         """Places the glove left of the hovered button, bobbing, every 40 ms while one is hovered."""
         w = self._kh_target
         try:
+            if w is None or not w.winfo_exists() or not w.winfo_ismapped():
+                w = self.khmenu.selected_button()
+        except tk.TclError:
+            w = self.khmenu.selected_button()
+        try:
             shown = (w is not None and self.kh_on() and not self._closing and w.winfo_exists() and w.winfo_ismapped())
         except tk.TclError:
             shown = False
@@ -628,7 +669,7 @@ class CompanionApp:
         else:
             self.kh_glove.place(x=x - self.root.winfo_rootx(), y=y - self.root.winfo_rooty())
             self.kh_glove.lift()
-        self.root.after(40, self._kh_tick)
+        self._kh_after = self.root.after(40, self._kh_tick)
 
     def apply_cursor(self):
         spec = look.cursor_spec(self.settings.get("cursor"), self.settings.get("cursor_file"))
@@ -1053,6 +1094,8 @@ class CompanionApp:
             self.tree.item(str(a.user_id), values=(a.label, user, a.role, text, seen), tags=(tag,))
         self.update_workspace_label()
         self.auto_rejoin_tick(now)
+        if self._kh and self._kh.get("active"):
+            self.khmenu.tick()
 
     REJOIN_AFTER = 45      # seconds an alt must be gone before it is relaunched
     REJOIN_WAIT = 120      # seconds between two relaunches of the same alt
@@ -1514,10 +1557,11 @@ class CompanionApp:
 
     def close(self):
         self._closing = True
-        try:
-            self.root.after_cancel(self._after)
-        except (tk.TclError, AttributeError):
-            pass
+        for after_id in (getattr(self, "_after", None), getattr(self, "_kh_after", None)):
+            try:
+                self.root.after_cancel(after_id)
+            except (tk.TclError, AttributeError, ValueError, TypeError):
+                pass
         self.launches.cancel()
         self.multi.release()
         self.root.destroy()
