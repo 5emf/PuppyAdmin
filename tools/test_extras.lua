@@ -3,7 +3,7 @@
 -- and the time / ambient / hip height round trips.
 local src = io.open(arg[1]):read("a")
 local a = assert(src:find("-- Extra commands (`UIAPI.Extra`)", 1, true))
-local b = assert(src:find('-- Optional "Kingdom Hearts" UI style', a, true))
+local b = assert(src:find("-- Emotes window (`UIAPI.Emotes`", a, true))
 local block = src:sub(a, b - 1)
 
 local fails = 0
@@ -158,6 +158,46 @@ check(notes.finder == "ping", "pinghop asks Puppy Finder for the lowest ping")
 -- chat log (legacy chat): messages are kept, capped
 for i = 1, X.LOG_CAP + 20 do plr.Chatted:Fire("hello " .. i) end
 check(#X.chat == X.LOG_CAP and X.chat[#X.chat].text == "hello " .. (X.LOG_CAP + 20), "chat log keeps the newest " .. X.LOG_CAP)
+
+-- emotes block: pure helpers, favourites file, registration, the command only opens the window
+do
+    local ea = assert(src:find("-- Emotes window (`UIAPI.Emotes`", 1, true))
+    local eb = assert(src:find('-- Optional "Kingdom Hearts" UI style', ea, true))
+    local FS = {}
+    local panel = { Visible = false }
+    local eH, ecmds, edocs, ealias = {}, {}, {}, {}
+    local played = 0
+    local eenv = setmetatable({
+        UIAPI = { panels = { emotes = panel }, sync = function() end }, H = eH, cmds = ecmds, cmdDocs = edocs, ALIASES = ealias,
+        cleanups = {}, conns = {}, plr = plr, Enum = Enum, RunService = env.RunService,
+        UserInputService = { InputBegan = signal() },
+        HttpService = { JSONDecode = function(_, t) return load("return " .. t)() end,
+            JSONEncode = function(_, v)
+                local parts = {}
+                for _, f in ipairs(v) do parts[#parts + 1] = string.format("{id=%q,name=%q,key=%q}", f.id, f.name, f.key) end
+                return "{" .. table.concat(parts, ",") .. "}"
+            end },
+        isfile = function(n) return FS[n] ~= nil end, readfile = function(n) return FS[n] end,
+        writefile = function(n, d) FS[n] = d end, isfolder = function() return true end,
+    }, { __index = _G })
+    FS["PuppyAdmin/emotes.json"] = '{{id="123456",name="Wave",key="F"},{id="123456",name="dup",key=""},{id="x"},{id="rbxassetid://987654",name="Spin",key="bad key"}}'
+    assert(load(src:sub(ea, eb - 1), "emotes", "t", eenv))()
+    local E = eenv.UIAPI.Emotes
+    check(E.parseId("123456") == "123456" and E.parseId("rbxassetid://5915693") == "5915693"
+        and E.parseId("https://www.roblox.com/catalog/10214311282/Sidekicks-George-Ezra") == "10214311282"
+        and E.parseId("abc") == nil and E.parseId("12") == nil, "emote id from an id, asset link or catalog link")
+    check(#E.favs == 2 and E.favs[1].key == "F" and E.favs[2].id == "987654" and E.favs[2].key == "",
+        "favourites file: duplicates and bad ids dropped, bad keys cleared")
+    local r = E.parseSearch({ data = { { id = 111, name = "A", itemType = "Asset", creatorName = "c" }, { id = 222, itemType = "Bundle" }, { name = "no id" } } })
+    check(#r == 1 and r[1].id == "111" and r[1].name == "A", "catalog response parsed, bundles skipped")
+    check(E.toggleFav("555", "New") == true and E.isFav("555") and FS["PuppyAdmin/emotes.json"]:find("555") ~= nil, "star adds and saves")
+    check(E.toggleFav("555") == false and not E.isFav("555"), "star again removes")
+    check(ecmds[1] == "emotes" and #ecmds == 1 and ealias.ugcemotes == "emotes" and ealias.emote == "emotes", "one command, emotes (aliases emote, ugcemotes)")
+    eH.emotes({ "123456" })
+    check(panel.Visible == true and E.track == nil, "emotes <anything> only opens the window, plays nothing")
+    eH.emotes({})
+    check(panel.Visible == false, "emotes again closes it")
+end
 
 -- shutdown restores without errors
 H.time({ "noon" })

@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.25-73" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.25-74" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -12630,6 +12630,7 @@ local function buildPanels(screenGui)
     B.menu = function() UIAPI.buildMenuPanel(screenGui) end
     B.logs = function() UIAPI.buildLogsPanel(screenGui) end
     B.inspect = function() UIAPI.buildInspectPanel(screenGui) end
+    B.emotes = function() UIAPI.buildEmotesPanel(screenGui) end
 end
 
 -- Custom mouse cursor (Settings > Look). The image follows the mouse in its own
@@ -13680,6 +13681,294 @@ end
     end)
 end)()
 
+-- Emotes window (`UIAPI.Emotes`, command `emotes`, which only opens the window). Original:
+-- search the marketplace's emotes or paste an emote id, play it on your character
+-- (while reanimated: on the reanim clone, which the engine copies onto your body),
+-- favourites with their own hotkeys, speed, loop and stop-when-you-move.
+-- Favourites live in PuppyAdmin/emotes.json. The catalog search URL and whether an emote
+-- you do not own plays for other players are unverified until tested in game.
+;(function() -- own function scope: the main chunk is at the 200-local limit
+    local E = { speed = 1, loop = false, stopOnMove = true, favs = {}, results = {}, tab = "results" }
+    UIAPI.Emotes = E
+    E.FILE = "PuppyAdmin/emotes.json"
+    -- Category 12 = avatar animations, Subcategory 39 = emotes (from memory, unverified)
+    E.SEARCH_URL = "https://catalog.roblox.com/v1/search/items/details?Category=12&Subcategory=39&Limit=30&Keyword="
+
+    ------------------------------------------------------------ pure helpers (tested)
+    -- an emote id from "123", "rbxassetid://123", a catalog link ".../catalog/123/Name"
+    function E.parseId(text)
+        local s = tostring(text or "")
+        local id = s:match("catalog/(%d+)") or s:match("library/(%d+)") or s:match("[?&]id=(%d+)")
+            or s:match("rbxassetid://(%d+)") or s:match("^%s*(%d+)%s*$")
+        if id and #id >= 3 and #id <= 20 then return id end
+        return nil
+    end
+    function E.cleanFavs(list)
+        local out, seen = {}, {}
+        if type(list) ~= "table" then return out end
+        for _, f in ipairs(list) do
+            local id = type(f) == "table" and E.parseId(f.id)
+            if id and not seen[id] and #out < 200 then
+                seen[id] = true
+                out[#out + 1] = { id = id, name = tostring(f.name or ("Emote " .. id)):sub(1, 60),
+                    key = type(f.key) == "string" and f.key:match("^[%w]+$") and f.key or "" }
+            end
+        end
+        return out
+    end
+    -- catalog response -> { { id, name, creator } }
+    function E.parseSearch(data)
+        local out = {}
+        for _, it in ipairs(type(data) == "table" and type(data.data) == "table" and data.data or {}) do
+            local id = type(it) == "table" and tonumber(it.id)
+            if id and (it.itemType == nil or it.itemType == "Asset") then
+                out[#out + 1] = { id = tostring(math.floor(id)), name = tostring(it.name or ("Emote " .. id)),
+                    creator = tostring(it.creatorName or "") }
+            end
+        end
+        return out
+    end
+    function E.isFav(id)
+        for i, f in ipairs(E.favs) do if f.id == id then return i end end
+        return nil
+    end
+
+    ------------------------------------------------------------ favourites file
+    function E.load()
+        local ok, data = pcall(function()
+            if isfile and isfile(E.FILE) then return HttpService:JSONDecode(readfile(E.FILE)) end
+        end)
+        E.favs = E.cleanFavs(ok and data or nil)
+    end
+    function E.save()
+        pcall(function()
+            if makefolder and isfolder and not isfolder("PuppyAdmin") then makefolder("PuppyAdmin") end
+            writefile(E.FILE, HttpService:JSONEncode(E.favs))
+        end)
+    end
+    function E.toggleFav(id, name)
+        local i = E.isFav(id)
+        if i then table.remove(E.favs, i) else E.favs[#E.favs + 1] = { id = id, name = name or ("Emote " .. id), key = "" } end
+        E.save()
+        if E.render then E.render() end
+        return not i
+    end
+
+    ------------------------------------------------------------ playing
+    local function say(text, bad)
+        E.status = text
+        if E.statusLabel then E.statusLabel.Text = text; E.statusLabel.TextColor3 = bad and PAL.DANGER or PAL.DIM end
+    end
+    local resolved = {}
+    function E.stop(quiet)
+        if E.moveConn then E.moveConn:Disconnect(); E.moveConn = nil end
+        local t = E.track
+        E.track = nil
+        if t then pcall(function() t:Stop(0.2) end); pcall(function() t:Destroy() end) end
+        if not quiet then say("Stopped") end
+    end
+    -- yields (resolving the emote's animation)
+    function E.play(id, name)
+        id = E.parseId(id)
+        if not id then say("Paste an emote id or a catalog link", true); return false end
+        E.stop(true)
+        local c = plr.Character
+        local h = c and c:FindFirstChildOfClass("Humanoid")
+        if not h or h.Health <= 0 then say("No character", true); return false end
+        local animator = h:FindFirstChildOfClass("Animator")
+        if not animator then animator = Instance.new("Animator"); animator.Parent = h end
+        say("Loading " .. (name or id) .. "...")
+        local animId = resolved[id]
+        if not animId then
+            animId = resolveAnimationId("rbxassetid://" .. id)
+            resolved[id] = animId
+        end
+        local anim = Instance.new("Animation")
+        anim.AnimationId = animId
+        local ok, track = pcall(function() return animator:LoadAnimation(anim) end)
+        anim:Destroy()
+        if not ok or not track then say("Roblox would not load this emote: " .. tostring(track):sub(1, 60), true); return false end
+        pcall(function() track.Priority = Enum.AnimationPriority.Action4 end)
+        track.Looped = E.loop
+        track:Play(0.15, 1, E.speed)
+        E.track = track
+        local label = name or ("Emote " .. id)
+        task.delay(2.5, function()
+            if E.track == track and track.Length == 0 then
+                say(label .. ": no keyframes loaded. This game may not allow that emote's animation", true)
+            end
+        end)
+        track.Stopped:Connect(function() if E.track == track then E.track = nil; if E.moveConn then E.moveConn:Disconnect(); E.moveConn = nil end end end)
+        local moving = 0
+        E.moveConn = RunService.Heartbeat:Connect(function(dt)
+            if E.track ~= track then return end
+            if not h.Parent or h.Health <= 0 then E.stop(true); return end
+            if E.stopOnMove and h.MoveDirection.Magnitude > 0.1 then
+                moving = moving + dt
+                if moving > 0.15 then E.stop(true); say("Stopped: you moved") end
+            else
+                moving = 0
+            end
+        end)
+        local reanim = false
+        pcall(function() local api = pupApi(); reanim = api and api.is_reanimated and api.is_reanimated() end)
+        say("Playing " .. label .. (reanim and " on your reanim" or ""))
+        return true
+    end
+    function E.setSpeed(v)
+        E.speed = v
+        if E.track then pcall(function() E.track:AdjustSpeed(v) end) end
+    end
+
+    ------------------------------------------------------------ catalog search (yields)
+    local function getJson(url)
+        local body
+        local req = (type(request) == "function" and request) or (type(http_request) == "function" and http_request)
+            or (type(syn) == "table" and syn.request)
+        if req then
+            local ok, res = pcall(req, { Url = url, Method = "GET" })
+            if ok and type(res) == "table" then
+                if tonumber(res.StatusCode) == 429 then return nil, "rate limited, try again in a minute" end
+                body = res.Body
+            end
+        end
+        if not body then
+            local ok, res = pcall(function() return game:HttpGet(url) end)
+            if ok then body = res end
+        end
+        if type(body) ~= "string" then return nil, "no answer" end
+        local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
+        if not ok or type(data) ~= "table" then return nil, "unexpected answer" end
+        return data
+    end
+    function E.search(keyword)
+        keyword = tostring(keyword or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        say("Searching emotes" .. (keyword ~= "" and (" for \"" .. keyword .. "\"") or "") .. "...")
+        local data, err = getJson(E.SEARCH_URL .. HttpService:UrlEncode(keyword))
+        if not data then say("Search failed (" .. tostring(err) .. "). Pasting an emote id still works", true); return end
+        E.results = E.parseSearch(data)
+        E.tab = "results"
+        say(#E.results == 0 and "No emotes found" or (#E.results .. " emotes. Click one to play it, the star keeps it"))
+        if E.render then E.render() end
+    end
+
+    -- favourite hotkeys
+    table.insert(conns, UserInputService.InputBegan:Connect(function(input, processed)
+        if processed or UIAPI.capturingKey or UserInputService:GetFocusedTextBox() then return end
+        local name = input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode.Name or input.UserInputType.Name
+        for _, f in ipairs(E.favs) do
+            if f.key ~= "" and f.key == name then
+                if E.track and E.lastId == f.id then E.stop() else E.lastId = f.id; task.spawn(E.play, f.id, f.name) end
+                return
+            end
+        end
+    end))
+
+    ------------------------------------------------------------ window
+    function UIAPI.buildEmotesPanel(screenGui)
+        local W, HGT = 470, 520
+        local f = uiWindow(screenGui, "emotes", "Emotes", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2, 0.5, -HGT / 2))
+        local IW = W - 32
+        local box = uiBox(f, UDim2.fromOffset(16, 46), UDim2.fromOffset(IW - 156, 30), "Search emotes, or paste an emote id / link", "")
+        uiButton(f, "Play id", UDim2.fromOffset(72, 30), UDim2.fromOffset(16 + IW - 148, 46), function()
+            local id = E.parseId(box.Text)
+            if not id then say("That is not an emote id or catalog link", true); return end
+            E.lastId = id
+            task.spawn(E.play, id, nil)
+        end)
+        uiButton(f, "Search", UDim2.fromOffset(72, 30), UDim2.fromOffset(16 + IW - 72, 46), function()
+            if E.parseId(box.Text) then
+                E.lastId = E.parseId(box.Text)
+                task.spawn(E.play, box.Text, nil)
+            else
+                task.spawn(E.search, box.Text)
+            end
+        end)
+        box.FocusLost:Connect(function(enter) if enter and box.Text ~= "" then
+            if E.parseId(box.Text) then task.spawn(E.play, box.Text, nil) else task.spawn(E.search, box.Text) end
+        end end)
+        uiSlider(f, "Speed", UDim2.fromOffset(16, 84), IW, { min = 0.1, max = 3, step = 0.05, value = E.speed,
+            format = function(v) return string.format("%.2fx", v) end, onChange = E.setSpeed })
+        local half = (IW - 12) / 2
+        uiSwitch(f, "Loop", UDim2.fromOffset(16, 130), half, E.loop, function(v)
+            E.loop = v
+            if E.track then pcall(function() E.track.Looped = v end) end
+        end)
+        uiSwitch(f, "Stop when I move", UDim2.fromOffset(16 + half + 12, 130), half, E.stopOnMove, function(v) E.stopOnMove = v end)
+
+        local tabs = {}
+        local tw = (IW - 8) / 2
+        tabs.results = uiButton(f, "Results", UDim2.fromOffset(tw, 26), UDim2.fromOffset(16, 164), function() E.tab = "results"; E.render() end)
+        tabs.favs = uiButton(f, "Favourites", UDim2.fromOffset(tw, 26), UDim2.fromOffset(16 + tw + 8, 164), function() E.tab = "favs"; E.render() end)
+
+        local grid = make("ScrollingFrame", { Position = UDim2.fromOffset(16, 196), Size = UDim2.new(1, -32, 1, -276),
+            BackgroundColor3 = PAL.CARD, BackgroundTransparency = 0.3, BorderSizePixel = 0, ScrollBarThickness = 4,
+            CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y }, f)
+        corner(grid, 8)
+        make("UIGridLayout", { CellSize = UDim2.fromOffset(96, 136), CellPadding = UDim2.fromOffset(8, 8),
+            SortOrder = Enum.SortOrder.LayoutOrder }, grid)
+        make("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingTop = UDim.new(0, 8), PaddingRight = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8) }, grid)
+
+        E.statusLabel = label(f, { Position = UDim2.new(0, 16, 1, -74), Size = UDim2.fromOffset(IW, 30), TextSize = 11, TextWrapped = true,
+            TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = PAL.DIM, RichText = false,
+            Text = E.status or "Search the marketplace's emotes or paste an id. Favourites can have a hotkey." })
+        uiButton(f, "Stop emote", UDim2.fromOffset(IW, 32), UDim2.new(0, 16, 1, -42), function() E.stop() end)
+
+        local function cell(i, item, fav)
+            local c = make("Frame", { BackgroundColor3 = PAL.ELEVATED, BackgroundTransparency = 0.3, BorderSizePixel = 0, LayoutOrder = i }, grid)
+            corner(c, 8)
+            local img = make("ImageButton", { Size = UDim2.fromOffset(80, 80), Position = UDim2.fromOffset(8, 6), BackgroundTransparency = 1,
+                Image = "rbxthumb://type=Asset&id=" .. item.id .. "&w=150&h=150", AutoButtonColor = true }, c)
+            img.MouseButton1Click:Connect(function() E.lastId = item.id; task.spawn(E.play, item.id, item.name) end)
+            label(c, { Position = UDim2.fromOffset(4, 88), Size = UDim2.new(1, -8, 0, 22), Text = item.name, TextSize = 10, TextWrapped = true,
+                TextXAlignment = Enum.TextXAlignment.Center, TextYAlignment = Enum.TextYAlignment.Top, RichText = false })
+            local star = make("TextButton", { Size = UDim2.fromOffset(22, 22), Position = UDim2.new(1, -24, 0, 2), BackgroundTransparency = 1,
+                Text = E.isFav(item.id) and "★" or "☆", TextColor3 = Color3.fromRGB(255, 210, 80), TextSize = 16, Font = Enum.Font.GothamBold }, c)
+            star.MouseButton1Click:Connect(function() E.toggleFav(item.id, item.name) end)
+            if fav then
+                local kb = uiButton(c, "", UDim2.new(1, -8, 0, 20), UDim2.fromOffset(4, 112), function() end)
+                kb.TextSize = 10
+                UIAPI.keyCapture(kb, function() return item.key end, function(name)
+                    for _, other in ipairs(E.favs) do if other ~= item and other.key == name and name ~= "" then other.key = "" end end
+                    item.key = name
+                    E.save()
+                    task.defer(E.render)
+                end, function(k) return k == "" and "Set key" or ("Key: " .. k) end, true)
+            end
+        end
+        function E.render()
+            for _, ch in ipairs(grid:GetChildren()) do if ch:IsA("GuiObject") then ch:Destroy() end end
+            for k, b in pairs(tabs) do b.BackgroundTransparency = k == E.tab and 0 or 0.5 end
+            local fav = E.tab == "favs"
+            local list = fav and E.favs or E.results
+            for i, item in ipairs(list) do cell(i, item, fav) end
+            if #list == 0 then
+                label(grid, { Size = UDim2.fromOffset(300, 40), TextWrapped = true, TextColor3 = PAL.DIM, TextSize = 12,
+                    Text = fav and "No favourites yet: press the star on an emote." or "Search to see emotes here." })
+            end
+        end
+        E.render()
+        f:GetPropertyChangedSignal("Visible"):Connect(function()
+            if f.Visible and E.tab == "results" and #E.results == 0 and not E.searched then
+                E.searched = true
+                task.spawn(E.search, "")
+            end
+        end)
+    end
+
+    function H.emotes()
+        local p = UIAPI.panels.emotes
+        if p then p.Visible = not p.Visible; UIAPI.sync() end
+    end
+    table.insert(cmds, "emotes")
+    cmdDocs.emotes = "emotes - Emotes window: search marketplace emotes or paste an id, play, favourites with hotkeys (also: emote, ugcemotes)"
+    ALIASES.emote = "emotes"
+    ALIASES.ugcemotes = "emotes"
+
+    E.load()
+    table.insert(cleanups, function() E.stop(true) end)
+end)()
+
 -- Optional "Kingdom Hearts" UI style (Settings > Look > UI style, `uistyle`): an
 -- original skin in the spirit of those menus, made from the owner's fonts and cursor
 -- images. Turning it on picks the "Kingdom Hearts" theme preset, the KH Menu font and
@@ -14339,6 +14628,7 @@ do
         { "Character", "Reanimate, animate your limbs, fly and move.", {
             { "Reanim", "reanim", "Reanimation: play and import animations, tricks." },
             { "Limbs", "limbs", "While reanimated: every body part on its own path." },
+            { "Emotes", "emotes", "Search and play marketplace emotes, favourites with hotkeys." },
             { "Movement", "moveui", "Fly modes, speed, noclip, airwalk, swim." },
             { "Superfly", "superfly", "Fly where the camera faces." },
             { "Tools", "tools", "Orbit, tail and wings made of your tools." },
@@ -14539,7 +14829,7 @@ do
         "Tags", "Games", "Server", "Performance", "Owner", "Settings", "Other" }
     local EXPLICIT = {
         Movement = { "moveui", "infbaseplate", "uninfbaseplate", "tp", "superfly", "clicktp", "bhop", "antifling" },
-        Character = { "hipheight", "antisit", "shiftlock" },
+        Character = { "hipheight", "antisit", "shiftlock", "emotes" },
         Camera = { "fov", "freecam", "fixcam", "xray", "time", "day", "night", "untime", "ambient", "partesp", "clickdelete", "undelete" },
         Reanim = { "reanim", "anim", "limbs" },
         Players = { "esp", "unesp", "hide", "unhide", "mute", "unmute", "inspect", "logs", "chatlogs", "animlog" },
@@ -14583,7 +14873,7 @@ do
         tagui = true, taglist = true, owner = true, blacklist = true, performance = true,
         games = true, gameboy = true, gba = true, doom = true, finder = true, antivcban = true,
         alts = true, altcmds = true, settings = true, theme = true, help = true, limbs = "limbs", menu = true,
-        logs = "logs", chatlogs = "logs", inspect = true,
+        logs = "logs", chatlogs = "logs", inspect = true, emotes = "emotes",
     }
     -- "off" commands are shown inside their "on" command's row: unX belongs to X, plus a
     -- few pairs whose names differ. Returns the on-command, or nil.
@@ -15317,7 +15607,7 @@ local function createUI()
         { "Performance", "performance" }, { "Finder", "finder" }, { "Anti VC ban", "antivcban" },
         { "Tag editor", "tagui" }, { "Tags", "taglist" }, { "Mini games", "games" }, { "Game Boy", "gameboy" },
         { "GBA", "gba" }, { "Doom", "doom" }, { "Owner", "owner" }, { "Blacklist", "blacklist" },
-        { "Logs", "logs" }, { "Inspect", "inspect" },
+        { "Logs", "logs" }, { "Inspect", "inspect" }, { "Emotes", "emotes" },
     }
     local PANEL_OF = { tools = "tools", move = "move", floor = "floor", esp = "esp" }
     local bw = (380 - 30 - 12) / 3
