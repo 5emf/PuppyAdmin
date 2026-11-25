@@ -60,6 +60,8 @@ make("UICorner", { CornerRadius = { Scale = 0, Offset = 8 } }, btn)
 
 local hum = new("Humanoid", { Health = 50, MaxHealth = 100 })
 local char = new("Model"); hum.Parent = char
+local head = new("Part", { Name = "Head", Position = { X = 0, Y = 5, Z = 0 } }); head.Parent = char
+head.Position = setmetatable(head.Position, { __add = function(p, q) return { X = p.X + q.X, Y = p.Y + q.Y, Z = p.Z + q.Z } end })
 local heartbeat = sig()
 local applied, sounds, opened = {}, {}, {}
 local gui
@@ -78,7 +80,10 @@ local env = setmetatable({
     urlImageAsset = function(u) return "asset:" .. u end, SETTINGS = { Auras = { assetBase = "https://repo/" } },
     TweenService = { Create = function(_, obj, _, goal) return { Play = function() for k, v in pairs(goal) do obj[k] = v end end } end },
     TweenInfo = { new = function() return {} end },
-    RunService = { Heartbeat = heartbeat }, cleanups = {},
+    RunService = { Heartbeat = heartbeat, RenderStepped = sig() }, cleanups = {},
+    Vector3 = { new = function(x, y, z) return { X = x, Y = y, Z = z } end },
+    workspace = { CurrentCamera = { ViewportSize = { X = 1920, Y = 1080 },
+        WorldToViewportPoint = function(_, p) return { X = 900, Y = 400 }, true end } },
     task = { defer = function(f) f() end, delay = function(_, f) f() end, spawn = function() end, wait = function() end },
     Color3 = { fromRGB = function(r, g, bb) return string.format("rgb(%d,%d,%d)", r, g, bb) end, new = function(r, g, bb) return string.format("c(%g,%g,%g)", r, g, bb) end },
     UDim = { new = function(s, o) return { Scale = s, Offset = o } end }, UDim2 = UDim2,
@@ -99,6 +104,14 @@ check(A.litDots(50, 100, 12) == 6 and A.litDots(100, 100, 12) == 12 and A.litDot
     and A.litDots(5, 0, 12) == 0 and A.litDots(0 / 0, 100, 12) == 0, "ring dots follow HP")
 check(A.dotAngle(1, 12) == 0 and A.dotAngle(4, 12) == 90, "dots go clockwise from the top")
 check(A.dropDelay(1) == 0 and A.dropDelay(3) > A.dropDelay(2), "icons drop in one after another")
+
+-- beside the head
+local x, y = A.anchorFor(900, 400, 1920, 1080, 900, 600, 390, 0)
+check(x + 390 == 900 + A.HEAD_GAP and y == 400 - A.HEAD_RISE, "the icon column sits just right of the head")
+local cx0, cy0 = A.anchorFor(nil, nil, 1920, 1080, 900, 600, 390, 0)
+check(cx0 == 510 and cy0 == 240, "no head in view: centred")
+local ex = A.anchorFor(1910, 400, 1920, 1080, 900, 600, 390, 0)
+check(ex + 390 <= 1920 - 40, "near the screen edge the column stays on screen")
 
 -- the look
 A.apply(true)
@@ -121,6 +134,8 @@ check(btn.BackgroundColor3 == "grey", "off: no orange hover")
 A.apply(true)
 check(A.toggleMenu() == true, "menu opens")
 local m = A.menu
+check(m.root.Position.X.Offset + 390 == 900 + A.HEAD_GAP, "the menu opens beside the head")
+check(m.gui:FindFirstChild("Backdrop") == nil and m.gui:FindFirstChild("Stripe") == nil, "no backdrop or stripe: the game stays visible")
 check(#m.icons == 2 and m.close and #m.dots == 12, "one round icon per category, a close icon, 12 dots")
 check(#m.rows == 2 and m.icons[1].btn.BackgroundColor3 == A.ORANGE and m.icons[1].halo.Visible, "first category chosen: orange with a ring, its windows listed")
 check(m.lowTitle.Text == "Character", "the card describes the chosen category")

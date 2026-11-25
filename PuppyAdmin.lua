@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.25-81" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.25-82" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -12728,9 +12728,10 @@ end
 -- Sword Art Online-inspired UI style (`UIAPI.SAOStyle`; Settings > Look > UI style, `uistyle sao`).
 -- Original (no art or text from the show): light panels, square corners, thin lines, orange
 -- highlights, the owner's SAO UI fan font, and
---   * the menu (`menu` / `help` / MENU): laid out like the owner's reference screenshot (shapes
---     only): a dark backdrop with an orange stripe on the left edge, a centre column of round
---     icon buttons (the categories; the chosen one orange with a ring), an info card on the left
+--   * the menu (`menu` / `help` / MENU): laid out like the owner's reference screenshots (shapes
+--     only) and dropped down beside your character's head (it follows the head on screen; centred
+--     when there is no head in view): a column of round icon buttons next to the head (the
+--     categories; the chosen one orange with a ring), an info card on the left
 --     (your name, your avatar inside a ring of 12 dots that light orange with your HP, and a grey
 --     strip describing the hovered entry), and that category's windows as grey plates on the
 --     right (the chosen one orange), each with a pointer toward the column;
@@ -12775,6 +12776,21 @@ end
     end
     -- the icons drop in one after another
     function A.dropDelay(i) return (i - 1) * 0.04 end
+    -- where the menu's top-left goes so its icon column sits just right of the head (hx, hy on
+    -- screen), kept inside the screen (vw x vh). cx = the column's centre inside the menu,
+    -- top = the first icon's top. nil head = centred.
+    A.HEAD_GAP, A.HEAD_RISE = 70, 40
+    function A.anchorFor(hx, hy, vw, vh, rootW, rootH, cx, top)
+        local x, y
+        if hx and hy then
+            x, y = hx + A.HEAD_GAP - cx, hy - A.HEAD_RISE - top
+        else
+            x, y = (vw - rootW) / 2, (vh - rootH) / 2
+        end
+        x = math.max(-cx + 40, math.min(vw - cx - 40, x))  -- the column itself stays on screen
+        y = math.max(8 - top, math.min(vh - rootH - 8 + 60, y))
+        return math.floor(x + 0.5), math.floor(y + 0.5)
+    end
 
     function A.loadArt()
         for key, path in pairs(A.ART) do
@@ -12917,21 +12933,14 @@ end
         parentGui(gui)
         local m = { gui = gui, icons = {}, rows = {}, current = 1 }
         A.menu = m
-        -- dark backdrop (click it to close) and the orange stripe on the left edge
-        local back = make("TextButton", { Name = "Backdrop", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(40, 40, 40),
-            BackgroundTransparency = 0.25, Text = "", AutoButtonColor = false }, gui)
-        back.MouseButton1Click:Connect(function() A.sound("select"); A.closeMenu() end)
-        make("Frame", { Name = "Stripe", Size = UDim2.new(0, 110, 1, 0), BackgroundColor3 = A.ORANGE, BorderSizePixel = 0 }, gui)
-        local stripeText = make("TextLabel", { Size = UDim2.fromOffset(400, 40), Position = UDim2.new(0, 55, 0.5, 0), AnchorPoint = Vector2.new(0.5, 0.5),
-            Rotation = -90, BackgroundTransparency = 1, Text = "PUPPY ADMIN", TextColor3 = Color3.fromRGB(255, 240, 210),
-            TextTransparency = 0.25, TextSize = 30, Font = Enum.Font.GothamBold }, gui)
-        sao(stripeText, true)
-
+        -- no backdrop: the game stays visible and playable around the menu (close with the X icon or menu)
         local N = #cats
         local STEP = 66
         local colH = N * STEP + STEP
-        local root = make("Frame", { Name = "Root", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 55, 0.5, 0),
-            Size = UDim2.fromOffset(900, math.max(colH, 520)), BackgroundTransparency = 1 }, gui)
+        local rootH = math.max(colH, 520)
+        local root = make("Frame", { Name = "Root", Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(900, rootH),
+            BackgroundTransparency = 1 }, gui)
+        m.root = root
         local cx = 390 -- the column's centre (x) inside root
         local top = (math.max(colH, 520) - colH) / 2
 
@@ -13068,6 +13077,23 @@ end
                 end)
             end
         end
+        -- follow the head on screen (the reanim clone's while reanimated: that is what you see)
+        function m.place()
+            local cam = workspace.CurrentCamera
+            local vp = cam and cam.ViewportSize
+            local vw, vh = vp and vp.X or 1280, vp and vp.Y or 720
+            local hx, hy
+            local headPart = plr.Character and plr.Character:FindFirstChild("Head")
+            if cam and headPart then
+                local p, visible = cam:WorldToViewportPoint(headPart.Position + Vector3.new(0, 0.6, 0))
+                if visible then hx, hy = p.X, p.Y end
+            end
+            local x, y = A.anchorFor(hx, hy, vw, vh, 900, rootH, cx, top)
+            root.Position = UDim2.fromOffset(x, y)
+        end
+        m.follow = RunService.RenderStepped:Connect(function()
+            if gui.Enabled then pcall(m.place) end
+        end)
         pcall(UIFont.attach, gui)
         task.spawn(function()
             while gui.Parent do
@@ -13083,6 +13109,7 @@ end
         local m = A.menu
         m.gui.Enabled = not m.gui.Enabled
         if m.gui.Enabled then
+            pcall(m.place)
             pcall(m.refresh)
             m.choose(m.current or 1)
             m.dropIn()
@@ -13151,6 +13178,7 @@ end
 
     table.insert(cleanups, function()
         A.hudOff()
+        if A.menu and A.menu.follow then pcall(function() A.menu.follow:Disconnect() end) end
         if A.menu and A.menu.gui then pcall(function() A.menu.gui:Destroy() end) end
         A.on = false
         A.undecorate()
