@@ -90,6 +90,8 @@ local env = setmetatable({
     UIAPI = {}, CFrame = CFrame, Vector3 = { new = vec }, RunService = { RenderStepped = RS },
     pupApi = function() return api end, note = function(t, m) notes[#notes + 1] = m end, LIGHT = 1, RED = 2,
     cleanups = {}, cmds = {}, cmdDocs = {}, ALIASES = {}, H = {},
+    genv = { PuppyAdminActive = false }, conns = {}, cfgSave = function() end,
+    task = { spawn = function(f) f() end, wait = function() end, defer = function(f) f() end },
 }, { __index = _G })
 env.table = setmetatable({ find = function(t, v) for i, x in ipairs(t) do if x == v then return i end end end }, { __index = table })
 assert(load(block, "limbs", "t", env))()

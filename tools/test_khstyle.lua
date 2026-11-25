@@ -60,6 +60,7 @@ local env = setmetatable({
     Rect = { new = function(...) return { ... } end }, Font = { fromEnum = function() return { family = "Gotham" } end },
     plr = { UserId = 42, DisplayName = "Pup", Character = nil }, makeDraggable = function() end,
     H = {}, cmds = {}, cmdDocs = {}, ALIASES = {}, pupApi = function() return nil end, note = function() end,
+    genv = { PuppyAdminActive = false }, conns = {}, cfgSave = function() end,
     Instance = { new = function(c) return new(c) end }, make = function(c, p, parent) local o = new(c, p); if parent then o.Parent = parent end return o end,
     parentGui = function(g) g.Parent = new("CoreGui") end, RunService = { RenderStepped = rs },
     SETTINGS = { Auras = { assetBase = "https://x/" } }, urlImageAsset = function(u) return "asset:" .. u end,
@@ -142,6 +143,21 @@ env.DateTime = { now = function() return { ToLocalTime = function() return { Hou
 check(Mn.clockText() == "3:04 PM", "TIME reads the device's local time")
 env.DateTime = nil
 check(Mn.clockText():match("^%d+:%d%d [AP]M$") ~= nil, "falls back to the device date when DateTime is missing")
+
+-- PUPPYTIME: active use, only while the Roblox window is focused; the total is kept in Cfg
+check(Mn.formatDuration(125) == "2:05" and Mn.formatDuration(3725) == "1:02:05" and Mn.formatDuration(-3) == "0:00",
+    "durations read m:ss / h:mm:ss")
+env.Cfg.puppyTime = 100
+Mn.session = 0
+Mn.focused = true
+Mn.tick(2)
+check(Mn.session == 2 and Mn.total() == 102, "counts while focused, adds to the saved total")
+Mn.focused = false
+Mn.tick(5)
+check(Mn.session == 2 and Mn.total() == 102, "tabbed out: not counted")
+Mn.focused = true
+Mn.tick(600)
+check(Mn.session == 2, "a long hitch (sleep, freeze) is not counted")
 
 -- the menu belongs to the Kingdom Hearts style
 local menuPanel = { Visible = false }

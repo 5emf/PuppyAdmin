@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-71" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-72" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -367,6 +367,7 @@ local Cfg = {
     uiStyle = "Standard", -- Settings > Look > UI style: Standard or Kingdom Hearts
     barKey = "",        -- Settings > General: key / mouse button that shows or hides the command bar ("" = none)
     barHidden = false,  -- command bar hidden (the rest of the UI stays)
+    puppyTime = 0,      -- seconds of active Puppy Admin use, all sessions (KH menu PUPPYTIME)
     selfHud = false,    -- Settings > Look: your avatar, HP ring, HP / FPS bars and a COMMAND list
     khPrev = {},        -- theme / font / cursor to go back to when the Kingdom Hearts style is turned off
                         -- (a table, not nil: cfgLoad only keeps fields whose default has a type)
@@ -13399,6 +13400,45 @@ do
         } },
     }
 
+    -- PUPPYTIME: seconds you actively used Puppy Admin. Counts while the script runs and
+    -- the Roblox window is focused (time tabbed out doesn't count); the all-time total is
+    -- saved in the config every minute and when the script stops.
+    M.session, M.saved = 0, 0
+    M.focused = true
+    pcall(function()
+        table.insert(conns, UserInputService.WindowFocused:Connect(function() M.focused = true end))
+        table.insert(conns, UserInputService.WindowFocusReleased:Connect(function() M.focused = false end))
+    end)
+    function M.tick(dt)
+        if not M.focused or not (dt > 0 and dt < 5) then return end -- ignore long hitches / sleep
+        M.session = M.session + dt
+        Cfg.puppyTime = (tonumber(Cfg.puppyTime) or 0) + dt
+    end
+    function M.total() return tonumber(Cfg.puppyTime) or 0 end
+    function M.save()
+        if math.abs(M.total() - M.saved) >= 1 then M.saved = M.total(); pcall(cfgSave) end
+    end
+    task.spawn(function()
+        local last, sinceSave = os.clock(), 0
+        while genv.PuppyAdminActive == true do
+            task.wait(1)
+            local now = os.clock()
+            local dt = now - last
+            last = now
+            M.tick(dt)
+            sinceSave = sinceSave + dt
+            if sinceSave >= 60 then sinceSave = 0; M.save() end
+        end
+    end)
+    table.insert(cleanups, function() pcall(M.save) end)
+
+    -- pure: 3725 s -> "1:02:05", 125 s -> "2:05"
+    function M.formatDuration(sec)
+        local t = math.max(0, math.floor(tonumber(sec) or 0))
+        if t >= 3600 then return string.format("%d:%02d:%02d", math.floor(t / 3600), math.floor(t / 60) % 60, t % 60) end
+        return string.format("%d:%02d", math.floor(t / 60), t % 60)
+    end
+
     -- pure: "9:41 PM" for 21:41 (12-hour clock, like the device shows it)
     function M.formatClock(hour, minute)
         local h = hour % 12
@@ -13419,7 +13459,7 @@ do
     end
 
     function UIAPI.buildMenuPanel(screenGui)
-        local W, HGT = 560, 500 -- 8 categories (37 px each) above the info block
+        local W, HGT = 560, 560 -- 8 categories (37 px each) above the info block
         local f = uiWindow(screenGui, "menu", "Menu", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2, 0.5, -HGT / 2))
         local desc = label(f, { Position = UDim2.fromOffset(210, HGT - 64), Size = UDim2.fromOffset(W - 226, 48), TextSize = 15,
             TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = PAL.ACCENT, Text = "" })
@@ -13455,13 +13495,16 @@ do
             return label(f, { Position = UDim2.fromOffset(16, y), Size = UDim2.fromOffset(180, size + 4), TextSize = size,
                 Text = text, TextColor3 = color, TextXAlignment = Enum.TextXAlignment.Left })
         end
-        local pTitle = info("PLAYERS", HGT - 104, Color3.fromRGB(255, 150, 50), 14)
-        local pValue = info("0", HGT - 86, Color3.fromRGB(255, 210, 70), 22)
-        local tTitle = info("TIME", HGT - 58, Color3.fromRGB(80, 150, 255), 14)
-        local tValue = info(M.clockText(), HGT - 40, Color3.fromRGB(90, 200, 255), 22) -- your local time
+        local pTitle = info("PLAYERS", HGT - 172, Color3.fromRGB(255, 150, 50), 14)
+        local pValue = info("0", HGT - 154, Color3.fromRGB(255, 210, 70), 22)
+        local tTitle = info("TIME", HGT - 124, Color3.fromRGB(80, 150, 255), 14)
+        local tValue = info(M.clockText(), HGT - 106, Color3.fromRGB(90, 200, 255), 22) -- your local time
+        local uTitle = info("PUPPYTIME", HGT - 76, Color3.fromRGB(255, 130, 190), 14)
+        local uValue = info("0:00", HGT - 58, Color3.fromRGB(255, 170, 215), 22) -- active use, this session
+        local uTotal = info("total 0:00", HGT - 30, PAL.DIM, 12)
         local function restyle()
             local kh = Cfg.uiStyle == "Kingdom Hearts"
-            for _, l in ipairs({ pTitle, pValue, tTitle, tValue }) do
+            for _, l in ipairs({ pTitle, pValue, tTitle, tValue, uTitle, uValue, uTotal }) do
                 l:SetAttribute("PuppyAdminKeepFont", kh or nil)
                 local face = kh and UIFont.make("KH Gummi", Enum.FontWeight.Regular, Enum.FontStyle.Italic) or nil
                 if face then pcall(function() l.FontFace = face end) elseif not kh then pcall(UIFont.applyTo, l) end
@@ -13472,6 +13515,8 @@ do
             restyle()
             pValue.Text = tostring(#Players:GetPlayers())
             tValue.Text = M.clockText()
+            uValue.Text = M.formatDuration(M.session)
+            uTotal.Text = "total " .. M.formatDuration(M.total())
         end
         f:GetPropertyChangedSignal("Visible"):Connect(function() if f.Visible then UIAPI.syncFns.menu() end end)
         task.spawn(function()
