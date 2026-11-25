@@ -186,7 +186,8 @@ class CompanionApp:
         self._kh = None           # Kingdom Hearts style state (images, saved layouts), see apply_kh
         self._kh_target = None
         self._kh_ticking = False
-        self.sounds = khmenu.MenuSounds()
+        self.sounds = khmenu.MenuSounds(extra=(os.path.join(store.folder, "sounds"),))
+        self._sound_told = set()  # reasons a sound did not play, logged once each
         self._build()
         self.apply_kh()
         self.apply_cursor()
@@ -471,7 +472,30 @@ class CompanionApp:
         """Menu sounds: Kingdom Hearts style only, with the setting on, files in PuppyAdmin/sounds."""
         if getattr(self, "sounds", None) is None or not self.kh_on() or not self.settings.get("menu_sounds"):
             return False
-        return self.sounds.play(self.settings.get("workspace"), kind)
+        ok = self.sounds.play(self.settings.get("workspace"), kind)
+        why = self.sounds.why
+        if not ok and why and why not in self._sound_told:
+            self._sound_told.add(why)  # say once why it is silent, never in a loop
+            self.log("Menu sounds: %s" % why, sound=False)
+        return ok
+
+    def test_sound(self):
+        """The Test button: plays Menu_Select whatever the style, and says exactly what happened."""
+        ws = self.settings.get("workspace")
+        ok = self.sounds.play(ws, "select", force=True)
+        if ok:
+            self.log("Menu sounds: played %s." % self.sounds.path, sound=False)
+        else:
+            self.log("Menu sounds test: %s" % self.sounds.why, sound=False)
+        notes = []
+        if not self.kh_on():
+            notes.append("they only play in the Kingdom Hearts style")
+        if not self.settings.get("menu_sounds"):
+            notes.append("the Menu sounds switch is off")
+        if notes:
+            self.log("Menu sounds: " + " and ".join(notes) + ".", sound=False)
+        self.update_sound_label()
+        return ok
 
     SOUND_CLASSES = ("TButton", "TCheckbutton", "TRadiobutton", "TCombobox")
 
@@ -783,6 +807,7 @@ class CompanionApp:
         ttk.Checkbutton(snd, text="Menu sounds (Kingdom Hearts style)", variable=self.menu_sounds_var,
                         command=lambda: self.set_menu_sounds(self.menu_sounds_var.get())).pack(side="left")
         ttk.Button(snd, text="Add sound files...", command=self.import_sounds).pack(side="left", padx=self.pad(10, 0))
+        ttk.Button(snd, text="Test sound", command=self.test_sound).pack(side="left", padx=self.pad(6, 0))
         self.sound_lbl = ttk.Label(th, style="Dim.TLabel", wraplength=self.px(760), text="")
         self.sound_lbl.pack(anchor="w", pady=self.pad(0, 8))
         self.update_sound_label()
@@ -868,6 +893,7 @@ class CompanionApp:
 
     def set_menu_sounds(self, on):
         self.settings.set("menu_sounds", bool(on))
+        self._sound_told.clear()
         self.log("Menu sounds %s." % ("on" if on else "off"))
         self.update_sound_label()
 
@@ -876,7 +902,7 @@ class CompanionApp:
         if not ws:
             text = "Menu sounds come from PuppyAdmin/sounds in your executor folder: set that folder in Settings first."
         else:
-            found = khmenu.MenuSounds.found(ws)
+            found = self.sounds.found(ws)
             have = [khmenu.SOUND_FILES[k] for k in ("move", "select", "denied") if found[k]]
             missing = [khmenu.SOUND_FILES[k] for k in ("move", "select", "denied") if not found[k]]
             text = "In %s: %s." % (khmenu.sound_dir(ws), ", ".join(have) if have else "no sound files yet")
@@ -909,6 +935,7 @@ class CompanionApp:
             except OSError as e:
                 self.log("Could not copy %s: %s" % (os.path.basename(p), e))
         if n:
+            self._sound_told.clear()
             self.log("Copied %d sound file%s to %s." % (n, "" if n == 1 else "s", khmenu.sound_dir(ws)))
         self.update_sound_label()
         return n
@@ -1007,8 +1034,8 @@ class CompanionApp:
             self.ui.put(("call", (done, (res, err))))
         threading.Thread(target=runner, daemon=True).start()
 
-    def log(self, text):
-        if khmenu.is_denied(text):
+    def log(self, text, sound=True):
+        if sound and khmenu.is_denied(text):
             self.kh_sound("denied")
         line = time.strftime("%H:%M:%S  ") + redact(text)
         self.log_text.configure(state="normal")

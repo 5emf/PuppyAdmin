@@ -106,7 +106,16 @@ class MenuSoundsTest(unittest.TestCase):
         self.assertTrue(km.sound_path(self.ws, "move").endswith(os.path.join("PuppyAdmin", "sounds", "Menu_Move.wav")))
         self.assertIsNone(km.sound_path(self.ws, "denied"), "missing file: no sound")
         self.assertIsNone(km.sound_path("", "move"))
-        self.assertEqual(km.MenuSounds.found(self.ws), {"move": True, "denied": False, "select": True})
+        self.assertEqual(km.MenuSounds().found(self.ws), {"move": True, "denied": False, "select": True})
+        # a download may add text to the name: still found
+        open(os.path.join(km.sound_dir(self.ws), "860436d8-Menu_Denied.wav"), "wb").close()
+        self.assertTrue(km.sound_path(self.ws, "denied").endswith("860436d8-Menu_Denied.wav"))
+        other = tempfile.mkdtemp()
+        try:
+            open(os.path.join(other, "Menu_Denied.wav"), "wb").close()
+            self.assertEqual(km.sound_path("", "denied", (other,)), os.path.join(other, "Menu_Denied.wav"), "extra folders too")
+        finally:
+            shutil.rmtree(other, ignore_errors=True)
         self.assertTrue(km.is_denied("Could not write the auto-execute file: x"))
         self.assertTrue(km.is_denied("Login check failed: 401"))
         self.assertFalse(km.is_denied("Theme: Midnight."))
@@ -122,7 +131,12 @@ class MenuSoundsTest(unittest.TestCase):
         self.assertTrue(ms.play(self.ws, "move"))
         self.assertTrue(ms.play(self.ws, "select"))
         self.assertFalse(ms.play(self.ws, "denied"), "no file")
+        self.assertIn("Menu_Denied.wav", ms.why, "and it says what is missing")
         self.assertEqual(len(played), 3)
+        refuse = self.km.MenuSounds(player=lambda p: (False, "Windows could not play it (error 2)"))
+        self.assertFalse(refuse.play(self.ws, "move"))
+        self.assertIn("error 2", refuse.why)
+        self.assertTrue(ms.play(self.ws, "select", force=True), "the Test button skips the repeat gap")
 
 
 class KHWindowTest(unittest.TestCase):
@@ -239,10 +253,13 @@ class KHWindowTest(unittest.TestCase):
                 f.write(b"RIFF")
         n = self.app.import_sounds([os.path.join(src, x) for x in ("Menu_Move.wav", "Menu_Select.wav", "Menu_Denied.wav", "other.wav")])
         self.assertEqual(n, 3)
-        self.assertEqual(khmenu.MenuSounds.found(ws), {"move": True, "denied": True, "select": True})
+        self.assertEqual(self.app.sounds.found(ws), {"move": True, "denied": True, "select": True})
         played = []
         self.app.sounds = khmenu.MenuSounds(player=lambda p: played.append(os.path.basename(p)) or True)
+        played_test = []
         self.assertFalse(self.app.kh_sound("select"), "standard style: silent")
+        self.assertTrue(self.app.test_sound(), "the Test button plays even in the standard style")
+        self.assertIn("only play in the Kingdom Hearts style", self.app.log_text.get("1.0", "end"), "and says why menus are silent")
         self.app.set_style("Kingdom Hearts")
         self.app.sounds.last.clear()
         self.assertTrue(self.app.kh_sound("select"))
@@ -260,6 +277,15 @@ class KHWindowTest(unittest.TestCase):
         btn.event_generate("<ButtonRelease-1>", x=2, y=2)
         self.root.update()
         self.assertEqual(played, ["Menu_Move.wav", "Menu_Select.wav"], "hover moves, click selects")
+
+    def test_silent_reason_is_logged_once(self):
+        from puppy_companion import khmenu
+        self.app.sounds = khmenu.MenuSounds(player=lambda p: True)
+        self.app.set_style("Kingdom Hearts")
+        for _ in range(3):
+            self.app.kh_sound("move")
+        log = self.app.log_text.get("1.0", "end")
+        self.assertEqual(log.count("Menu sounds: no Menu_Move.wav"), 1, log)
 
     def test_style_survives_a_restart(self):
         self.app.set_style("Kingdom Hearts")

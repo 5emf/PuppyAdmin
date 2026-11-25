@@ -1,5 +1,5 @@
 {
-  "version": "1.6.3",
+  "version": "1.6.4",
   "files": [
     {
       "path": "puppy_companion/__init__.py",
@@ -8,13 +8,13 @@
     },
     {
       "path": "puppy_companion/_payload.py",
-      "sha256": "8a999d39bbc5afba9e3fc35eacbab4e4c69035e54ddcd345b6b4beb9352bf369",
+      "sha256": "25508839296cdb4f62408cfd0305c930fea0855d9f5f3c4b59ebdcc576862974",
       "size": 1652
     },
     {
       "path": "puppy_companion/app.py",
-      "sha256": "71f42f4a6374ab7f408fa5f7599e2120a9003a981e8d76e1967c435f5f14f438",
-      "size": 86506
+      "sha256": "b8b37712448056c8d3193adb9702b8ccfe52ce07e4d0e0105967b7499bc09124",
+      "size": 87863
     },
     {
       "path": "puppy_companion/cursors/glove.cur",
@@ -103,8 +103,8 @@
     },
     {
       "path": "puppy_companion/khmenu.py",
-      "sha256": "e1b520458c503775556bfd5ecefbcbb4a6c4deb34a96aee61d954edc2880b9cd",
-      "size": 14071
+      "sha256": "14883b549e415780ed8d2631049ed001a40fdd09e07bfba24b2d8f0aa33b5433",
+      "size": 16264
     },
     {
       "path": "puppy_companion/launch.py",

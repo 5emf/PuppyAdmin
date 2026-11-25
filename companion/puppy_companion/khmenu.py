@@ -254,13 +254,32 @@ def sound_dir(workspace):
     return os.path.join(workspace, *SOUND_DIR) if workspace else ""
 
 
-def sound_path(workspace, kind):
-    """The file for a sound kind in the workspace, or None when it is not there."""
+def sound_dirs(workspace, extra=()):
+    """Where sounds are looked for: the workspace's PuppyAdmin/sounds, then any extra folders."""
+    out = [sound_dir(workspace)] if workspace else []
+    out.extend(d for d in extra if d)
+    return out
+
+
+def sound_path(workspace, kind, extra=()):
+    """The file for a sound kind, or None. The exact name first (Menu_Move.wav); otherwise any .wav
+    in the folder whose name says which sound it is (a download may have added text to the name)."""
     name = SOUND_FILES.get(kind)
-    if not (workspace and name):
+    if not name:
         return None
-    path = os.path.join(sound_dir(workspace), name)
-    return path if os.path.isfile(path) else None
+    for folder in sound_dirs(workspace, extra):
+        path = os.path.join(folder, name)
+        if os.path.isfile(path):
+            return path
+    for folder in sound_dirs(workspace, extra):
+        try:
+            names = sorted(os.listdir(folder))
+        except OSError:
+            continue
+        for n in names:
+            if n.lower().endswith(".wav") and kind_for_file(n) == kind and os.path.isfile(os.path.join(folder, n)):
+                return os.path.join(folder, n)
+    return None
 
 
 def is_denied(text):
@@ -279,34 +298,58 @@ def kind_for_file(name):
 
 
 def _winmm_play(path):
-    """Windows' own player (winmm PlaySoundW), asynchronous; ctypes is already in the exe."""
+    """Windows' own player, asynchronous. winsound when the exe has it, else winmm PlaySoundW
+    through ctypes (an exe built before menu sounds may not include winsound). Returns (ok, why)."""
     if sys.platform != "win32":
-        return False
+        return False, "sounds play on Windows only"
+    try:
+        import winsound
+        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+        return True, "winsound"
+    except ImportError:
+        pass
+    except RuntimeError as e:  # winsound: "Failed to play sound"
+        return False, "Windows could not play it (%s)" % e
     import ctypes
+    from ctypes import wintypes
     SND_ASYNC, SND_NODEFAULT, SND_FILENAME = 0x0001, 0x0002, 0x00020000
-    return bool(ctypes.windll.winmm.PlaySoundW(path, None, SND_ASYNC | SND_NODEFAULT | SND_FILENAME))
+    fn = ctypes.windll.winmm.PlaySoundW
+    fn.argtypes = (wintypes.LPCWSTR, wintypes.HMODULE, wintypes.DWORD)
+    fn.restype = wintypes.BOOL
+    if fn(path, None, SND_ASYNC | SND_NODEFAULT | SND_FILENAME):
+        return True, "winmm"
+    return False, "Windows could not play it (error %d)" % ctypes.GetLastError()
 
 
 class MenuSounds:
-    def __init__(self, player=None, clock=time.time):
+    def __init__(self, player=None, clock=time.time, extra=()):
         self.player = player or _winmm_play
         self.clock = clock
+        self.extra = tuple(extra)  # more folders to look in (the companion's own data folder)
         self.last = {}
+        self.why = ""             # why the last sound did not play ("" when it did)
 
-    def play(self, workspace, kind):
-        """Plays a sound kind if its file is there and it did not just play; returns True if played."""
-        path = sound_path(workspace, kind)
+    def play(self, workspace, kind, force=False):
+        """Plays a sound kind if its file is there and it did not just play; returns True if played.
+        force skips the repeat gap (the Test button)."""
+        path = sound_path(workspace, kind, self.extra)
         if not path:
+            self.why = "no %s in %s" % (SOUND_FILES.get(kind, kind), " or ".join(sound_dirs(workspace, self.extra)) or
+                                        "any folder (set the executor folder in Settings)")
             return False
         now = self.clock()
-        if now - self.last.get(kind, -1e9) < SOUND_GAP.get(kind, 0.05):
+        if not force and now - self.last.get(kind, -1e9) < SOUND_GAP.get(kind, 0.05):
+            self.why = ""
             return False
         self.last[kind] = now
         try:
-            return bool(self.player(path))
-        except OSError:
-            return False
+            res = self.player(path)
+        except OSError as e:
+            res = (False, str(e))
+        ok, how = res if isinstance(res, tuple) else (bool(res), "")
+        self.why = "" if ok else "%s: %s" % (os.path.basename(path), how or "not played")
+        self.path = path
+        return ok
 
-    @staticmethod
-    def found(workspace):
-        return {kind: sound_path(workspace, kind) is not None for kind in SOUND_FILES}
+    def found(self, workspace):
+        return {kind: sound_path(workspace, kind, self.extra) is not None for kind in SOUND_FILES}
