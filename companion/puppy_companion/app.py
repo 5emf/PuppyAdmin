@@ -929,8 +929,8 @@ class CompanionApp:
         for prefix in ("Menu_", "SAO_"):
             found = self.sounds.found(ws, prefix) if ws else {k: False for k in khmenu.SOUND_FILES}
             own += [khmenu.style_name(k, prefix) for k in ("move", "select", "denied") if found[k]]
-        text = ("Built-in menu sounds are included. " if khmenu.USE_BUILTIN else
-                "Menu sounds play from your own files only. ")
+        text = ("Built-in menu sounds play in both styles. " if khmenu.USE_BUILTIN else
+                "Sword Art Online uses the built-in sounds; Kingdom Hearts plays only your own files. ")
         if own:
             text += "Found: %s (in %s). " % (", ".join(own), khmenu.sound_dir(ws))
         else:

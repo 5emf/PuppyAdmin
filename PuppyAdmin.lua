@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.25-82" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.25-83" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -14459,7 +14459,8 @@ end)()
     MS.EXTS = { "ogg", "mp3", "wav" }
     MS.GAP = { move = 0.05, select = 0.08, denied = 0.3 }
     MS.VOLUME = 0.6
-    -- built-in sounds: switched off (owner's request); the files stay in the repository. true turns them back on.
+    -- built-in sounds (original): the Sword Art Online style's sounds (owner's request); for the
+    -- Kingdom Hearts style they are switched off (only your own Menu_* files). true turns them on there too.
     MS.USE_BUILTIN = false
     MS.BUILTIN = { move = "assets/sounds/menu_move_v1.mp3", select = "assets/sounds/menu_select_v1.mp3",
         denied = "assets/sounds/menu_denied_v1.mp3" }
@@ -14508,7 +14509,8 @@ end)()
             end
         end
         -- none of the player's own: the built-in sound from the repository (downloaded once, then cached)
-        local url = MS.USE_BUILTIN and Cfg.uiStyle == "Kingdom Hearts" and MS.BUILTIN[kind] and (SETTINGS.Auras.assetBase .. MS.BUILTIN[kind])
+        local builtinOn = Cfg.uiStyle == "Sword Art Online" or (MS.USE_BUILTIN and Cfg.uiStyle == "Kingdom Hearts")
+        local url = builtinOn and MS.BUILTIN[kind] and (SETTINGS.Auras.assetBase .. MS.BUILTIN[kind])
         local id = url and urlImageAsset(url, "sound")
         if id then return make(id, "built-in " .. MS.BUILTIN[kind]:match("[^/]+$")) end
         return nil

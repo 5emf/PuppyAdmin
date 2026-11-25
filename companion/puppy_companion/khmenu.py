@@ -247,7 +247,8 @@ SOUND_DIR = ("PuppyAdmin", "sounds")
 # built-in sounds (original, synthesized by tools/make_menu_sounds.py), used when the player has none
 BUILTIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sounds")
 BUILTIN_FILES = {"move": "menu_move.wav", "denied": "menu_denied.wav", "select": "menu_select.wav"}
-USE_BUILTIN = False  # switched off (owner's request); the files stay in the package. True turns them back on.
+USE_BUILTIN = False  # Kingdom Hearts style: off (owner's request), only your own Menu_* files. True turns them on.
+# The Sword Art Online style always uses the built-in sounds when you have no SAO_* file (owner's request).
 SOUND_FILES = {"move": "Menu_Move.wav", "denied": "Menu_Denied.wav", "select": "Menu_Select.wav"}
 SOUND_GAP = {"move": 0.05, "select": 0.08, "denied": 0.3}  # seconds before the same sound may play again
 DENY_WORDS = ("could not", "couldn't", "failed", "error", "not allowed", "refused", "cannot", "can't", "denied",
@@ -313,7 +314,7 @@ def sound_path(workspace, kind, extra=(), builtin=None, prefix="Menu_"):
     """The player's own file for a sound kind, else the built-in one when those are on (USE_BUILTIN;
     the built-in sounds are the Kingdom Hearts style's)."""
     if builtin is None:
-        builtin = USE_BUILTIN and prefix == "Menu_"
+        builtin = prefix == "SAO_" or (USE_BUILTIN and prefix == "Menu_")
     return own_sound_path(workspace, kind, extra, prefix) or (builtin_sound_path(kind) if builtin else None)
 
 

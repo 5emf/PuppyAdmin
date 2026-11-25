@@ -8,7 +8,7 @@ the only files the updater does not replace, so keep them small and stable.
 """
 
 # Bumped whenever the package changes. make_payload.py writes it into payload.json.
-PAYLOAD_VERSION = "1.7.0"
+PAYLOAD_VERSION = "1.7.1"
 
 # The repository the update is pulled from (raw files over HTTPS, same trust model
 # as the Lua loadstring). Point these at your fork/branch if you run your own.

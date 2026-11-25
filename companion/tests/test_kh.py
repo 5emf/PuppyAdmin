@@ -379,7 +379,11 @@ class KHWindowTest(unittest.TestCase):
         self.app.kh_sound("select")
         self.assertEqual(played, ["Menu_Select.wav", "SAO_Select.mp3"], "each style plays its own files")
         self.app.sounds.last.clear()
-        self.assertFalse(self.app.kh_sound("move"), "no SAO_Move: silent")
+        self.assertTrue(self.app.kh_sound("move"), "no SAO_Move: the built-in sound")
+        self.assertEqual(played[-1], "menu_move.wav")
+        self.app.set_style("Kingdom Hearts")
+        self.app.sounds.last.clear()
+        self.assertFalse(self.app.kh_sound("move"), "KH style, no Menu_Move: silent (built-ins are SAO only)")
         self.assertEqual(khmenu.file_prefix("C:/x/9b93-SAO_Denied.mp3"), "SAO_")
         self.assertEqual(khmenu.style_name("denied", "SAO_"), "SAO_Denied")
 

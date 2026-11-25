@@ -261,9 +261,10 @@ do
     MS.reload()
     clock = clock + 1
     check(MS.fileName("move") == "SAO_Move" and MS.play("select") == true and played[#played] == "asset://PuppyAdmin/sounds/SAO_Select.ogg",
-        "SAO style: its own SAO_* files")
+        "SAO style: your own SAO_* files first")
     clock = clock + 1
-    check(MS.play("move") == false, "no SAO_Move: silent (the KH files are not used for SAO)")
+    check(MS.play("move") == true and played[#played] == "cached://https://repo/assets/sounds/menu_move_v1.mp3",
+        "no SAO_Move: the built-in sound (not the KH files)")
 end
 
 -- shutdown restores without errors
