@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-72" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.25-73" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -12388,7 +12388,8 @@ do
         for _, sv in ipairs(servers) do
             local pc, mp = sv.playing or 0, sv.maxPlayers or Players.MaxPlayers
             if not excluded[sv.id] and sv.id ~= game.JobId and pc >= minPc and mp - pc >= 1 and pc <= maxPc then
-                local score = mode == "most" and pc or (mode == "random" and math.random(0, 60) or -pc)
+                local score = mode == "most" and pc or (mode == "random" and math.random(0, 60))
+                    or (mode == "ping" and -(sv.ping or 1000)) or -pc
                 local v = visited[sv.id]
                 if type(v) == "table" then
                     local age = os.time() - (tonumber(v.timestamp) or 0)
@@ -12627,6 +12628,8 @@ local function buildPanels(screenGui)
     B.alts = function() UIAPI.buildAltsPanel(screenGui) end
     B.limbs = function() UIAPI.buildLimbsPanel(screenGui) end
     B.menu = function() UIAPI.buildMenuPanel(screenGui) end
+    B.logs = function() UIAPI.buildLogsPanel(screenGui) end
+    B.inspect = function() UIAPI.buildInspectPanel(screenGui) end
 end
 
 -- Custom mouse cursor (Settings > Look). The image follows the mouse in its own
@@ -12703,6 +12706,979 @@ do
 
     table.insert(cleanups, C.off)
 end
+
+-- Extra commands (`UIAPI.Extra`): camera, world, character, player info and logs.
+-- Written for Puppy Admin; the feature list was compared with another admin script's
+-- command names, nothing of its code is used. Everything here is client-side: what it
+-- changes only shows on your screen, except your own character (hip height, bhop,
+-- shift lock), which replicates as usual.
+;(function() -- own function scope: the main chunk is at the 200-local limit
+    local X = { on = {} }
+    UIAPI.Extra = X
+    local Lighting = game:GetService("Lighting")
+    local function getRootPart(char)
+        return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso"))
+    end
+    local function guiRoot() return notifGui.Parent or CoreGui end
+
+    -- running features: key -> list of connections (or { Disconnect = fn })
+    local function drop(key)
+        local list = X.on[key]
+        X.on[key] = nil
+        if list then for _, c in ipairs(list) do pcall(function() c:Disconnect() end) end end
+    end
+    local function keep(key, conn)
+        X.on[key] = X.on[key] or {}
+        table.insert(X.on[key], conn)
+        return conn
+    end
+    local function isOn(key) return X.on[key] ~= nil end
+    X.isOn = isOn
+    local function wantsOff(a)
+        local l = a and a[1] and a[1]:lower()
+        return l == "off" or l == "0" or l == "false" or l == "stop"
+    end
+    local function myHum()
+        local c = plr.Character
+        return c and c:FindFirstChildOfClass("Humanoid"), c
+    end
+
+    ------------------------------------------------------------ pure helpers (tested)
+    X.NAMED_TIMES = { day = 14, noon = 12, night = 0, midnight = 0, dawn = 6, sunrise = 6, morning = 8,
+        dusk = 18, sunset = 18, evening = 19 }
+    -- "14", "14.5", "2:30", "2:30pm", "7am", "day" ... -> hours in [0, 24], or nil
+    function X.parseClock(s)
+        s = tostring(s or ""):lower():gsub("%s+", "")
+        if X.NAMED_TIMES[s] then return X.NAMED_TIMES[s] end
+        local h, m, ap = s:match("^(%d+):(%d%d)([ap]?)m?$")
+        if not h then
+            h, ap = s:match("^(%d+%.?%d*)([ap]?)m?$")
+            m = "0"
+        end
+        h, m = tonumber(h), tonumber(m)
+        if not h or not m or m >= 60 then return nil end
+        if s:sub(-1) == "m" and ap == "" then return nil end
+        if ap ~= "" then
+            if h < 1 or h > 12 or h % 1 ~= 0 then return nil end
+            h = h % 12 + (ap == "p" and 12 or 0)
+        end
+        local t = h + m / 60
+        if t < 0 or t > 24 then return nil end
+        return t
+    end
+    function X.formatClock(t)
+        t = tonumber(t) or 0
+        local mins = math.floor(t * 60 + 0.5) % (24 * 60)
+        return string.format("%02d:%02d", math.floor(mins / 60), mins % 60)
+    end
+    function X.clampFov(v)
+        v = tonumber(v)
+        if not v or v ~= v then return nil end
+        return math.max(1, math.min(120, v))
+    end
+    function X.clampCps(v)
+        v = tonumber(v)
+        if not v or v ~= v then return nil end
+        return math.max(1, math.min(30, math.floor(v)))
+    end
+    -- freecam keys -> camera-space direction (x right, y up, z back)
+    function X.moveVector(keys)
+        local function k(n) return keys[n] and 1 or 0 end
+        return k("D") - k("A"), k("E") - k("Q"), k("S") - k("W")
+    end
+    -- append to a list, dropping the oldest entries past cap
+    function X.push(list, item, cap)
+        list[#list + 1] = item
+        while #list > cap do table.remove(list, 1) end
+        return list
+    end
+    -- the number in an animation id ("rbxassetid://123", "http://www.roblox.com/asset/?id=123")
+    function X.animNumber(id)
+        return tostring(id or ""):match("(%d+)%D*$")
+    end
+
+    ------------------------------------------------------------ camera
+    -- fov <1-120> | reset : kept every frame, because many games set it back
+    function H.fov(a)
+        local cam = workspace.CurrentCamera
+        local w = (a[1] or ""):lower()
+        if w == "" then
+            note("FOV", string.format("Field of view %d (fov <1-120> | fov reset)", cam and math.floor(cam.FieldOfView + 0.5) or 0), LIGHT)
+            return
+        end
+        if w == "reset" or wantsOff(a) then
+            drop("fov")
+            X.fovValue = nil
+            if cam then cam.FieldOfView = X.fovBase or 70 end
+            note("FOV", string.format("Back to %d", math.floor((X.fovBase or 70) + 0.5)), LIGHT)
+            return
+        end
+        local v = X.clampFov(w)
+        if not v then note("FOV", "fov <1-120> or fov reset", RED); return end
+        if not X.fovValue and cam then X.fovBase = cam.FieldOfView end
+        X.fovValue = v
+        drop("fov")
+        keep("fov", RunService.RenderStepped:Connect(function()
+            local c = workspace.CurrentCamera
+            if c and X.fovValue and math.abs(c.FieldOfView - X.fovValue) > 0.01 then c.FieldOfView = X.fovValue end
+        end))
+        note("FOV", string.format("Field of view %g, kept until fov reset", v), LIGHT)
+    end
+
+    -- freecam: WASD move, Q / E down / up, hold the right mouse button to look, Shift faster
+    X.fc = { speed = 40, keys = {} }
+    local FC_NAMES = { [Enum.KeyCode.W] = "W", [Enum.KeyCode.A] = "A", [Enum.KeyCode.S] = "S", [Enum.KeyCode.D] = "D",
+        [Enum.KeyCode.Q] = "Q", [Enum.KeyCode.E] = "E", [Enum.KeyCode.LeftShift] = "Shift" }
+    function X.freecamStart()
+        if isOn("freecam") then return true end
+        local cam = workspace.CurrentCamera
+        if not cam then return false end
+        local fc = X.fc
+        fc.saved = { type = cam.CameraType, subject = cam.CameraSubject }
+        local pitch, yaw = cam.CFrame:ToOrientation()
+        fc.pos, fc.pitch, fc.yaw, fc.keys = cam.CFrame.Position, pitch, yaw, {}
+        keep("freecam", { Disconnect = function() ContextActionService:UnbindAction("PuppyFreecam") end })
+        ContextActionService:BindActionAtPriority("PuppyFreecam", function(_, state, input)
+            local k = FC_NAMES[input.KeyCode]
+            if k then fc.keys[k] = state == Enum.UserInputState.Begin end
+            return Enum.ContextActionResult.Sink
+        end, false, Enum.ContextActionPriority.High.Value + 100, Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S,
+            Enum.KeyCode.D, Enum.KeyCode.Q, Enum.KeyCode.E, Enum.KeyCode.LeftShift)
+        cam.CameraType = Enum.CameraType.Scriptable
+        keep("freecam", RunService.RenderStepped:Connect(function(dt)
+            local c = workspace.CurrentCamera
+            if not c then return end
+            if c.CameraType ~= Enum.CameraType.Scriptable then c.CameraType = Enum.CameraType.Scriptable end
+            if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+                UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+                local d = UserInputService:GetMouseDelta()
+                fc.yaw = fc.yaw - d.X * 0.004
+                fc.pitch = math.max(-1.55, math.min(1.55, fc.pitch - d.Y * 0.004))
+            elseif UserInputService.MouseBehavior == Enum.MouseBehavior.LockCurrentPosition then
+                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            end
+            local rot = CFrame.fromOrientation(fc.pitch, fc.yaw, 0)
+            local x, y, z = X.moveVector(fc.keys)
+            if x ~= 0 or y ~= 0 or z ~= 0 then
+                local step = fc.speed * (fc.keys.Shift and 3 or 1) * math.min(dt, 0.1)
+                fc.pos = fc.pos + rot:VectorToWorldSpace(Vector3.new(x, y, z).Unit * step)
+            end
+            c.CFrame = CFrame.new(fc.pos) * rot
+        end))
+        return true
+    end
+    function X.freecamStop()
+        if not isOn("freecam") then return false end
+        drop("freecam")
+        if UserInputService.MouseBehavior == Enum.MouseBehavior.LockCurrentPosition then
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+        end
+        local c, saved = workspace.CurrentCamera, X.fc.saved
+        if c then
+            local t = saved and saved.type
+            c.CameraType = (t and t ~= Enum.CameraType.Scriptable) and t or Enum.CameraType.Custom
+            c.CameraSubject = myHum() or (saved and saved.subject) or c.CameraSubject
+        end
+        return true
+    end
+    function H.freecam(a)
+        local w = (a[1] or ""):lower()
+        if wantsOff(a) then H.unfreecam(); return end
+        local sp = tonumber(w)
+        if sp and sp > 0 and sp == sp then X.fc.speed = math.min(sp, 2000) end
+        if isOn("freecam") and not sp then H.unfreecam(); return end
+        if X.freecamStart() then
+            note("Freecam", string.format("On (speed %g): WASD move, Q/E down/up, hold right mouse to look, Shift faster. unfreecam ends it", X.fc.speed), LIGHT)
+        else
+            note("Freecam", "No camera", RED)
+        end
+    end
+    function H.unfreecam()
+        if X.freecamStop() then note("Freecam", "Off", LIGHT) end
+    end
+
+    -- shift lock that the game cannot turn off; hold Left Alt to free the mouse for a moment
+    function X.shiftlockSet(on)
+        if not on then
+            if not isOn("shiftlock") then return false end
+            drop("shiftlock")
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            local h = myHum()
+            if h then h.AutoRotate = true end
+            return true
+        end
+        if isOn("shiftlock") then return true end
+        keep("shiftlock", { Disconnect = function() RunService:UnbindFromRenderStep("PuppyShiftLock") end })
+        RunService:BindToRenderStep("PuppyShiftLock", Enum.RenderPriority.Camera.Value + 1, function()
+            if isOn("freecam") then return end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt) then
+                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+                return
+            end
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+            local h, ch = myHum()
+            local root = getRootPart(ch)
+            local c = workspace.CurrentCamera
+            if h and root and c and h.Health > 0 and not h.Sit then
+                h.AutoRotate = false
+                local look = c.CFrame.LookVector
+                if math.abs(look.X) + math.abs(look.Z) > 1e-3 then
+                    root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, math.atan2(-look.X, -look.Z), 0)
+                end
+            end
+        end)
+        return true
+    end
+    function H.shiftlock(a)
+        local on = parseToggle(a[1], isOn("shiftlock"))
+        X.shiftlockSet(on)
+        note("Shift lock", on and "On: your character faces the camera. Hold Left Alt to use the mouse, unshiftlock ends it" or "Off", LIGHT)
+    end
+    function H.unshiftlock() H.shiftlock({ "off" }) end
+
+    -- fixcam: undo camera changes (freecam, fov, shift lock, a game's scripted camera)
+    function H.fixcam()
+        X.freecamStop()
+        X.shiftlockSet(false)
+        drop("fov")
+        X.fovValue = nil
+        local c = workspace.CurrentCamera
+        if c then
+            c.CameraType = Enum.CameraType.Custom
+            c.CameraSubject = myHum() or c.CameraSubject
+            c.FieldOfView = X.fovBase or 70
+        end
+        pcall(function() plr.CameraMode = Enum.CameraMode.Classic end)
+        pcall(function()
+            plr.CameraMinZoomDistance = 0.5
+            if plr.CameraMaxZoomDistance < 128 then plr.CameraMaxZoomDistance = 128 end
+        end)
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+        note("Camera", "Camera reset: follows your character, normal zoom and field of view", LIGHT)
+    end
+
+    ------------------------------------------------------------ world (your screen only)
+    -- time <hour|2:30pm|day|night|...> [once] : held against the game's day cycle unless "once"
+    function X.setClock(t, hold)
+        if X.clockBase == nil then X.clockBase = Lighting.ClockTime end
+        drop("time")
+        X.clockHold = hold and t or nil
+        Lighting.ClockTime = t
+        if hold then
+            keep("time", Lighting:GetPropertyChangedSignal("ClockTime"):Connect(function()
+                if X.clockHold and math.abs(Lighting.ClockTime - X.clockHold) > 0.01 then Lighting.ClockTime = X.clockHold end
+            end))
+        end
+    end
+    function H.time(a)
+        local w = (a[1] or ""):lower()
+        if w == "" then
+            note("Time", "It is " .. X.formatClock(Lighting.ClockTime) .. " here (time <hour | 2:30pm | day | night> [once], untime)", LIGHT)
+            return
+        end
+        if wantsOff(a) or w == "reset" then H.untime(); return end
+        local t = X.parseClock(w)
+        if not t then note("Time", "time <0-24 | 2:30pm | day | night | dawn | dusk> [once]", RED); return end
+        local once = (a[2] or ""):lower() == "once"
+        X.setClock(t, not once)
+        note("Time", X.formatClock(t) .. (once and " (the game's clock keeps running)" or ", held until untime"), LIGHT)
+    end
+    function H.day(a) H.time({ "day", a[1] }) end
+    function H.night(a) H.time({ "night", a[1] }) end
+    function H.untime()
+        drop("time")
+        X.clockHold = nil
+        if X.clockBase ~= nil then Lighting.ClockTime = X.clockBase; X.clockBase = nil end
+        note("Time", "Back to the game's time", LIGHT)
+    end
+
+    -- ambient <colour | r g b | #hex> : lights shadows and indoor areas in that colour
+    function H.ambient(a)
+        if wantsOff(a) or (a[1] or ""):lower() == "reset" then H.unambient(); return end
+        local r, g, b = parseColorArgs(a, 1)
+        if not r then note("Ambient", "ambient <colour | r g b | #hex>, unambient restores", RED); return end
+        if not X.ambBase then X.ambBase = { Lighting.Ambient, Lighting.OutdoorAmbient } end
+        X.amb = Color3.fromRGB(r, g, b)
+        drop("ambient")
+        local busy = false
+        local function apply()
+            if busy or not X.amb then return end
+            busy = true
+            Lighting.Ambient, Lighting.OutdoorAmbient = X.amb, X.amb
+            busy = false
+        end
+        apply()
+        keep("ambient", Lighting:GetPropertyChangedSignal("Ambient"):Connect(apply))
+        keep("ambient", Lighting:GetPropertyChangedSignal("OutdoorAmbient"):Connect(apply))
+        note("Ambient", string.format("Ambient light %d, %d, %d (unambient restores)", r, g, b), LIGHT)
+    end
+    function H.unambient()
+        drop("ambient")
+        X.amb = nil
+        if X.ambBase then Lighting.Ambient, Lighting.OutdoorAmbient = X.ambBase[1], X.ambBase[2]; X.ambBase = nil end
+        note("Ambient", "Back to the game's lighting", LIGHT)
+    end
+
+    -- xray [0-100] : see through the map (players stay solid)
+    X.xr = { amount = 0.6, parts = setmetatable({}, { __mode = "k" }) }
+    local function inCharacter(p)
+        local m = p:FindFirstAncestorOfClass("Model")
+        while m do
+            if Players:GetPlayerFromCharacter(m) or m:FindFirstChildOfClass("Humanoid") then return true end
+            m = m:FindFirstAncestorOfClass("Model")
+        end
+        return false
+    end
+    local function xrayPart(p)
+        local xr = X.xr
+        if not p:IsA("BasePart") or xr.parts[p] ~= nil or inCharacter(p) then return end
+        if pcall(function() p.LocalTransparencyModifier = xr.amount end) then
+            xr.parts[p] = true
+        else -- fallback: the part's own transparency, remembered for undo
+            local orig = p.Transparency
+            if pcall(function() p.Transparency = orig + (1 - orig) * xr.amount end) then xr.parts[p] = orig end
+        end
+    end
+    local function xrayRestore()
+        for p, orig in pairs(X.xr.parts) do
+            pcall(function()
+                if orig == true then p.LocalTransparencyModifier = 0 else p.Transparency = orig end
+            end)
+        end
+        X.xr.parts = setmetatable({}, { __mode = "k" })
+    end
+    function X.xraySet(on, amount)
+        drop("xray")
+        xrayRestore()
+        if not on then return end
+        if amount then X.xr.amount = amount end
+        keep("xray", workspace.DescendantAdded:Connect(function(d)
+            if d:IsA("BasePart") then
+                task.defer(function() if isOn("xray") and d.Parent then pcall(xrayPart, d) end end)
+            end
+        end))
+        local gen = X.on.xray
+        task.spawn(function()
+            for i, d in ipairs(workspace:GetDescendants()) do
+                if X.on.xray ~= gen then return end
+                pcall(xrayPart, d)
+                if i % 2500 == 0 then task.wait() end
+            end
+        end)
+    end
+    function H.xray(a)
+        if wantsOff(a) then H.unxray(); return end
+        local v = tonumber(a[1])
+        if a[1] and not v then note("X-ray", "xray [10-95] (how see-through the map is), unxray ends it", RED); return end
+        X.xraySet(true, v and math.max(0.1, math.min(0.95, v / 100)) or nil)
+        note("X-ray", string.format("Map %d%% see-through, your screen only (unxray)", math.floor(X.xr.amount * 100 + 0.5)), LIGHT)
+    end
+    function H.unxray()
+        X.xraySet(false)
+        note("X-ray", "Off", LIGHT)
+    end
+
+    -- clickdelete : Ctrl + click removes a part on your screen; undelete brings the last ones back
+    X.deleted = {}
+    function X.clickDeleteSet(on)
+        drop("clickdelete")
+        if not on then return end
+        local mouse = plr:GetMouse()
+        keep("clickdelete", UserInputService.InputBegan:Connect(function(input, processed)
+            if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            if not (UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)) then return end
+            local t = mouse.Target
+            if not t or not t:IsA("BasePart") or t:IsA("Terrain") then return end
+            if plr.Character and t:IsDescendantOf(plr.Character) then return end
+            X.push(X.deleted, { part = t, parent = t.Parent }, 50)
+            t.Parent = nil
+            note("Click delete", "Removed " .. t.Name .. " on your screen (undelete brings it back)", LIGHT)
+        end))
+    end
+    function H.clickdelete(a)
+        local on = parseToggle(a[1], isOn("clickdelete"))
+        X.clickDeleteSet(on)
+        note("Click delete", on and "On: Ctrl + click a part to remove it on your screen. undelete restores the last 50" or "Off", LIGHT)
+    end
+    function H.unclickdelete() H.clickdelete({ "off" }) end
+    function H.undelete(a)
+        local all = (a[1] or ""):lower() == "all"
+        local n = 0
+        repeat
+            local e = table.remove(X.deleted)
+            if not e then break end
+            if pcall(function() e.part.Parent = e.parent end) then n = n + 1 end
+        until not all
+        note("Click delete", n > 0 and ("Brought back " .. n .. " part" .. (n == 1 and "" or "s")) or "Nothing to bring back", LIGHT)
+    end
+
+    -- partesp <name> [colour] : boxes and names through walls on parts / models whose name has that text
+    X.pe = { list = {}, count = 0, cap = 150 }
+    local function peDrop(inst)
+        local e = X.pe.list[inst]
+        if not e then return end
+        X.pe.list[inst] = nil
+        X.pe.count = X.pe.count - 1
+        for _, o in ipairs(e) do pcall(function() if typeof(o) == "RBXScriptConnection" then o:Disconnect() else o:Destroy() end end) end
+    end
+    local function peAdd(inst)
+        local P = X.pe
+        if P.list[inst] or P.count >= P.cap then return end
+        local adornee, size, offset = inst, nil, CFrame.new()
+        if inst:IsA("Model") then
+            adornee = inst.PrimaryPart or inst:FindFirstChildWhichIsA("BasePart", true)
+            if not adornee then return end
+            local cf, ext = inst:GetBoundingBox()
+            size, offset = ext, adornee.CFrame:ToObjectSpace(cf)
+        elseif inst:IsA("BasePart") and not inst:IsA("Terrain") then
+            size = inst.Size
+        else
+            return
+        end
+        if plr.Character and inst:IsDescendantOf(plr.Character) then return end
+        local box = make("BoxHandleAdornment", { Name = "PuppyAdminPartEsp", Adornee = adornee, AlwaysOnTop = true, ZIndex = 6,
+            Transparency = 0.55, Size = size, CFrame = offset, Color3 = P.color }, guiRoot())
+        local tag = make("BillboardGui", { Name = "PuppyAdminPartEspTag", Adornee = adornee, AlwaysOnTop = true,
+            Size = UDim2.fromOffset(180, 18), StudsOffsetWorldSpace = offset.Position + Vector3.new(0, size.Y / 2 + 1, 0) }, guiRoot())
+        label(tag, { Size = UDim2.fromScale(1, 1), Text = inst.Name, TextColor3 = P.color, TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Center, TextStrokeTransparency = 0.3 })
+        local gone = inst.AncestryChanged:Connect(function(_, parent) if not parent then peDrop(inst) end end)
+        P.list[inst] = { box, tag, gone }
+        P.count = P.count + 1
+    end
+    local function peMatches(inst, q)
+        return (inst:IsA("BasePart") or inst:IsA("Model")) and inst.Name:lower():find(q, 1, true) ~= nil
+            and not (inst:IsA("Model") and Players:GetPlayerFromCharacter(inst))
+    end
+    function X.partEspSet(query, color)
+        drop("partesp")
+        for inst in pairs(X.pe.list) do peDrop(inst) end
+        X.pe.list, X.pe.count = {}, 0
+        if not query then return end
+        local q = query:lower()
+        X.pe.query, X.pe.color = q, color or Color3.fromRGB(255, 200, 60)
+        keep("partesp", workspace.DescendantAdded:Connect(function(d)
+            if peMatches(d, q) then task.defer(function() if isOn("partesp") and d.Parent then pcall(peAdd, d) end end) end
+        end))
+        local gen = X.on.partesp
+        task.spawn(function()
+            for i, d in ipairs(workspace:GetDescendants()) do
+                if X.on.partesp ~= gen or X.pe.count >= X.pe.cap then break end
+                if peMatches(d, q) then pcall(peAdd, d) end
+                if i % 2500 == 0 then task.wait() end
+            end
+            if X.on.partesp == gen then
+                note("Part ESP", string.format("%d match%s for \"%s\"%s", X.pe.count, X.pe.count == 1 and "" or "es", query,
+                    X.pe.count >= X.pe.cap and " (limit reached, narrow the name)" or ""), LIGHT)
+            end
+        end)
+    end
+    function H.partesp(a)
+        if wantsOff(a) or not a[1] then
+            if not a[1] then note("Part ESP", "partesp <part or model name> [colour], unpartesp clears it", RED) else H.unpartesp() end
+            return
+        end
+        local r, g, b = parseColorArgs(a, 2)
+        X.partEspSet(a[1], r and Color3.fromRGB(r, g, b) or nil)
+    end
+    function H.unpartesp()
+        X.partEspSet(nil)
+        note("Part ESP", "Off", LIGHT)
+    end
+
+    ------------------------------------------------------------ character
+    -- hipheight <n> | reset : how high your character stands; kept after respawns
+    function H.hipheight(a)
+        local w = (a[1] or ""):lower()
+        local h = myHum()
+        if w == "reset" or wantsOff(a) then H.unhipheight(); return end
+        if not h then note("Hip height", "No character", RED); return end
+        if w == "" then note("Hip height", string.format("%.2f (hipheight <0-100> | reset)", h.HipHeight), LIGHT); return end
+        local v = tonumber(w)
+        if not v or v ~= v or v < 0 or v > 100 then note("Hip height", "hipheight <0-100> or hipheight reset", RED); return end
+        if not (X.hipBase and X.hipBase.hum == h) then X.hipBase = { hum = h, value = h.HipHeight } end
+        X.hip = v
+        h.HipHeight = v
+        drop("hipheight")
+        keep("hipheight", plr.CharacterAdded:Connect(function(c)
+            local nh = c:WaitForChild("Humanoid", 10)
+            if nh and X.hip then
+                X.hipBase = { hum = nh, value = nh.HipHeight }
+                nh.HipHeight = X.hip
+            end
+        end))
+        note("Hip height", string.format("%g (hipheight reset puts it back)", v), LIGHT)
+    end
+    function H.unhipheight()
+        drop("hipheight")
+        X.hip = nil
+        local b = X.hipBase
+        if b and b.hum and b.hum.Parent then b.hum.HipHeight = b.value end
+        X.hipBase = nil
+        note("Hip height", "Back to normal", LIGHT)
+    end
+
+    -- bhop : jumps again the moment you land while you are moving
+    function H.bhop(a)
+        local on = parseToggle(a[1], isOn("bhop"))
+        drop("bhop")
+        if on then
+            keep("bhop", RunService.Heartbeat:Connect(function()
+                if UserInputService:GetFocusedTextBox() then return end
+                local h = myHum()
+                if h and h.Health > 0 and h.MoveDirection.Magnitude > 0.1 and h.FloorMaterial ~= Enum.Material.Air then
+                    h.Jump = true
+                end
+            end))
+        end
+        note("Bhop", on and "On: you keep jumping while you move (unbhop)" or "Off", LIGHT)
+    end
+    function H.unbhop() H.bhop({ "off" }) end
+
+    -- antisit : seats cannot grab you
+    local function antisitHook(h)
+        if not h or not isOn("antisit") then return end
+        pcall(function() h:SetStateEnabled(Enum.HumanoidStateType.Seated, false) end)
+        if h.Sit then h.Sit = false; h.Jump = true end
+        keep("antisit", h:GetPropertyChangedSignal("Sit"):Connect(function()
+            if isOn("antisit") and h.Sit then h.Sit = false; h.Jump = true end
+        end))
+    end
+    function H.antisit(a)
+        local on = parseToggle(a[1], isOn("antisit"))
+        drop("antisit")
+        if on then
+            keep("antisit", plr.CharacterAdded:Connect(function(c) antisitHook(c:WaitForChild("Humanoid", 10)) end))
+            antisitHook((myHum()))
+        else
+            local h = myHum()
+            if h then pcall(function() h:SetStateEnabled(Enum.HumanoidStateType.Seated, true) end) end
+        end
+        note("Anti-sit", on and "On: seats cannot make you sit (unantisit)" or "Off", LIGHT)
+    end
+    function H.unantisit() H.antisit({ "off" }) end
+
+    -- antifling : other players cannot push you (their parts stop colliding on your side),
+    -- and a sudden violent spin is cancelled by putting you back where you stood
+    X.af = { saved = setmetatable({}, { __mode = "k" }) }
+    function H.antifling(a)
+        local on = parseToggle(a[1], isOn("antifling"))
+        drop("antifling")
+        local af = X.af
+        if on then
+            af.safe = nil
+            keep("antifling", RunService.Stepped:Connect(function()
+                for _, p in ipairs(Players:GetPlayers()) do
+                    local ch = p ~= plr and p.Character
+                    if ch then
+                        for _, d in ipairs(ch:GetChildren()) do
+                            local part = d:IsA("BasePart") and d or (d:IsA("Accessory") and d:FindFirstChild("Handle"))
+                            if part and part:IsA("BasePart") and part.CanCollide then
+                                af.saved[part] = true
+                                part.CanCollide = false
+                            end
+                        end
+                    end
+                end
+                local _, ch = myHum()
+                local root = getRootPart(ch)
+                if root then
+                    local spin = root.AssemblyAngularVelocity.Magnitude
+                    if spin > 60 and af.safe then
+                        root.AssemblyAngularVelocity, root.AssemblyLinearVelocity = Vector3.zero, Vector3.zero
+                        root.CFrame = af.safe
+                    elseif spin < 10 then
+                        af.safe = root.CFrame
+                    end
+                end
+            end))
+        else
+            for part in pairs(af.saved) do pcall(function() part.CanCollide = true end) end
+            af.saved = setmetatable({}, { __mode = "k" })
+        end
+        note("Anti-fling", on and "On: other players cannot push or fling you (unantifling)" or "Off", LIGHT)
+    end
+    function H.unantifling() H.antifling({ "off" }) end
+
+    -- autoclicker [clicks per second, 1-30] : pauses while Roblox is in the background,
+    -- while you type, and while the mouse is over a Puppy Admin window
+    function X.click()
+        if type(mouse1click) == "function" then mouse1click(); return end
+        local vim = game:GetService("VirtualInputManager")
+        local m = UserInputService:GetMouseLocation()
+        vim:SendMouseButtonEvent(m.X, m.Y, 0, true, game, 0)
+        vim:SendMouseButtonEvent(m.X, m.Y, 0, false, game, 0)
+    end
+    local function overOwnUi()
+        local m = UserInputService:GetMouseLocation()
+        local inset = game:GetService("GuiService"):GetGuiInset()
+        local x, y = m.X, m.Y - inset.Y
+        local function over(f)
+            if not (f and f.Visible and f:IsA("GuiObject")) then return false end
+            local p, s = f.AbsolutePosition, f.AbsoluteSize
+            return x >= p.X and y >= p.Y and x <= p.X + s.X and y <= p.Y + s.Y
+        end
+        for _, f in pairs(UIAPI.panels or {}) do if over(f) then return true end end
+        return over(UIAPI.bar)
+    end
+    function H.autoclicker(a)
+        local w = (a[1] or ""):lower()
+        local cps = X.clampCps(w)
+        if wantsOff(a) or (w == "" and isOn("autoclick")) then
+            drop("autoclick")
+            note("Autoclicker", "Off", LIGHT)
+            return
+        end
+        cps = cps or 10
+        drop("autoclick")
+        local focused = true
+        local alive = true
+        keep("autoclick", { Disconnect = function() alive = false end })
+        keep("autoclick", UserInputService.WindowFocusReleased:Connect(function() focused = false end))
+        keep("autoclick", UserInputService.WindowFocused:Connect(function() focused = true end))
+        task.spawn(function()
+            while alive do
+                if focused and not UserInputService:GetFocusedTextBox() and not overOwnUi() then pcall(X.click) end
+                task.wait(1 / cps)
+            end
+        end)
+        note("Autoclicker", cps .. " clicks a second where the mouse is (autoclicker off)", LIGHT)
+    end
+    function H.unautoclicker() H.autoclicker({ "off" }) end
+
+    ------------------------------------------------------------ logs (chat + animations)
+    X.chat, X.anims = {}, {}
+    X.LOG_CAP = 300
+    local function logsChanged(kind) X.logsDirty = X.logsDirty or {}; X.logsDirty[kind] = true end
+    local seenMsg = setmetatable({}, { __mode = "k" })
+    local function logChat(p, text)
+        if type(text) ~= "string" or text == "" then return end
+        X.push(X.chat, { t = os.date("%H:%M:%S"), who = p and (p.DisplayName .. " @" .. p.Name) or "?", text = text }, X.LOG_CAP)
+        logsChanged("chat")
+    end
+    local tcs = false
+    pcall(function() tcs = TextChatService.ChatVersion == Enum.ChatVersion.TextChatService end)
+    if tcs then
+        pcall(function()
+            table.insert(conns, TextChatService.MessageReceived:Connect(function(m)
+                if seenMsg[m] then return end
+                seenMsg[m] = true
+                local src = m.TextSource
+                if src then logChat(Players:GetPlayerByUserId(src.UserId), m.Text) end
+            end))
+        end)
+    else
+        local function hookChat(p)
+            table.insert(conns, p.Chatted:Connect(function(msg) logChat(p, msg) end))
+        end
+        for _, p in ipairs(Players:GetPlayers()) do hookChat(p) end
+        table.insert(conns, Players.PlayerAdded:Connect(hookChat))
+    end
+
+    -- animlog <player | all | off> : every animation they play, with its id (copy or import into reanim)
+    X.animGen = 0
+    function X.animLogSet(target)
+        drop("animlog")
+        X.animGen = X.animGen + 1
+        X.animTarget = target
+        if not target then return end
+        local gen = X.animGen
+        local function hookChar(p, c)
+            local h = c and (c:FindFirstChildOfClass("Humanoid") or c:WaitForChild("Humanoid", 10))
+            local an = h and (h:FindFirstChildOfClass("Animator") or h:WaitForChild("Animator", 10))
+            if not an or X.animGen ~= gen then return end
+            keep("animlog", an.AnimationPlayed:Connect(function(track)
+                local id = X.animNumber(track.Animation and track.Animation.AnimationId)
+                if not id then return end
+                local last = X.anims[#X.anims]
+                if last and last.id == id and last.who == p.Name then return end
+                X.push(X.anims, { t = os.date("%H:%M:%S"), who = p.Name, id = id, name = track.Name or "" }, X.LOG_CAP)
+                logsChanged("anim")
+            end))
+        end
+        local function hookPlayer(p)
+            if p.Character then task.spawn(hookChar, p, p.Character) end
+            keep("animlog", p.CharacterAdded:Connect(function(c) hookChar(p, c) end))
+        end
+        if target == "all" then
+            for _, p in ipairs(Players:GetPlayers()) do hookPlayer(p) end
+            keep("animlog", Players.PlayerAdded:Connect(hookPlayer))
+        else
+            hookPlayer(target)
+        end
+    end
+    local function copyText(text, what)
+        local ok = pcall(function() (setclipboard or toclipboard)(text) end)
+        note("Logs", ok and (what .. " copied") or "This executor cannot copy to the clipboard", ok and LIGHT or RED)
+    end
+
+    function UIAPI.buildLogsPanel(screenGui)
+        local W, HGT = 440, 420
+        local f = uiWindow(screenGui, "logs", "Logs", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2, 0.5, -HGT / 2))
+        local IW = W - 32
+        X.logTab = X.logTab or "chat"
+        local tabs = {}
+        local list = make("ScrollingFrame", { Position = UDim2.fromOffset(16, 88), Size = UDim2.new(1, -32, 1, -140),
+            BackgroundColor3 = PAL.CARD, BackgroundTransparency = 0.3, BorderSizePixel = 0, ScrollBarThickness = 4,
+            CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y }, f)
+        corner(list, 8)
+        make("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+        make("UIPadding", { PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6), PaddingTop = UDim.new(0, 4) }, list)
+        local info = label(f, { Position = UDim2.fromOffset(16, 64), Size = UDim2.fromOffset(IW, 20), TextSize = 11, TextColor3 = PAL.DIM, Text = "" })
+        local function render()
+            for _, c in ipairs(list:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
+            local anim = X.logTab == "anim"
+            local src = anim and X.anims or X.chat
+            for k, b in pairs(tabs) do b.BackgroundTransparency = k == X.logTab and 0 or 0.5 end
+            if anim then
+                local t = X.animTarget
+                info.Text = t == nil and "Not logging. animlog <player | all> starts it. Click an id to copy it, Import adds it to reanim."
+                    or ("Logging " .. (t == "all" and "everyone" or t.Name) .. ". Click an id to copy it, Import adds it to reanim.")
+            else
+                info.Text = #X.chat .. " messages (newest at the bottom). Click a line to copy it."
+            end
+            local first = math.max(1, #src - 149)
+            for i = first, #src do
+                local e = src[i]
+                local row = make("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+                    BackgroundTransparency = 1, LayoutOrder = i }, list)
+                local text = anim and string.format("[%s] %s  %s  %s", e.t, e.who, e.id, e.name)
+                    or string.format("[%s] %s: %s", e.t, e.who, e.text)
+                local b = make("TextButton", { Size = UDim2.new(1, anim and -64 or 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+                    BackgroundTransparency = 1, Text = text, RichText = false, TextWrapped = true, TextSize = 12,
+                    TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = PAL.TEXT, Font = Enum.Font.Gotham, AutoButtonColor = false }, row)
+                b.MouseButton1Click:Connect(function()
+                    if anim then copyText(e.id, "Animation id " .. e.id) else copyText(e.who .. ": " .. e.text, "Message") end
+                end)
+                if anim then
+                    uiButton(row, "Import", UDim2.fromOffset(58, 20), UDim2.new(1, -58, 0, 0), function()
+                        pcall(H.reanim, { "import", e.id })
+                    end)
+                end
+            end
+            task.defer(function() list.CanvasPosition = Vector2.new(0, math.max(0, list.AbsoluteCanvasSize.Y - list.AbsoluteSize.Y)) end)
+        end
+        X.renderLogs = render
+        local tw = (IW - 8) / 2
+        tabs.chat = uiButton(f, "Chat", UDim2.fromOffset(tw, 24), UDim2.fromOffset(16, 40), function() X.logTab = "chat"; render() end)
+        tabs.anim = uiButton(f, "Animations", UDim2.fromOffset(tw, 24), UDim2.fromOffset(16 + tw + 8, 40), function() X.logTab = "anim"; render() end)
+        local bw = (IW - 16) / 3
+        uiButton(f, "Copy all", UDim2.fromOffset(bw, 30), UDim2.new(0, 16, 1, -44), function()
+            local out = {}
+            if X.logTab == "anim" then
+                for _, e in ipairs(X.anims) do out[#out + 1] = string.format("[%s] %s %s %s", e.t, e.who, e.id, e.name) end
+            else
+                for _, e in ipairs(X.chat) do out[#out + 1] = string.format("[%s] %s: %s", e.t, e.who, e.text) end
+            end
+            copyText(table.concat(out, "\n"), #out .. " lines")
+        end)
+        uiButton(f, "Clear", UDim2.fromOffset(bw, 30), UDim2.new(0, 16 + bw + 8, 1, -44), function()
+            if X.logTab == "anim" then table.clear(X.anims) else table.clear(X.chat) end
+            render()
+        end)
+        uiButton(f, "Log everyone's anims", UDim2.fromOffset(bw, 30), UDim2.new(0, 16 + (bw + 8) * 2, 1, -44), function()
+            if X.animTarget then X.animLogSet(nil) else X.animLogSet("all") end
+            X.logTab = "anim"
+            render()
+        end)
+        -- redraw at most 3 times a second, only while the window is open
+        local acc = 0
+        table.insert(conns, RunService.Heartbeat:Connect(function(dt)
+            acc = acc + dt
+            if acc < 0.33 then return end
+            acc = 0
+            local d = X.logsDirty
+            if f.Visible and d and d[X.logTab] then
+                X.logsDirty = nil
+                render()
+            end
+        end))
+        f:GetPropertyChangedSignal("Visible"):Connect(function() if f.Visible then render() end end)
+        render()
+    end
+    local function showLogs(tab)
+        X.logTab = tab
+        local p = UIAPI.panels.logs
+        if p then p.Visible = true; UIAPI.sync() end
+        if X.renderLogs then X.renderLogs() end
+    end
+    function H.logs(a)
+        local w = (a[1] or ""):lower()
+        showLogs((w == "anim" or w == "anims" or w == "animations") and "anim" or "chat")
+    end
+    function H.chatlogs() showLogs("chat") end
+    function H.animlog(a)
+        local w = (a[1] or ""):lower()
+        if wantsOff(a) then X.animLogSet(nil); note("Animation log", "Off", LIGHT); return end
+        local target
+        if w == "all" or w == "everyone" then target = "all"
+        else
+            target = resolveTargets(a[1])[1]
+            if not target then note("Animation log", "No player called " .. tostring(a[1]), RED); return end
+        end
+        X.animLogSet(target)
+        note("Animation log", "Logging " .. (target == "all" and "everyone" or target.Name) .. "'s animations (animlog off)", LIGHT)
+        showLogs("anim")
+    end
+    function H.unanimlog() H.animlog({ "off" }) end
+
+    ------------------------------------------------------------ inspect <player>
+    function X.inspectLines(p)
+        local lines = {}
+        local function add(k, v) lines[#lines + 1] = k .. ": " .. tostring(v) end
+        add("Name", p.DisplayName .. " (@" .. p.Name .. ")")
+        add("UserId", p.UserId)
+        local age = tonumber(p.AccountAge) or 0
+        add("Account age", string.format("%d days (made about %s)", age, os.date("%Y-%m-%d", os.time() - age * 86400)))
+        pcall(function() add("Membership", p.MembershipType.Name) end)
+        add("Team", p.Team and p.Team.Name or "none")
+        pcall(function() if p.FollowUserId and p.FollowUserId ~= 0 then add("Joined by following", p.FollowUserId) end end)
+        local ch = p.Character
+        local h = ch and ch:FindFirstChildOfClass("Humanoid")
+        if h then
+            add("Rig", h.RigType.Name)
+            add("Health", string.format("%d / %d", math.floor(h.Health + 0.5), math.floor(h.MaxHealth + 0.5)))
+            add("Walk speed", string.format("%g", h.WalkSpeed))
+            add(h.UseJumpPower and "Jump power" or "Jump height", string.format("%g", h.UseJumpPower and h.JumpPower or h.JumpHeight))
+        else
+            add("Character", "not spawned")
+        end
+        local mine, theirs = getRootPart(plr.Character), getRootPart(ch)
+        if mine and theirs and p ~= plr then add("Distance", string.format("%d studs", math.floor((mine.Position - theirs.Position).Magnitude + 0.5))) end
+        if X.friendCache and X.friendCache[p.UserId] ~= nil then add("Friends with you", X.friendCache[p.UserId] and "yes" or "no") end
+        return lines
+    end
+    function UIAPI.buildInspectPanel(screenGui)
+        local W, HGT = 340, 330
+        local f = uiWindow(screenGui, "inspect", "Inspect", UDim2.fromOffset(W, HGT), UDim2.new(0.5, 60, 0.5, -HGT / 2))
+        local IW = W - 32
+        local body = label(f, { Position = UDim2.fromOffset(16, 44), Size = UDim2.fromOffset(IW, 200), TextSize = 12, TextWrapped = true,
+            TextYAlignment = Enum.TextYAlignment.Top, RichText = false, Text = "" })
+        local function refresh()
+            local p = X.inspectTarget
+            if not (p and p.Parent) then body.Text = "inspect <player> shows a player here."; return end
+            body.Text = table.concat(X.inspectLines(p), "\n")
+        end
+        X.refreshInspect = refresh
+        local bw = (IW - 8) / 2
+        local function target() local p = X.inspectTarget; return p and p.Parent and p end
+        uiButton(f, "Copy UserId", UDim2.fromOffset(bw, 28), UDim2.fromOffset(16, 250), function()
+            local p = target(); if p then copyText(tostring(p.UserId), "UserId") end
+        end)
+        uiButton(f, "Copy profile link", UDim2.fromOffset(bw, 28), UDim2.fromOffset(16 + bw + 8, 250), function()
+            local p = target(); if p then copyText("https://www.roblox.com/users/" .. p.UserId .. "/profile", "Profile link") end
+        end)
+        uiButton(f, "Go to", UDim2.fromOffset(bw, 28), UDim2.fromOffset(16, 284), function()
+            local p = target(); if p and p ~= plr then pcall(H.tp, { p.Name }) end
+        end)
+        uiButton(f, "Log animations", UDim2.fromOffset(bw, 28), UDim2.fromOffset(16 + bw + 8, 284), function()
+            local p = target(); if p then H.animlog({ p.Name }) end
+        end)
+        local acc = 0
+        table.insert(conns, RunService.Heartbeat:Connect(function(dt)
+            acc = acc + dt
+            if acc >= 0.5 and f.Visible then acc = 0; refresh() end
+        end))
+        refresh()
+    end
+    function H.inspect(a)
+        local p = resolveTargets(a[1])[1]
+        if not p then note("Inspect", "No player called " .. tostring(a[1]), RED); return end
+        X.inspectTarget = p
+        X.friendCache = X.friendCache or {}
+        if p ~= plr and X.friendCache[p.UserId] == nil then
+            task.spawn(function()
+                local ok, yes = pcall(function() return plr:IsFriendsWith(p.UserId) end)
+                if ok then X.friendCache[p.UserId] = yes == true end
+            end)
+        end
+        local panel = UIAPI.panels.inspect
+        if panel then panel.Visible = true; UIAPI.sync() end
+        if X.refreshInspect then X.refreshInspect() end
+    end
+
+    ------------------------------------------------------------ server
+    function H.pinghop()
+        UIAPI.finder.start("ping")
+        note("Puppy Finder", "Looking for the server with the lowest ping...", LIGHT)
+    end
+
+    ------------------------------------------------------------ registration
+    for _, n in ipairs({ "fov", "freecam", "unfreecam", "shiftlock", "unshiftlock", "fixcam", "time", "day", "night", "untime",
+        "ambient", "unambient", "xray", "unxray", "clickdelete", "unclickdelete", "undelete", "partesp", "unpartesp",
+        "hipheight", "unhipheight", "bhop", "unbhop", "antisit", "unantisit", "antifling", "unantifling",
+        "autoclicker", "unautoclicker", "logs", "chatlogs", "animlog", "unanimlog", "inspect", "pinghop" }) do
+        table.insert(cmds, n)
+    end
+    ALIASES.fc = "freecam"; ALIASES.fieldofview = "fov"; ALIASES.fixcamera = "fixcam"; ALIASES.clocktime = "time"
+    ALIASES.xrays = "xray"; ALIASES.unxrays = "unxray"; ALIASES.cd = "clickdelete"; ALIASES.hh = "hipheight"
+    ALIASES.noseat = "antisit"; ALIASES.ac = "autoclicker"; ALIASES.chatlog = "chatlogs"; ALIASES.animlogger = "animlog"
+    ALIASES.whois = "inspect"; ALIASES.lowping = "pinghop"; ALIASES.sl = "shiftlock"
+    PLAYER_ARG.inspect = 1
+    PLAYER_ARG.animlog = 1
+    cmdDocs.fov = "fov [1-120 | reset] - Camera field of view, kept even if the game changes it (also: fieldofview)"
+    cmdDocs.freecam = "freecam [speed] - Fly the camera: WASD, Q/E down/up, hold right mouse to look, Shift faster (also: fc)"
+    cmdDocs.unfreecam = "unfreecam - Camera back to your character"
+    cmdDocs.shiftlock = "shiftlock - Shift lock the game cannot turn off; hold Left Alt to use the mouse (also: sl)"
+    cmdDocs.unshiftlock = "unshiftlock - Turn the forced shift lock off"
+    cmdDocs.fixcam = "fixcam - Camera back to normal: follows you, normal zoom and field of view, ends freecam (also: fixcamera)"
+    cmdDocs.time = "time [hour | 2:30pm | day | night | dawn | dusk] [once] - Time of day on your screen, held against the game's cycle"
+    cmdDocs.day = "day [once] - Daytime on your screen"
+    cmdDocs.night = "night [once] - Night on your screen"
+    cmdDocs.untime = "untime - Back to the game's time of day"
+    cmdDocs.ambient = "ambient <colour | r g b | #hex> - Colour of the ambient light (your screen)"
+    cmdDocs.unambient = "unambient - Back to the game's ambient light"
+    cmdDocs.xray = "xray [10-95] - See through the map, players stay solid (your screen; also: xrays)"
+    cmdDocs.unxray = "unxray - Map solid again"
+    cmdDocs.clickdelete = "clickdelete - Ctrl + click removes a part on your screen (also: cd)"
+    cmdDocs.unclickdelete = "unclickdelete - Turn click delete off"
+    cmdDocs.undelete = "undelete [all] - Bring back the last part removed with click delete (up to 50)"
+    cmdDocs.partesp = "partesp <name> [colour] - Boxes and names through walls on parts / models with that name"
+    cmdDocs.unpartesp = "unpartesp - Clear part ESP"
+    cmdDocs.hipheight = "hipheight [0-100 | reset] - How high your character stands, kept after respawning (also: hh)"
+    cmdDocs.unhipheight = "unhipheight - Normal hip height"
+    cmdDocs.bhop = "bhop - Keep jumping the moment you land while you move"
+    cmdDocs.unbhop = "unbhop - Turn bhop off"
+    cmdDocs.antisit = "antisit - Seats cannot make your character sit (also: noseat)"
+    cmdDocs.unantisit = "unantisit - Seats work again"
+    cmdDocs.antifling = "antifling - Other players cannot push or fling you; a sudden spin puts you back"
+    cmdDocs.unantifling = "unantifling - Turn anti-fling off"
+    cmdDocs.autoclicker = "autoclicker [1-30 | off] - Clicks where the mouse is, N a second; pauses over Puppy Admin windows (also: ac)"
+    cmdDocs.unautoclicker = "unautoclicker - Stop the autoclicker"
+    cmdDocs.logs = "logs [chat | anims] - Logs window: chat messages and animations players play"
+    cmdDocs.chatlogs = "chatlogs - Chat messages since the script started; click one to copy it (also: chatlog)"
+    cmdDocs.animlog = "animlog <player | all | off> - Log the animations a player plays; copy an id or import it into reanim (also: animlogger)"
+    cmdDocs.unanimlog = "unanimlog - Stop logging animations"
+    cmdDocs.inspect = "inspect [player] - Account age, UserId, team, rig, health, distance; copy their id or profile (also: whois)"
+    cmdDocs.pinghop = "pinghop - Join the server with the lowest ping (Puppy Finder; also: lowping)"
+
+    table.insert(cleanups, function()
+        X.freecamStop()
+        X.shiftlockSet(false)
+        pcall(X.xraySet, false)
+        pcall(X.partEspSet, nil)
+        pcall(X.animLogSet, nil)
+        for _, key in ipairs({ "fov", "clickdelete", "bhop", "autoclick" }) do drop(key) end
+        drop("time")
+        if X.clockBase ~= nil then pcall(function() Lighting.ClockTime = X.clockBase end) end
+        drop("ambient")
+        if X.ambBase then pcall(function() Lighting.Ambient, Lighting.OutdoorAmbient = X.ambBase[1], X.ambBase[2] end) end
+        drop("hipheight")
+        local hb = X.hipBase
+        if X.hip and hb and hb.hum then pcall(function() hb.hum.HipHeight = hb.value end) end
+        if isOn("antisit") then
+            drop("antisit")
+            local h = myHum()
+            if h then pcall(function() h:SetStateEnabled(Enum.HumanoidStateType.Seated, true) end) end
+        end
+        drop("antifling")
+        for part in pairs(X.af.saved) do pcall(function() part.CanCollide = true end) end
+        while #X.deleted > 0 do
+            local e = table.remove(X.deleted)
+            pcall(function() e.part.Parent = e.parent end)
+        end
+    end)
+end)()
 
 -- Optional "Kingdom Hearts" UI style (Settings > Look > UI style, `uistyle`): an
 -- original skin in the spirit of those menus, made from the owner's fonts and cursor
@@ -13347,6 +14323,8 @@ cmdDocs.limbs = "limbs [orbit|halo|helix|burst|wings|snake|tornado|float|off] - 
 ALIASES.limbanim = "limbs"
 ALIASES.breaklimbs = "limbs"
 
+
+
 -- Main menu (`menu`, MENU on the bar, the self HUD): every window grouped by what it is
 -- for, in both UI styles. Left: categories; middle: that category's windows; bottom: what
 -- the hovered entry does, players in the server and your local time. In the Kingdom
@@ -13369,6 +14347,8 @@ do
             { "ESP", "esp", "Names, health and distance through walls." },
             { "Tag editor", "tagui", "Nametag text, colours, backdrop and picture." },
             { "Tags", "taglist", "Every tag and who wears it." },
+            { "Inspect", "inspect", "A player's account age, UserId, team, rig and distance." },
+            { "Logs", "logs", "Chat messages and the animations players play." },
             { "Floor", "infbaseplate", "An endless floor under you." },
         } },
         { "Alts", "Your alt accounts from Puppy Companion.", {
@@ -13555,17 +14535,19 @@ end
 -- Command directory tabs: every command has one category (explicit list first,
 -- then the engine's movement / performance groups, then words in its help line).
 do
-    UIAPI.CMD_CATEGORIES = { "Windows", "Movement", "Reanim", "Character", "Players", "Tools & auras", "Alts",
+    UIAPI.CMD_CATEGORIES = { "Windows", "Movement", "Reanim", "Character", "Camera", "Players", "Tools & auras", "Alts",
         "Tags", "Games", "Server", "Performance", "Owner", "Settings", "Other" }
     local EXPLICIT = {
-        Movement = { "moveui", "infbaseplate", "uninfbaseplate", "tp", "superfly", "clicktp" },
+        Movement = { "moveui", "infbaseplate", "uninfbaseplate", "tp", "superfly", "clicktp", "bhop", "antifling" },
+        Character = { "hipheight", "antisit", "shiftlock" },
+        Camera = { "fov", "freecam", "fixcam", "xray", "time", "day", "night", "untime", "ambient", "partesp", "clickdelete", "undelete" },
         Reanim = { "reanim", "anim", "limbs" },
-        Players = { "esp", "unesp", "hide", "unhide", "mute", "unmute" },
+        Players = { "esp", "unesp", "hide", "unhide", "mute", "unmute", "inspect", "logs", "chatlogs", "animlog" },
         ["Tools & auras"] = { "tools", "aura", "unaura", "auras" },
         Alts = { "alts", "alt", "altcmds", "form", "unform" },
         Tags = { "tagui", "taglist", "tagsync", "tagrefresh", "hidetags", "showtags", "toggletags" },
         Games = { "games", "gameboy", "gba", "doom" },
-        Server = { "finder", "shmost", "shlowest", "serverhop", "rejoin", "antiafk", "unantiafk", "antikick", "unantikick", "antivcban" },
+        Server = { "finder", "shmost", "shlowest", "pinghop", "serverhop", "rejoin", "antiafk", "unantiafk", "antikick", "unantikick", "antivcban" },
         Performance = { "perf", "performance" },
         Owner = { "owner", "kick", "ban", "unban", "bans", "blacklist" },
         Settings = { "prefix", "uikey", "settings", "theme", "help", "kill", "stop", "cursor", "font", "uistyle", "selfhud", "menu",
@@ -13601,6 +14583,7 @@ do
         tagui = true, taglist = true, owner = true, blacklist = true, performance = true,
         games = true, gameboy = true, gba = true, doom = true, finder = true, antivcban = true,
         alts = true, altcmds = true, settings = true, theme = true, help = true, limbs = "limbs", menu = true,
+        logs = "logs", chatlogs = "logs", inspect = true,
     }
     -- "off" commands are shown inside their "on" command's row: unX belongs to X, plus a
     -- few pairs whose names differ. Returns the on-command, or nil.
@@ -14334,6 +15317,7 @@ local function createUI()
         { "Performance", "performance" }, { "Finder", "finder" }, { "Anti VC ban", "antivcban" },
         { "Tag editor", "tagui" }, { "Tags", "taglist" }, { "Mini games", "games" }, { "Game Boy", "gameboy" },
         { "GBA", "gba" }, { "Doom", "doom" }, { "Owner", "owner" }, { "Blacklist", "blacklist" },
+        { "Logs", "logs" }, { "Inspect", "inspect" },
     }
     local PANEL_OF = { tools = "tools", move = "move", floor = "floor", esp = "esp" }
     local bw = (380 - 30 - 12) / 3
