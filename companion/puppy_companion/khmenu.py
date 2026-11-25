@@ -264,23 +264,29 @@ def sound_dirs(workspace, extra=()):
     return out
 
 
+SOUND_EXTS = (".wav", ".mp3")  # .wav through PlaySound, .mp3 through Windows' MCI player
+
+
 def own_sound_path(workspace, kind, extra=()):
-    """The player's own file for a sound kind, or None. The exact name first (Menu_Move.wav); otherwise
-    any .wav in the folder whose name says which sound it is (a download may have added text to the name)."""
+    """The player's own file for a sound kind, or None. The exact name first (Menu_Move.wav, then
+    Menu_Move.mp3); otherwise any .wav / .mp3 in the folder whose name says which sound it is (a
+    download may have added text to the name)."""
     name = SOUND_FILES.get(kind)
     if not name:
         return None
+    stem = os.path.splitext(name)[0]
     for folder in sound_dirs(workspace, extra):
-        path = os.path.join(folder, name)
-        if os.path.isfile(path):
-            return path
+        for ext in SOUND_EXTS:
+            path = os.path.join(folder, stem + ext)
+            if os.path.isfile(path):
+                return path
     for folder in sound_dirs(workspace, extra):
         try:
             names = sorted(os.listdir(folder))
         except OSError:
             continue
         for n in names:
-            if n.lower().endswith(".wav") and kind_for_file(n) == kind and os.path.isfile(os.path.join(folder, n)):
+            if n.lower().endswith(SOUND_EXTS) and kind_for_file(n) == kind and os.path.isfile(os.path.join(folder, n)):
                 return os.path.join(folder, n)
     return None
 
@@ -311,11 +317,37 @@ def kind_for_file(name):
     return None
 
 
+def mci_commands(alias, path):
+    """The MCI command strings that play an .mp3 once (pure, for the tests)."""
+    return ['close %s' % alias, 'open "%s" type mpegvideo alias %s' % (path.replace('"', ''), alias), 'play %s from 0' % alias]
+
+
+def _mci_play(path):
+    """MP3 through Windows' MCI player (winmm mciSendStringW via ctypes), asynchronous. One alias per
+    sound, so a new move sound restarts the last one instead of stacking up."""
+    import ctypes
+    from ctypes import wintypes
+    send = ctypes.windll.winmm.mciSendStringW
+    send.argtypes = (wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.UINT, wintypes.HANDLE)
+    send.restype = wintypes.DWORD
+    alias = "pupmenu_" + "".join(ch for ch in os.path.splitext(os.path.basename(path))[0].lower() if ch.isalnum())[:24]
+    for i, cmd in enumerate(mci_commands(alias, path)):
+        err = send(cmd, None, 0, None)
+        if err and i > 0:  # closing an alias that is not open yet fails harmlessly
+            buf = ctypes.create_unicode_buffer(256)
+            ctypes.windll.winmm.mciGetErrorStringW(err, buf, 256)
+            return False, "Windows could not play it (MCI %d: %s)" % (err, buf.value)
+    return True, "mci"
+
+
 def _winmm_play(path):
-    """Windows' own player, asynchronous. winsound when the exe has it, else winmm PlaySoundW
-    through ctypes (an exe built before menu sounds may not include winsound). Returns (ok, why)."""
+    """Windows' own player, asynchronous. .mp3 through MCI; .wav through winsound when the exe has
+    it, else winmm PlaySoundW through ctypes (an exe built before menu sounds may not include
+    winsound). Returns (ok, why)."""
     if sys.platform != "win32":
         return False, "sounds play on Windows only"
+    if path.lower().endswith(".mp3"):
+        return _mci_play(path)
     try:
         import winsound
         winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)

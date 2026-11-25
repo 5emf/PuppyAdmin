@@ -905,8 +905,8 @@ class CompanionApp:
         if own:
             text += "Your own files are used instead: %s (in %s). " % (", ".join(own), khmenu.sound_dir(ws))
         else:
-            text += ("To use your own, put Menu_Move.wav, Menu_Select.wav and Menu_Denied.wav in PuppyAdmin/sounds in your "
-                     "executor folder (Add sound files... copies them there; Puppy Admin uses the same folder).")
+            text += ("To use your own, put Menu_Move, Menu_Select and Menu_Denied (.mp3 or .wav) in PuppyAdmin/sounds in "
+                     "your executor folder (Add sound files... copies them there; Puppy Admin uses the same .mp3 files).")
         try:
             self.sound_lbl.configure(text=text)
         except (tk.TclError, AttributeError):
@@ -920,7 +920,7 @@ class CompanionApp:
             return 0
         if paths is None:
             paths = filedialog.askopenfilenames(parent=self.root, title="Menu sounds (Menu_Move, Menu_Select, Menu_Denied)",
-                                                filetypes=[("WAV sound", "*.wav")])
+                                                filetypes=[("Sound", "*.wav *.mp3"), ("WAV sound", "*.wav"), ("MP3 sound", "*.mp3")])
         n = 0
         os.makedirs(khmenu.sound_dir(ws), exist_ok=True)
         for p in paths or ():
@@ -928,8 +928,17 @@ class CompanionApp:
             if not kind:
                 self.log("%s: name it Menu_Move, Menu_Select or Menu_Denied so it is clear which sound it is." % os.path.basename(p))
                 continue
+            ext = os.path.splitext(p)[1].lower()
+            if ext not in khmenu.SOUND_EXTS:
+                self.log("%s: only .wav and .mp3 files can be used." % os.path.basename(p))
+                continue
+            stem = os.path.splitext(khmenu.SOUND_FILES[kind])[0]
             try:
-                shutil.copyfile(p, os.path.join(khmenu.sound_dir(ws), khmenu.SOUND_FILES[kind]))
+                for other in khmenu.SOUND_EXTS:  # one file per sound: the new one replaces the old
+                    old = os.path.join(khmenu.sound_dir(ws), stem + other)
+                    if other != ext and os.path.isfile(old):
+                        os.remove(old)
+                shutil.copyfile(p, os.path.join(khmenu.sound_dir(ws), stem + ext))
                 n += 1
             except OSError as e:
                 self.log("Could not copy %s: %s" % (os.path.basename(p), e))

@@ -126,6 +126,18 @@ class MenuSoundsTest(unittest.TestCase):
         self.assertEqual([km.kind_for_file(n) for n in ("C:/x/Menu_Move.wav", "menu_denied.WAV", "Menu_Select.wav", "deny.wav", "song.wav")],
                          ["move", "denied", "select", "denied", None])
 
+    def test_mp3_files(self):
+        km = self.km
+        d = km.sound_dir(self.ws)
+        open(os.path.join(d, "c076e024-Menu_Denied.mp3"), "wb").close()
+        self.assertTrue(km.own_sound_path(self.ws, "denied").endswith("c076e024-Menu_Denied.mp3"), "mp3 found, prefix and all")
+        open(os.path.join(d, "Menu_Denied.mp3"), "wb").close()
+        self.assertTrue(km.own_sound_path(self.ws, "denied").endswith(os.sep + "Menu_Denied.mp3"), "the exact name first")
+        self.assertTrue(km.own_sound_path(self.ws, "move").endswith("Menu_Move.wav"), ".wav before .mp3 for the same name")
+        cmds = km.mci_commands("pupmenu_menuselect", r'C:\x\Menu_Select.mp3')
+        self.assertEqual(cmds, ["close pupmenu_menuselect", 'open "C:\\x\\Menu_Select.mp3" type mpegvideo alias pupmenu_menuselect',
+                                "play pupmenu_menuselect from 0"])
+
     def test_throttle(self):
         played, t = [], [100.0]
         ms = self.km.MenuSounds(player=lambda p: played.append(p) or True, clock=lambda: t[0])
@@ -252,11 +264,14 @@ class KHWindowTest(unittest.TestCase):
         self.settings.set("workspace", ws)
         src = os.path.join(self.tmp, "picked")
         os.makedirs(src)
-        for name in ("Menu_Move.wav", "Menu_Select.wav", "Menu_Denied.wav", "other.wav"):
+        for name in ("Menu_Move.wav", "Menu_Select.wav", "Menu_Denied.wav", "other.wav", "5caca70e-Menu_Move.mp3"):
             with open(os.path.join(src, name), "wb") as f:
                 f.write(b"RIFF")
         n = self.app.import_sounds([os.path.join(src, x) for x in ("Menu_Move.wav", "Menu_Select.wav", "Menu_Denied.wav", "other.wav")])
         self.assertEqual(n, 3)
+        self.assertEqual(self.app.import_sounds([os.path.join(src, "5caca70e-Menu_Move.mp3")]), 1)
+        self.assertEqual(sorted(os.listdir(khmenu.sound_dir(ws))), ["Menu_Denied.wav", "Menu_Move.mp3", "Menu_Select.wav"],
+                         "an .mp3 replaces the .wav of the same sound, saved under the clean name")
         self.assertEqual(self.app.sounds.found(ws), {"move": True, "denied": True, "select": True})
         played = []
         self.app.sounds = khmenu.MenuSounds(player=lambda p: played.append(os.path.basename(p)) or True)
@@ -280,7 +295,7 @@ class KHWindowTest(unittest.TestCase):
         btn.event_generate("<Enter>", x=2, y=2)
         btn.event_generate("<ButtonRelease-1>", x=2, y=2)
         self.root.update()
-        self.assertEqual(played, ["Menu_Move.wav", "Menu_Select.wav"], "hover moves, click selects")
+        self.assertEqual(played, ["Menu_Move.mp3", "Menu_Select.wav"], "hover moves, click selects")
 
     def test_silent_reason_is_logged_once(self):
         from puppy_companion import khmenu
