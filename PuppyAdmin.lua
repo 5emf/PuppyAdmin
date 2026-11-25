@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-65" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-66" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -12454,6 +12454,7 @@ local function buildPanels(screenGui)
     B.finder = function() UIAPI.buildFinderPanel(screenGui) end
     B.alts = function() UIAPI.buildAltsPanel(screenGui) end
     B.limbs = function() UIAPI.buildLimbsPanel(screenGui) end
+    B.menu = function() UIAPI.buildMenuPanel(screenGui) end
 end
 
 -- Custom mouse cursor (Settings > Look). The image follows the mouse in its own
@@ -12809,7 +12810,7 @@ do
     local S = { gui = nil, conn = nil, segs = {}, lit = -1 }
     UIAPI.SelfHud = S
     S.SEGMENTS = 36
-    S.COMMANDS = { { "Commands", "help" }, { "Settings", "settings" }, { "Reanim", "reanim" }, { "Alts", "alts" } }
+    S.COMMANDS = { { "Menu", "menu" }, { "Commands", "help" }, { "Reanim", "reanim" }, { "Alts", "alts" } }
 
     -- pure: how many of n segments are lit for health h of max m
     function S.litCount(h, m, n)
@@ -13171,6 +13172,139 @@ cmdDocs.limbs = "limbs [orbit|halo|helix|burst|wings|snake|tornado|float|off] - 
 ALIASES.limbanim = "limbs"
 ALIASES.breaklimbs = "limbs"
 
+-- Main menu (`menu`, MENU on the bar, the self HUD): every window grouped by what it is
+-- for, in both UI styles. Left: categories; middle: that category's windows; bottom: what
+-- the hovered entry does, players in the server and your session time. In the Kingdom
+-- Hearts style the same window becomes a menu screen: the MENU capsule and ornate frame
+-- (KHStyle frames every window), red selected tabs with the pointing glove, and the info
+-- labels in KH Gummi.
+do
+    local M = {}
+    UIAPI.Menu = M
+    M.started = os.clock()
+    -- { category, description, { { label, command / function, description } } }
+    M.CATEGORIES = {
+        { "Character", "Reanimate, animate your limbs, fly and move.", {
+            { "Reanim", "reanim", "Reanimation: play and import animations, tricks." },
+            { "Limbs", "limbs", "While reanimated: every body part on its own path." },
+            { "Movement", "moveui", "Fly modes, speed, noclip, airwalk, swim." },
+            { "Superfly", "superfly", "Fly where the camera faces." },
+            { "Tools", "tools", "Orbit, tail and wings made of your tools." },
+        } },
+        { "Look & tags", "See players, edit nametags, place a floor.", {
+            { "ESP", "esp", "Names, health and distance through walls." },
+            { "Tag editor", "tagui", "Nametag text, colours, backdrop and picture." },
+            { "Tags", "taglist", "Every tag and who wears it." },
+            { "Floor", "infbaseplate", "An endless floor under you." },
+        } },
+        { "Alts", "Your alt accounts from Puppy Companion.", {
+            { "Alts", "alts", "Accounts, formations and commands." },
+            { "Alt commands", "altcmds", "Buttons for every alt command." },
+        } },
+        { "Games", "Mini games and emulators.", {
+            { "Mini games", "games", "Snake, Stack, Chase, Star Pup, Puppy Fighter." },
+            { "Game Boy", "gameboy", "Play your Game Boy ROMs." },
+            { "GBA", "gba", "Play your Game Boy Advance ROMs." },
+            { "Doom", "doom", "Doom with Freedoom or your own WAD." },
+        } },
+        { "Server", "Servers, performance and voice.", {
+            { "Puppy Finder", "finder", "Browse this game's servers and join one." },
+            { "Performance", "performance", "FPS unlock and cap, low graphics, effects." },
+            { "Anti VC ban", "antivcban", "Get voice chat back after a voice ban." },
+        } },
+        { "Owner", "Owner tools (owners only).", {
+            { "Owner", "owner", "Kick, ban, auras and tag tools." },
+            { "Blacklist", "blacklist", "Everyone banned from the script." },
+        } },
+        { "Commands", "Every command, grouped in tabs.", {
+            { "Command list", "help", "Search every command; click one to open it or type it." },
+        } },
+        { "Config", "Change Puppy Admin's settings.", {
+            { "General", function() UIAPI.settingsTab("General") end, "Prefixes, UI key, intro, anti-AFK, nametags." },
+            { "Look", function() UIAPI.settingsTab("Look") end, "UI style, theme, font, text size, cursor, self HUD." },
+            { "Windows", function() UIAPI.settingsTab("Windows") end, "A button for every window." },
+        } },
+    }
+
+    function M.open(target)
+        if type(target) == "function" then pcall(target) else pcall(UIAPI.openForCommand, target) end
+    end
+
+    function UIAPI.buildMenuPanel(screenGui)
+        local W, HGT = 560, 500 -- 8 categories (37 px each) above the info block
+        local f = uiWindow(screenGui, "menu", "Menu", UDim2.fromOffset(W, HGT), UDim2.new(0.5, -W / 2, 0.5, -HGT / 2))
+        local desc = label(f, { Position = UDim2.fromOffset(210, HGT - 64), Size = UDim2.fromOffset(W - 226, 48), TextSize = 15,
+            TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = PAL.ACCENT, Text = "" })
+        local function say(text) desc.Text = text or "" end
+        local sub = make("Frame", { Position = UDim2.fromOffset(222, 56), Size = UDim2.fromOffset(W - 238, HGT - 136),
+            BackgroundTransparency = 1 }, f)
+        local catBtns = {}
+        local function showCategory(i)
+            local cat = M.CATEGORIES[i]
+            for _, c in ipairs(sub:GetChildren()) do c:Destroy() end
+            for k, it in ipairs(cat[3]) do
+                local b = uiButton(sub, "  " .. it[1], UDim2.fromOffset(200, 34), UDim2.fromOffset(0, (k - 1) * 40), function()
+                    M.open(it[2])
+                    f.Visible = false
+                end)
+                b.TextXAlignment = Enum.TextXAlignment.Left
+                b.TextSize = 15
+                b.MouseEnter:Connect(function() say(it[3]) end)
+            end
+            for k, b in ipairs(catBtns) do b.TextColor3 = (k == i) and PAL.ACCENT or PAL.TEXT end
+            say(cat[2])
+            M.current = i
+        end
+        for i, cat in ipairs(M.CATEGORIES) do
+            local b = uiButton(f, "  " .. cat[1], UDim2.fromOffset(190, 32), UDim2.fromOffset(16, 56 + (i - 1) * 37), function() showCategory(i) end)
+            b.TextXAlignment = Enum.TextXAlignment.Left
+            b.TextSize = 16
+            b.MouseEnter:Connect(function() say(cat[2]) end)
+            catBtns[i] = b
+        end
+        -- info: players here and your session time
+        local function info(text, y, color, size)
+            return label(f, { Position = UDim2.fromOffset(16, y), Size = UDim2.fromOffset(180, size + 4), TextSize = size,
+                Text = text, TextColor3 = color, TextXAlignment = Enum.TextXAlignment.Left })
+        end
+        local pTitle = info("PLAYERS", HGT - 104, Color3.fromRGB(255, 150, 50), 14)
+        local pValue = info("0", HGT - 86, Color3.fromRGB(255, 210, 70), 22)
+        local tTitle = info("TIME", HGT - 58, Color3.fromRGB(80, 150, 255), 14)
+        local tValue = info("0:00", HGT - 40, Color3.fromRGB(90, 200, 255), 22)
+        local function restyle()
+            local kh = Cfg.uiStyle == "Kingdom Hearts"
+            for _, l in ipairs({ pTitle, pValue, tTitle, tValue }) do
+                l:SetAttribute("PuppyAdminKeepFont", kh or nil)
+                local face = kh and UIFont.make("KH Gummi", Enum.FontWeight.Regular, Enum.FontStyle.Italic) or nil
+                if face then pcall(function() l.FontFace = face end) elseif not kh then pcall(UIFont.applyTo, l) end
+            end
+        end
+        UIAPI.syncFns.menu = function()
+            if not f.Visible then return end
+            restyle()
+            pValue.Text = tostring(#Players:GetPlayers())
+            local t = math.floor(os.clock() - M.started)
+            tValue.Text = t >= 3600 and string.format("%d:%02d:%02d", math.floor(t / 3600), math.floor(t / 60) % 60, t % 60)
+                or string.format("%d:%02d", math.floor(t / 60), t % 60)
+        end
+        f:GetPropertyChangedSignal("Visible"):Connect(function() if f.Visible then UIAPI.syncFns.menu() end end)
+        task.spawn(function()
+            while f.Parent do
+                task.wait(1)
+                if f.Visible then pcall(UIAPI.syncFns.menu) end
+            end
+        end)
+        showCategory(1)
+    end
+
+    function H.menu()
+        local p = UIAPI.panels.menu
+        if p then p.Visible = not p.Visible; UIAPI.sync() end
+    end
+    table.insert(cmds, "menu")
+    cmdDocs.menu = "menu - The main menu: every window grouped by category (Kingdom Hearts style: a menu screen)"
+end
+
 -- Command directory tabs: every command has one category (explicit list first,
 -- then the engine's movement / performance groups, then words in its help line).
 do
@@ -13187,7 +13321,7 @@ do
         Server = { "finder", "shmost", "shlowest", "serverhop", "rejoin", "antiafk", "unantiafk", "antikick", "unantikick", "antivcban" },
         Performance = { "perf", "performance" },
         Owner = { "owner", "kick", "ban", "unban", "bans", "blacklist" },
-        Settings = { "prefix", "uikey", "settings", "theme", "help", "kill", "stop", "cursor", "font", "uistyle", "selfhud" },
+        Settings = { "prefix", "uikey", "settings", "theme", "help", "kill", "stop", "cursor", "font", "uistyle", "selfhud", "menu" },
     }
     local byName = {}
     for cat, names in pairs(EXPLICIT) do for _, n in ipairs(names) do byName[n] = cat end end
@@ -13218,8 +13352,42 @@ do
         tools = "tools", moveui = "move", infbaseplate = "floor", esp = "esp", superfly = true, reanim = true,
         tagui = true, taglist = true, owner = true, blacklist = true, performance = true,
         games = true, gameboy = true, gba = true, doom = true, finder = true, antivcban = true,
-        alts = true, altcmds = true, settings = true, theme = true, help = true, limbs = "limbs",
+        alts = true, altcmds = true, settings = true, theme = true, help = true, limbs = "limbs", menu = "menu",
     }
+    -- "off" commands are shown inside their "on" command's row: unX belongs to X, plus a
+    -- few pairs whose names differ. Returns the on-command, or nil.
+    UIAPI.OFF_OF = { showtags = "hidetags", clip = "noclip", unform = "form", unsuperfly = "superfly",
+        unantiafk = "antiafk", unantikick = "antikick", unesp = "esp", unaura = "aura", uninfbaseplate = "infbaseplate" }
+    function UIAPI.offOf(name, has)
+        local base = UIAPI.OFF_OF[name]
+        if base and has[base] then return base end
+        if name:sub(1, 2) == "un" and has[name:sub(3)] then return name:sub(3) end
+        return nil
+    end
+
+    -- pure: {name = doc} rows with every off command folded into its on command
+    function UIAPI.mergeOffDocs(list, docs)
+        local has = {}
+        for _, c in ipairs(list) do if docs[c] then has[c] = true end end
+        local offs = {}
+        for _, c in ipairs(list) do
+            local base = docs[c] and UIAPI.offOf(c, has)
+            if base then offs[base] = offs[base] or {}; table.insert(offs[base], c) end
+        end
+        local out = {}
+        for _, c in ipairs(list) do
+            if docs[c] and not UIAPI.offOf(c, has) then
+                local doc = docs[c]
+                for _, off in ipairs(offs[c] or {}) do
+                    local usage = tostring(docs[off]):match("^(.-)%s+%-%s") or off
+                    doc = doc .. "  |  off: " .. usage
+                end
+                out[#out + 1] = { name = c, doc = doc, offs = offs[c] }
+            end
+        end
+        return out
+    end
+
     function UIAPI.cmdOpensWindow(name)
         local v = UIAPI.CMD_OPENS[name]
         if v == true then return type(H[name]) == "function" end
@@ -13289,6 +13457,11 @@ local function createUI()
     gear.MouseButton1Click:Connect(function()
         if settingsFrame then settingsFrame.Visible = not settingsFrame.Visible end
     end)
+    local menuBtn = make("TextButton", {
+        Size = UDim2.new(0, 40, 0, 18), Position = UDim2.new(1, -88, 0, 8), BackgroundTransparency = 1,
+        Text = "MENU", TextColor3 = GREY, Font = Enum.Font.Code, TextSize = 11,
+    }, frame)
+    menuBtn.MouseButton1Click:Connect(function() if H.menu then H.menu() end end)
 
     local inputContainer = make("Frame", {
         Size = UDim2.new(1, -30, 0, 35),
@@ -13434,10 +13607,8 @@ local function createUI()
         for _, b in pairs(helpEntries.tabs) do b:Destroy() end
         helpEntries.rows, helpEntries.tabs = {}, {}
         local counts = {}
-        local sorted = {}
-        for _, c in ipairs(cmds) do
-            if cmdDocs[c] then sorted[#sorted + 1] = { name = c, cat = UIAPI.cmdCategory(c), doc = cmdDocs[c] } end
-        end
+        local sorted = UIAPI.mergeOffDocs(cmds, cmdDocs) -- off commands live in their on command's row
+        for _, r in ipairs(sorted) do r.cat = UIAPI.cmdCategory(r.name) end
         local order = {}
         for i, cat in ipairs(UIAPI.CMD_CATEGORIES) do order[cat] = i end
         table.sort(sorted, function(a, b)
@@ -13896,6 +14067,7 @@ local function createUI()
     local win = pages.Windows
     fieldLabel(win, "Every window in Puppy Admin (also: click a command with 'Open' in help)", 4)
     local WINDOWS = {
+        { "Menu", "menu" },
         { "Commands", function() if helpFrame then helpFrame.Visible = true end end },
         { "Tools", "tools" }, { "Movement", "move" }, { "Superfly", "superfly" }, { "Floor", "floor" },
         { "ESP", "esp" }, { "Reanim", "reanim" }, { "Limbs", "limbs" }, { "Alts", "alts" }, { "Alt commands", "altcmds" },
@@ -13903,7 +14075,7 @@ local function createUI()
         { "Tag editor", "tagui" }, { "Tags", "taglist" }, { "Mini games", "games" }, { "Game Boy", "gameboy" },
         { "GBA", "gba" }, { "Doom", "doom" }, { "Owner", "owner" }, { "Blacklist", "blacklist" },
     }
-    local PANEL_OF = { tools = "tools", move = "move", floor = "floor", esp = "esp" }
+    local PANEL_OF = { tools = "tools", move = "move", floor = "floor", esp = "esp", menu = "menu" }
     local bw = (380 - 30 - 12) / 3
     for i, w in ipairs(WINDOWS) do
         local col, row = (i - 1) % 3, math.floor((i - 1) / 3)
