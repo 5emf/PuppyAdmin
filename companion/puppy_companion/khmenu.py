@@ -5,6 +5,8 @@ one red, the glove pointing at it), the page itself in the middle, account cards
 status, last seen) above a description box at the bottom right, and an ONLINE / TIME
 panel at the bottom left. Built once; shown and hidden by CompanionApp.apply_kh.
 """
+import os
+import sys
 import time
 import tkinter as tk
 from tkinter import font as tkfont
@@ -235,3 +237,76 @@ class KHMenu:
         """Every few seconds: account cards and the ONLINE / TIME panel."""
         self.draw_info()
         self.draw_cards()
+
+
+# ---------------------------------------------------------------------- menu sounds
+# Kingdom Hearts style only, and only with "Menu sounds" on. The owner's sound files are not in
+# the repository (game files stay on the player's PC): both apps read them from the executor
+# workspace, PuppyAdmin/sounds/Menu_Move.wav, Menu_Denied.wav and Menu_Select.wav.
+SOUND_DIR = ("PuppyAdmin", "sounds")
+SOUND_FILES = {"move": "Menu_Move.wav", "denied": "Menu_Denied.wav", "select": "Menu_Select.wav"}
+SOUND_GAP = {"move": 0.05, "select": 0.08, "denied": 0.3}  # seconds before the same sound may play again
+DENY_WORDS = ("could not", "couldn't", "failed", "error", "not allowed", "refused", "cannot", "can't", "denied",
+              "invalid", "not found", "no account", "first:")
+
+
+def sound_dir(workspace):
+    return os.path.join(workspace, *SOUND_DIR) if workspace else ""
+
+
+def sound_path(workspace, kind):
+    """The file for a sound kind in the workspace, or None when it is not there."""
+    name = SOUND_FILES.get(kind)
+    if not (workspace and name):
+        return None
+    path = os.path.join(sound_dir(workspace), name)
+    return path if os.path.isfile(path) else None
+
+
+def is_denied(text):
+    """Log lines that report a refusal or an error get the 'denied' sound."""
+    t = str(text or "").lower()
+    return any(w in t for w in DENY_WORDS)
+
+
+def kind_for_file(name):
+    """Which sound a picked file is, from its name (Menu_Move.wav -> move)."""
+    n = os.path.basename(str(name)).lower()
+    for kind in ("move", "denied", "select"):
+        if kind in n or (kind == "denied" and "deny" in n):
+            return kind
+    return None
+
+
+def _winmm_play(path):
+    """Windows' own player (winmm PlaySoundW), asynchronous; ctypes is already in the exe."""
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    SND_ASYNC, SND_NODEFAULT, SND_FILENAME = 0x0001, 0x0002, 0x00020000
+    return bool(ctypes.windll.winmm.PlaySoundW(path, None, SND_ASYNC | SND_NODEFAULT | SND_FILENAME))
+
+
+class MenuSounds:
+    def __init__(self, player=None, clock=time.time):
+        self.player = player or _winmm_play
+        self.clock = clock
+        self.last = {}
+
+    def play(self, workspace, kind):
+        """Plays a sound kind if its file is there and it did not just play; returns True if played."""
+        path = sound_path(workspace, kind)
+        if not path:
+            return False
+        now = self.clock()
+        if now - self.last.get(kind, -1e9) < SOUND_GAP.get(kind, 0.05):
+            return False
+        self.last[kind] = now
+        try:
+            return bool(self.player(path))
+        except OSError:
+            return False
+
+    @staticmethod
+    def found(workspace):
+        return {kind: sound_path(workspace, kind) is not None for kind in SOUND_FILES}

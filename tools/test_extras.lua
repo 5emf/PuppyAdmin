@@ -162,7 +162,7 @@ check(#X.chat == X.LOG_CAP and X.chat[#X.chat].text == "hello " .. (X.LOG_CAP + 
 -- emotes block: pure helpers, favourites file, registration, the command only opens the window
 do
     local ea = assert(src:find("-- Emotes window (`UIAPI.Emotes`", 1, true))
-    local eb = assert(src:find('-- Optional "Kingdom Hearts" UI style', ea, true))
+    local eb = assert(src:find("-- Menu sounds (`UIAPI.MenuSound`", ea, true))
     local FS = {}
     local panel = { Visible = false }
     local eH, ecmds, edocs, ealias = {}, {}, {}, {}
@@ -197,6 +197,55 @@ do
     check(panel.Visible == true and E.track == nil, "emotes <anything> only opens the window, plays nothing")
     eH.emotes({})
     check(panel.Visible == false, "emotes again closes it")
+end
+
+-- menu sounds: KH style only, toggleable, first of ogg / mp3 / wav that exists
+do
+    local ma = assert(src:find("-- Menu sounds (`UIAPI.MenuSound`", 1, true))
+    local mb = assert(src:find('-- Optional "Kingdom Hearts" UI style', ma, true))
+    local FS = { ["PuppyAdmin/sounds/Menu_Move.wav"] = true, ["PuppyAdmin/sounds/Menu_Move.mp3"] = true,
+        ["PuppyAdmin/sounds/Menu_Select.wav"] = true }
+    local played, made = {}, {}
+    local clock = 10
+    local Cfg = { uiStyle = "Standard", menuSounds = true }
+    local mH, mcmds, mdocs, malias, mnotes = {}, {}, {}, {}, {}
+    local menv = setmetatable({
+        UIAPI = {}, H = mH, cmds = mcmds, cmdDocs = mdocs, ALIASES = malias, cleanups = {}, Cfg = Cfg, cfgSave = function() end,
+        isfile = function(pth) return FS[pth] == true end, getcustomasset = function(pth) return "asset://" .. pth end,
+        Instance = { new = function(c)
+            local o = { ClassName = c, TimePosition = 5, TimeLength = 0.7 }
+            function o:Play() played[#played + 1] = self.SoundId end
+            function o:Destroy() self.gone = true end
+            made[#made + 1] = o
+            return o
+        end },
+        game = { GetService = function() return {} end },
+        os = setmetatable({ clock = function() return clock end }, { __index = os }),
+        note = function(_, m) mnotes[#mnotes + 1] = m end, LIGHT = "l", RED = "r",
+        parseToggle = function(v, cur) if v == "on" then return true elseif v == "off" then return false end return not cur end,
+    }, { __index = _G })
+    assert(load(src:sub(ma, mb - 1), "menusounds", "t", menv))()
+    local MS = menv.UIAPI.MenuSound
+    check(MS.play("move") == false and #played == 0, "standard style: no menu sounds")
+    Cfg.uiStyle = "Kingdom Hearts"
+    check(MS.play("move") == true and played[1] == "asset://PuppyAdmin/sounds/Menu_Move.mp3", "KH style: plays, mp3 chosen before wav")
+    check(MS.play("move") == false, "the same sound right away is skipped")
+    clock = clock + 0.2
+    check(MS.play("move") == true and #played == 2 and made[1].TimePosition == 0, "plays again from the start")
+    check(MS.play("select") == true and played[3] == "asset://PuppyAdmin/sounds/Menu_Select.wav", "select from its .wav")
+    check(MS.play("denied") == false, "no Menu_Denied file: silent")
+    check(MS.play("nonsense") == false, "unknown kinds ignored")
+    local st = MS.status()
+    check(st[1]:find("Menu_Move.mp3", 1, true) and st[3]:find("no file", 1, true), "status names the files and what is missing")
+    mH.menusounds({ "off" })
+    clock = clock + 1
+    check(Cfg.menuSounds == false and MS.play("select") == false, "menusounds off: silent")
+    mH.menusounds({ "on" })
+    check(Cfg.menuSounds == true and MS.play("select") == true, "menusounds on again")
+    FS["PuppyAdmin/sounds/Menu_Denied.ogg"] = true
+    mH.menusounds({ "reload" })
+    check(made[1].gone and MS.play("denied") == true and played[#played] == "asset://PuppyAdmin/sounds/Menu_Denied.ogg", "reload picks up new files")
+    check(mcmds[1] == "menusounds" and malias.khsounds == "menusounds" and mdocs.menusounds, "menusounds command registered")
 end
 
 -- shutdown restores without errors

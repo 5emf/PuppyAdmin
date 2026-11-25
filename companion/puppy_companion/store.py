@@ -247,6 +247,7 @@ class Settings:
         "header_image": "",       # a PNG / GIF shown in the top bar
         "ui_style": "Standard",   # "Standard" or "Kingdom Hearts" (look.STYLES)
         "kh_prev": {},            # the look before the Kingdom Hearts style, restored when it is turned off
+        "menu_sounds": True,      # Kingdom Hearts style: move / select / denied sounds from PuppyAdmin/sounds
     }
 
     def __init__(self, folder=None):

@@ -1,6 +1,7 @@
 """The Puppy Companion window."""
 import os
 import queue
+import shutil
 import subprocess
 import sys
 import threading
@@ -185,6 +186,7 @@ class CompanionApp:
         self._kh = None           # Kingdom Hearts style state (images, saved layouts), see apply_kh
         self._kh_target = None
         self._kh_ticking = False
+        self.sounds = khmenu.MenuSounds()
         self._build()
         self.apply_kh()
         self.apply_cursor()
@@ -465,6 +467,28 @@ class CompanionApp:
     def kh_on(self):
         return self.settings.get("ui_style") == "Kingdom Hearts"
 
+    def kh_sound(self, kind):
+        """Menu sounds: Kingdom Hearts style only, with the setting on, files in PuppyAdmin/sounds."""
+        if getattr(self, "sounds", None) is None or not self.kh_on() or not self.settings.get("menu_sounds"):
+            return False
+        return self.sounds.play(self.settings.get("workspace"), kind)
+
+    SOUND_CLASSES = ("TButton", "TCheckbutton", "TRadiobutton", "TCombobox")
+
+    def _kh_sound_enter(self, e):
+        if self.kh_on():
+            self.kh_sound("move")
+
+    def _kh_sound_click(self, e):
+        w = e.widget if not isinstance(e.widget, str) else self.root.nametowidget(e.widget)
+        try:
+            inside = 0 <= e.x < w.winfo_width() and 0 <= e.y < w.winfo_height()
+            disabled = w.instate(["disabled"])
+        except (tk.TclError, AttributeError):
+            return
+        if inside:
+            self.kh_sound("denied" if disabled else "select")
+
     KH_LAYOUTS = ("TButton", "Accent.TButton", "Danger.TButton", "TNotebook.Tab", "TLabelframe")
 
     def apply_kh(self):
@@ -601,6 +625,9 @@ class CompanionApp:
             for cls in ("TButton",):
                 self.root.bind_class(cls, "<Enter>", self._kh_enter, add="+")
                 self.root.bind_class(cls, "<Leave>", self._kh_leave, add="+")
+            for cls in self.SOUND_CLASSES:
+                self.root.bind_class(cls, "<Enter>", self._kh_sound_enter, add="+")
+                self.root.bind_class(cls, "<ButtonRelease-1>", self._kh_sound_click, add="+")
         self.kh_glove.configure(bg=BG)
         if self._kh_glove_win is not None:
             try:
@@ -750,6 +777,15 @@ class CompanionApp:
         ttk.Label(th, style="Dim.TLabel", wraplength=self.px(760), text="Kingdom Hearts = Puppy Admin's KH menu look: "
                   "red hover with a pointing glove, framed panels, the title capsule, plus the KH theme, font and cursor. "
                   "Standard brings back your look from before.").pack(anchor="w", pady=self.pad(0, 8))
+        snd = ttk.Frame(th)
+        snd.pack(anchor="w", pady=self.pad(0, 8))
+        self.menu_sounds_var = tk.BooleanVar(value=bool(self.settings.get("menu_sounds")))
+        ttk.Checkbutton(snd, text="Menu sounds (Kingdom Hearts style)", variable=self.menu_sounds_var,
+                        command=lambda: self.set_menu_sounds(self.menu_sounds_var.get())).pack(side="left")
+        ttk.Button(snd, text="Add sound files...", command=self.import_sounds).pack(side="left", padx=self.pad(10, 0))
+        self.sound_lbl = ttk.Label(th, style="Dim.TLabel", wraplength=self.px(760), text="")
+        self.sound_lbl.pack(anchor="w", pady=self.pad(0, 8))
+        self.update_sound_label()
         prow = ttk.Frame(th)
         prow.pack(anchor="w")
         for i, name in enumerate(look.PRESET_NAMES):  # two rows, so every preset fits
@@ -829,6 +865,53 @@ class CompanionApp:
         self.cursor_var.set(values["cursor"] if values["cursor"] in look.CURSOR_CHOICES else "Default")
         self.apply_look()
         self.log("UI style: %s." % name)
+
+    def set_menu_sounds(self, on):
+        self.settings.set("menu_sounds", bool(on))
+        self.log("Menu sounds %s." % ("on" if on else "off"))
+        self.update_sound_label()
+
+    def update_sound_label(self):
+        ws = self.settings.get("workspace")
+        if not ws:
+            text = "Menu sounds come from PuppyAdmin/sounds in your executor folder: set that folder in Settings first."
+        else:
+            found = khmenu.MenuSounds.found(ws)
+            have = [khmenu.SOUND_FILES[k] for k in ("move", "select", "denied") if found[k]]
+            missing = [khmenu.SOUND_FILES[k] for k in ("move", "select", "denied") if not found[k]]
+            text = "In %s: %s." % (khmenu.sound_dir(ws), ", ".join(have) if have else "no sound files yet")
+            if missing:
+                text += " Missing: %s (Add sound files... copies them there; Puppy Admin uses the same folder)." % ", ".join(missing)
+        try:
+            self.sound_lbl.configure(text=text)
+        except (tk.TclError, AttributeError):
+            pass
+
+    def import_sounds(self, paths=None):
+        """Copies picked .wav files into PuppyAdmin/sounds under the names both apps look for."""
+        ws = self.settings.get("workspace")
+        if not ws:
+            self.log("Set the executor folder in Settings first: the sounds go in its PuppyAdmin/sounds folder.")
+            return 0
+        if paths is None:
+            paths = filedialog.askopenfilenames(parent=self.root, title="Menu sounds (Menu_Move, Menu_Select, Menu_Denied)",
+                                                filetypes=[("WAV sound", "*.wav")])
+        n = 0
+        os.makedirs(khmenu.sound_dir(ws), exist_ok=True)
+        for p in paths or ():
+            kind = khmenu.kind_for_file(p)
+            if not kind:
+                self.log("%s: name it Menu_Move, Menu_Select or Menu_Denied so it is clear which sound it is." % os.path.basename(p))
+                continue
+            try:
+                shutil.copyfile(p, os.path.join(khmenu.sound_dir(ws), khmenu.SOUND_FILES[kind]))
+                n += 1
+            except OSError as e:
+                self.log("Could not copy %s: %s" % (os.path.basename(p), e))
+        if n:
+            self.log("Copied %d sound file%s to %s." % (n, "" if n == 1 else "s", khmenu.sound_dir(ws)))
+        self.update_sound_label()
+        return n
 
     def set_preset(self, name):
         self.settings.set("theme_preset", name)
@@ -925,6 +1008,8 @@ class CompanionApp:
         threading.Thread(target=runner, daemon=True).start()
 
     def log(self, text):
+        if khmenu.is_denied(text):
+            self.kh_sound("denied")
         line = time.strftime("%H:%M:%S  ") + redact(text)
         self.log_text.configure(state="normal")
         self.log_text.insert("end", line + "\n")

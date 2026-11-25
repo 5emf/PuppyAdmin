@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.25-77" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.25-78" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -365,6 +365,7 @@ local Cfg = {
     cursorImage = "",   -- Custom cursor: image id or URL
     cursorSize = 40,    -- cursor size in pixels (16 - 128)
     uiStyle = "Standard", -- Settings > Look > UI style: Standard or Kingdom Hearts
+    menuSounds = true,    -- Kingdom Hearts style: move / select / denied sounds from PuppyAdmin/sounds
     barKey = "",        -- Settings > General: key / mouse button that shows or hides the command bar ("" = none)
     barHidden = false,  -- command bar hidden (the rest of the UI stays)
     puppyTime = 0,      -- seconds of active Puppy Admin use, all sessions (KH menu PUPPYTIME)
@@ -440,6 +441,7 @@ local GREY = Color3.fromRGB(150, 150, 150)
 local LIGHT = Color3.fromRGB(200, 200, 200)
 
 local function sendFlatNotification(title, text, color)
+    if color ~= nil and color == UIAPI.DENIED_COLOR and UIAPI.MenuSound then pcall(UIAPI.MenuSound.play, "denied") end
     local nFrame = make("Frame", {
         Size = UDim2.new(0, 0, 0, 55),
         BackgroundColor3 = Color3.fromRGB(10, 10, 10),
@@ -898,6 +900,7 @@ end
 
 local function note(title, text, color) sendFlatNotification(title, text, color or GREY) end
 local RED = Color3.fromRGB(220, 70, 70)
+UIAPI.DENIED_COLOR = RED -- notes in this colour are refusals / errors: the KH style's "denied" sound
 
 -- "me" (default), "all", "others", or a player by name / display name.
 local function resolveTargets(token)
@@ -13969,6 +13972,115 @@ end)()
     table.insert(cleanups, function() E.stop(true) end)
 end)()
 
+-- Menu sounds (`UIAPI.MenuSound`, `menusounds`, Settings > Look): Kingdom Hearts style only, and
+-- only with Cfg.menuSounds on. move = the pointer goes onto another button, select = a click,
+-- denied = a refusal or an error (red notes). The sound files are the player's own (game sounds
+-- stay out of this public repository): PuppyAdmin/sounds/Menu_Move, Menu_Select, Menu_Denied, as
+-- .ogg, .mp3 or .wav (the first that Roblox loads). Puppy Companion plays the same files.
+;(function() -- own function scope: the main chunk is at the 200-local limit
+    local MS = { sounds = {}, last = {}, DIR = "PuppyAdmin/sounds" }
+    UIAPI.MenuSound = MS
+    MS.NAMES = { move = "Menu_Move", select = "Menu_Select", denied = "Menu_Denied" }
+    MS.EXTS = { "ogg", "mp3", "wav" }
+    MS.GAP = { move = 0.05, select = 0.08, denied = 0.3 }
+    MS.VOLUME = 0.6
+
+    function MS.enabled() return Cfg.uiStyle == "Kingdom Hearts" and Cfg.menuSounds ~= false end
+
+    -- pure: may this kind play now (the same sound right after itself is skipped)?
+    function MS.ready(kind, now)
+        local gap = MS.GAP[kind]
+        if not gap then return false end
+        if now - (MS.last[kind] or -1e9) < gap then return false end
+        MS.last[kind] = now
+        return true
+    end
+
+    -- the Sound for a kind: the first of .ogg / .mp3 / .wav that exists and Roblox accepts
+    function MS.load(kind)
+        local e = MS.sounds[kind]
+        if e ~= nil then return e or nil end
+        MS.sounds[kind] = false
+        local getAsset = (type(getcustomasset) == "function" and getcustomasset) or (type(getsynasset) == "function" and getsynasset)
+        if not (getAsset and type(isfile) == "function") then return nil end
+        for _, ext in ipairs(MS.EXTS) do
+            local path = MS.DIR .. "/" .. MS.NAMES[kind] .. "." .. ext
+            local okF, has = pcall(isfile, path)
+            if okF and has then
+                local okA, id = pcall(getAsset, path)
+                if okA and id then
+                    local snd = Instance.new("Sound")
+                    snd.Name = "PuppyAdminMenuSound_" .. kind
+                    snd.SoundId = id
+                    snd.Volume = MS.VOLUME
+                    snd.Parent = game:GetService("SoundService")
+                    MS.sounds[kind] = { snd = snd, path = path }
+                    return MS.sounds[kind]
+                end
+            end
+        end
+        return nil
+    end
+
+    function MS.play(kind)
+        if not MS.enabled() or not MS.NAMES[kind] or not MS.ready(kind, os.clock()) then return false end
+        local e = MS.load(kind)
+        if not e then return false end
+        e.snd.TimePosition = 0
+        e.snd:Play()
+        return true
+    end
+
+    -- forget loaded sounds (after new files are put in the folder)
+    function MS.reload()
+        for _, e in pairs(MS.sounds) do if e then pcall(function() e.snd:Destroy() end) end end
+        MS.sounds, MS.last = {}, {}
+    end
+
+    -- one line per sound: which file is used, or what is missing / not loading
+    function MS.status()
+        local out = {}
+        for _, kind in ipairs({ "move", "select", "denied" }) do
+            local e = MS.load(kind)
+            local text
+            if not e then
+                text = MS.NAMES[kind] .. ": no file (put it in " .. MS.DIR .. " as .ogg, .mp3 or .wav)"
+            else
+                local len = 0
+                pcall(function() len = e.snd.TimeLength end)
+                text = e.path:match("[^/]+$") .. (len > 0 and string.format(" (%.1f s)", len) or " (Roblox has not loaded it yet; if it stays silent, try it as .ogg or .mp3)")
+            end
+            out[#out + 1] = text
+        end
+        return out
+    end
+
+    function MS.set(on)
+        Cfg.menuSounds = on == true
+        cfgSave()
+        if MS.changed then pcall(MS.changed) end
+        if not on then return true, "Menu sounds off" end
+        if Cfg.uiStyle ~= "Kingdom Hearts" then return true, "Menu sounds on: they play in the Kingdom Hearts UI style" end
+        return true, "Menu sounds on. " .. table.concat(MS.status(), "; ")
+    end
+
+    -- menusounds [on|off|reload] - no argument: what is loaded
+    function H.menusounds(a)
+        local w = (a[1] or ""):lower()
+        if w == "reload" then MS.reload(); note("Menu sounds", table.concat(MS.status(), "; "), LIGHT); return end
+        if w == "" then
+            note("Menu sounds", (Cfg.menuSounds ~= false and "On" or "Off") .. ". " .. table.concat(MS.status(), "; "), LIGHT)
+            return
+        end
+        local ok, msg = MS.set(parseToggle(w, Cfg.menuSounds ~= false))
+        note("Menu sounds", msg, ok and LIGHT or RED)
+    end
+    table.insert(cmds, "menusounds")
+    cmdDocs.menusounds = "menusounds [on|off|reload] - Kingdom Hearts style: move / select / denied sounds from PuppyAdmin/sounds (also in Settings > Look)"
+    ALIASES.khsounds = "menusounds"
+    table.insert(cleanups, MS.reload)
+end)()
+
 -- Optional "Kingdom Hearts" UI style (Settings > Look > UI style, `uistyle`): an
 -- original skin in the spirit of those menus, made from the owner's fonts and cursor
 -- images. Turning it on picks the "Kingdom Hearts" theme preset, the KH Menu font and
@@ -14260,10 +14372,20 @@ do
     end
     function K.rounded(inst) return inst:FindFirstChildOfClass("UICorner") ~= nil end
 
+    function K.sound(kind)
+        local M = UIAPI.MenuSound
+        if M then pcall(M.play, kind) end
+    end
+
     local function decorate(inst)
         if not K.on or skip(inst) then return end
         if inst:GetAttribute("PuppyAdminWindow") then pcall(frameWindow, inst) end
         if inst:GetAttribute("PuppyAdminTitle") then pcall(styleTitle, inst); return end
+        if inst:IsA("TextButton") or inst:IsA("ImageButton") then
+            -- menu sounds: moving onto a button, clicking it
+            table.insert(K.conns, inst.MouseEnter:Connect(function() K.sound("move") end))
+            table.insert(K.conns, inst.MouseButton1Click:Connect(function() K.sound("select") end))
+        end
         if inst:IsA("TextButton") and inst:GetAttribute("PuppyKHSlab") then
             table.insert(K.conns, inst.MouseEnter:Connect(function() K.target = inst end))
             table.insert(K.conns, inst.MouseLeave:Connect(function() if K.target == inst then K.target = nil end end))
@@ -15116,7 +15238,7 @@ do
         Performance = { "perf", "performance" },
         Owner = { "owner", "kick", "ban", "unban", "bans", "blacklist" },
         Settings = { "prefix", "uikey", "settings", "theme", "help", "kill", "stop", "cursor", "font", "uistyle", "selfhud", "menu",
-            "barkey", "togglebar" },
+            "barkey", "togglebar", "menusounds" },
     }
     local byName = {}
     for cat, names in pairs(EXPLICIT) do for _, n in ipairs(names) do byName[n] = cat end end
@@ -15720,14 +15842,26 @@ local function createUI()
                 note("UI style", msg, ok and LIGHT or RED)
             end)
         end)
-    local hudBtn = actionButton(look, "", UDim2.new(0, 15, 0, 58), UDim2.new(1, -30, 0, 28))
+    local hudBtn = actionButton(look, "", UDim2.new(0, 15, 0, 58), UDim2.new(0.5, -19, 0, 28))
+    local sndBtn = actionButton(look, "", UDim2.new(0.5, 4, 0, 58), UDim2.new(0.5, -19, 0, 28))
+    sndBtn.TextSize = 12
+    local function sndText()
+        sndBtn.Text = "Menu sounds: " .. (Cfg.menuSounds ~= false and "on" or "off") .. (Cfg.uiStyle == "Kingdom Hearts" and "" or " (KH style)")
+    end
+    sndText()
+    UIAPI.MenuSound.changed = sndText
+    sndBtn.MouseButton1Click:Connect(function()
+        local ok, msg = UIAPI.MenuSound.set(Cfg.menuSounds == false)
+        sndText()
+        note("Menu sounds", msg, ok and LIGHT or RED)
+    end)
     hudBtn.TextSize = 12
     local function hudText()
         if not UIAPI.SelfHud.allowed() then
             hudBtn.Text = "Self HUD: needs the Kingdom Hearts UI style"
             hudBtn.TextColor3 = Color3.fromRGB(150, 150, 160)
         else
-            hudBtn.Text = Cfg.selfHud and "Self HUD: on (avatar, HP ring, COMMAND list)" or "Self HUD: off (click for avatar, HP ring, COMMAND list)"
+            hudBtn.Text = Cfg.selfHud and "Self HUD: on" or "Self HUD: off (click to show)"
             hudBtn.TextColor3 = Color3.new(1, 1, 1)
         end
     end

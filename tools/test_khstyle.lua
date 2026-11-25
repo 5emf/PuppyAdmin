@@ -94,7 +94,11 @@ check(win:FindFirstChild("PuppyKHPanelFill") and win:FindFirstChild("PuppyKHPane
 check(win:FindFirstChild("PuppyKHUnderline").ImageColor3 == K.UNDERLINE, "the underline stays orange whatever the theme")
 check(win:FindFirstChild("PuppyKHPanelFill").ImageColor3 == "surf1" and win:FindFirstChild("PuppyKHPanelRim").ImageColor3 == "acc1", "window panel tinted by the theme")
 check(title.Text == "SETTINGS" and title.FontFace and title.FontFace.family == "KH Gummi", "window titles in KH Gummi capitals")
+local heard = {}
+env.UIAPI.MenuSound = { play = function(kind) heard[#heard + 1] = kind end }
 btn.MouseEnter:fire(); rs:fire()
+btn.MouseButton1Click:fire()
+check(table.concat(heard, ",") == "move,select", "menu sounds: moving onto a button, then clicking it")
 check(K.glove.Visible and K.glove.Position.X.Offset < 140 and math.abs(K.glove.Position.Y.Offset - (90 + 36 + 14 - K.glove.Size.Y.Offset * 0.39)) < 1e-6, "glove points at the hovered button (inset counted)")
 check(btn.BackgroundColor3 == K.SELECT and btn:FindFirstChild("PuppyKHSelect") ~= nil, "hovered button turns red with a red outline")
 btn.MouseLeave:fire(); rs:fire()

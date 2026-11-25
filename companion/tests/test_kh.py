@@ -89,6 +89,42 @@ class ShapesTest(unittest.TestCase):
         self.assertTrue(all(abs(khart.bob(t / 10)) <= 3 for t in range(100)))
 
 
+class MenuSoundsTest(unittest.TestCase):
+    def setUp(self):
+        from puppy_companion import khmenu
+        self.km = khmenu
+        self.ws = tempfile.mkdtemp()
+        os.makedirs(khmenu.sound_dir(self.ws))
+        for name in ("Menu_Move.wav", "Menu_Select.wav"):
+            open(os.path.join(khmenu.sound_dir(self.ws), name), "wb").close()
+
+    def tearDown(self):
+        shutil.rmtree(self.ws, ignore_errors=True)
+
+    def test_paths_words_and_names(self):
+        km = self.km
+        self.assertTrue(km.sound_path(self.ws, "move").endswith(os.path.join("PuppyAdmin", "sounds", "Menu_Move.wav")))
+        self.assertIsNone(km.sound_path(self.ws, "denied"), "missing file: no sound")
+        self.assertIsNone(km.sound_path("", "move"))
+        self.assertEqual(km.MenuSounds.found(self.ws), {"move": True, "denied": False, "select": True})
+        self.assertTrue(km.is_denied("Could not write the auto-execute file: x"))
+        self.assertTrue(km.is_denied("Login check failed: 401"))
+        self.assertFalse(km.is_denied("Theme: Midnight."))
+        self.assertEqual([km.kind_for_file(n) for n in ("C:/x/Menu_Move.wav", "menu_denied.WAV", "Menu_Select.wav", "deny.wav", "song.wav")],
+                         ["move", "denied", "select", "denied", None])
+
+    def test_throttle(self):
+        played, t = [], [100.0]
+        ms = self.km.MenuSounds(player=lambda p: played.append(p) or True, clock=lambda: t[0])
+        self.assertTrue(ms.play(self.ws, "move"))
+        self.assertFalse(ms.play(self.ws, "move"), "the same sound right away: skipped")
+        t[0] += 0.2
+        self.assertTrue(ms.play(self.ws, "move"))
+        self.assertTrue(ms.play(self.ws, "select"))
+        self.assertFalse(ms.play(self.ws, "denied"), "no file")
+        self.assertEqual(len(played), 3)
+
+
 class KHWindowTest(unittest.TestCase):
     def setUp(self):
         if tk is None:
@@ -190,6 +226,40 @@ class KHWindowTest(unittest.TestCase):
         self.assertFalse(self.app.khmenu.menu.winfo_ismapped(), "standard layout: no menu list")
         self.assertTrue(self.app.version_lbl.winfo_ismapped())
         self.assertEqual(str(self.app.nb.cget("style")), "TNotebook")
+
+    def test_menu_sounds_only_in_kh_and_toggleable(self):
+        from puppy_companion import khmenu
+        ws = os.path.join(self.tmp, "ws")
+        os.makedirs(ws)
+        self.settings.set("workspace", ws)
+        src = os.path.join(self.tmp, "picked")
+        os.makedirs(src)
+        for name in ("Menu_Move.wav", "Menu_Select.wav", "Menu_Denied.wav", "other.wav"):
+            with open(os.path.join(src, name), "wb") as f:
+                f.write(b"RIFF")
+        n = self.app.import_sounds([os.path.join(src, x) for x in ("Menu_Move.wav", "Menu_Select.wav", "Menu_Denied.wav", "other.wav")])
+        self.assertEqual(n, 3)
+        self.assertEqual(khmenu.MenuSounds.found(ws), {"move": True, "denied": True, "select": True})
+        played = []
+        self.app.sounds = khmenu.MenuSounds(player=lambda p: played.append(os.path.basename(p)) or True)
+        self.assertFalse(self.app.kh_sound("select"), "standard style: silent")
+        self.app.set_style("Kingdom Hearts")
+        self.app.sounds.last.clear()
+        self.assertTrue(self.app.kh_sound("select"))
+        self.app.log("Could not write the account list: disk full")
+        self.assertIn("Menu_Denied.wav", played, "an error in the log plays 'denied'")
+        self.app.set_menu_sounds(False)
+        self.app.sounds.last.clear()
+        self.assertFalse(self.app.kh_sound("move"), "menu sounds off: silent")
+        self.app.set_menu_sounds(True)
+        self.root.update()
+        btn = next(w for w in self.all_widgets(self.root) if isinstance(w, ttk.Button) and w.winfo_ismapped())
+        played.clear()
+        self.app.sounds.last.clear()
+        btn.event_generate("<Enter>", x=2, y=2)
+        btn.event_generate("<ButtonRelease-1>", x=2, y=2)
+        self.root.update()
+        self.assertEqual(played, ["Menu_Move.wav", "Menu_Select.wav"], "hover moves, click selects")
 
     def test_style_survives_a_restart(self):
         self.app.set_style("Kingdom Hearts")
