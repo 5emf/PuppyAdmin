@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-69" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-70" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -5727,7 +5727,13 @@ do
     UIFont.size = setmetatable({}, { __mode = "k" })
     local sizeSet = setmetatable({}, { __mode = "k" }) -- last size written here (signals may arrive deferred)
     local function applySize(inst)
-        if inst.TextScaled then return end
+        if inst.TextScaled then
+            -- shrink-to-fit text (see fitCheck): its cap follows the text size setting
+            local base = inst:GetAttribute(UIFont.FIT_TAG)
+            local c = base and inst:FindFirstChild("PuppyFitSize")
+            if c then c.MaxTextSize = math.clamp(math.floor(base * UIFont.scale + 0.5), 6, 100) end
+            return
+        end
         local base = UIFont.size[inst]
         if not base then
             if UIFont.scale == 1 then return end
@@ -5774,8 +5780,51 @@ do
         for _, d in ipairs(root:GetDescendants()) do UIFont.applyTo(d) end
     end
 
+    -- Text stays inside its box: when a label or button's text doesn't fit (bigger or
+    -- wider fonts, larger text size, long names) it first wraps onto more lines if the box
+    -- is tall enough, and otherwise shrinks to fit (never grows past its own size). Boxes
+    -- you type in, text cut with "...", self-sizing text and game boards are left alone.
+    UIFont.FIT_TAG = "PuppyFitBase"
+    function UIFont.fitCheck(inst)
+        if not inst.Parent or inst.TextFits or inst.Text == "" then return end
+        local h = inst.AbsoluteSize.Y
+        if h <= 0 then return end
+        if not inst.TextWrapped and not inst.TextScaled and h >= inst.TextSize * 2 then
+            inst.TextWrapped = true -- room for two lines: wrap (TextFits fires again if still too long)
+            return
+        end
+        if inst.TextScaled then return end
+        local base = inst.TextSize
+        inst:SetAttribute(UIFont.FIT_TAG, base)
+        local c = inst:FindFirstChild("PuppyFitSize") or Instance.new("UITextSizeConstraint")
+        c.Name = "PuppyFitSize"
+        c.MinTextSize = math.min(6, base)
+        c.MaxTextSize = math.max(1, math.floor(base + 0.5))
+        c.Parent = inst
+        inst.TextScaled = true -- shrink to the box, up to the size it had
+    end
+
+    local fitHooked = setmetatable({}, { __mode = "k" })
+    local function fitHook(inst)
+        if fitHooked[inst] or not (inst:IsA("TextLabel") or inst:IsA("TextButton")) then return end
+        if inst.TextTruncate ~= Enum.TextTruncate.None or inst.AutomaticSize ~= Enum.AutomaticSize.None then return end
+        if inst:FindFirstAncestor("PuppyAdminGameBoard") then return end
+        fitHooked[inst] = true
+        inst:GetPropertyChangedSignal("TextFits"):Connect(function()
+            task.defer(function() pcall(UIFont.fitCheck, inst) end)
+        end)
+        task.defer(function() pcall(UIFont.fitCheck, inst) end)
+    end
+    function UIFont.watchFit(root)
+        for _, d in ipairs(root:GetDescendants()) do pcall(fitHook, d) end
+        table.insert(conns, root.DescendantAdded:Connect(function(d)
+            task.defer(function() if d.Parent then pcall(fitHook, d) end end)
+        end))
+    end
+
     UIFont.roots = {}
     function UIFont.attach(root)
+        pcall(UIFont.watchFit, root)
         table.insert(UIFont.roots, root)
         table.insert(conns, root.DescendantAdded:Connect(function(d)
             if active() then task.defer(function() if d.Parent then UIFont.applyTo(d) end end) end
