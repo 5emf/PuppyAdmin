@@ -356,8 +356,8 @@ class ManageWindowTest(unittest.TestCase):
         self.app.set_style("Kingdom Hearts")
         self.assertEqual(style.lookup("TFrame", "background"), "#060a28")
         self.assertEqual((self.settings.get("font"), self.settings.get("cursor")), ("KH Menu", "Glove"))
-        self.app.set_style("Standard")
-        self.assertEqual((self.settings.get("font"), self.settings.get("cursor")), ("Default", "Default"))
+        self.app.set_style("Standard")  # the look from before the KH style comes back (Glove was chosen above)
+        self.assertEqual((self.settings.get("font"), self.settings.get("cursor")), ("Default", "Glove"))
         self.app.set_preset("Companion")
         self.assertEqual(style.lookup("TFrame", "background"), "#14151a")
 

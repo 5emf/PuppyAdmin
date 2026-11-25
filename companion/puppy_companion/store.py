@@ -245,6 +245,8 @@ class Settings:
         "cursor": "Default",      # look.CURSOR_CHOICES
         "cursor_file": "",        # a .cur / .ani file for "Custom file"
         "header_image": "",       # a PNG / GIF shown in the top bar
+        "ui_style": "Standard",   # "Standard" or "Kingdom Hearts" (look.STYLES)
+        "kh_prev": {},            # the look before the Kingdom Hearts style, restored when it is turned off
     }
 
     def __init__(self, folder=None):

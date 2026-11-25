@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from tkinter import font as tkfont
 
-from . import fonts, launch, look, manage, update, workspace
+from . import fonts, kh_data, khart, launch, look, manage, update, workspace
 from .icon_data import ICON_32, ICON_64
 from .launch_queue import LaunchJob, LaunchQueue
 from .redact import redact
@@ -182,7 +182,11 @@ class CompanionApp:
             root.iconphoto(True, *self._icons)
         except tk.TclError:
             self._icons = []
+        self._kh = None           # Kingdom Hearts style state (images, saved layouts), see apply_kh
+        self._kh_target = None
+        self._kh_ticking = False
         self._build()
+        self.apply_kh()
         self.apply_cursor()
         self.apply_header_image()
         self.refresh_status(force=True)
@@ -204,9 +208,12 @@ class CompanionApp:
     def _build(self):
         top = ttk.Frame(self.root, padding=self.pad(16, 12, 16, 0))
         top.pack(fill="x")
-        ttk.Label(top, text="Puppy Companion", style="Title.TLabel").pack(side="left")
-        ttk.Label(top, text="v" + update.running_version(), style="Dim.TLabel").pack(
-            side="left", padx=self.pad(8, 0), pady=self.pad(6, 0))
+        self.title_lbl = ttk.Label(top, text="Puppy Companion", style="Title.TLabel")
+        self.title_lbl.pack(side="left")
+        # the Kingdom Hearts style's title: glossy capsule + orange line (packed by apply_kh)
+        self.kh_title = tk.Canvas(top, highlightthickness=0, borderwidth=0, bg=BG)
+        self.version_lbl = ttk.Label(top, text="v" + update.running_version(), style="Dim.TLabel")
+        self.version_lbl.pack(side="left", padx=self.pad(8, 0), pady=self.pad(6, 0))
         self.restart_btn = ttk.Button(top, text="Restart to update", style="Accent.TButton", command=self._do_restart)
         # packed only once an update has been downloaded
         self.multi_lbl = ttk.Label(top, text="", style="Dim.TLabel")
@@ -427,8 +434,201 @@ class CompanionApp:
             for role, (sw, var) in self._swatches.items():
                 sw.configure(bg=look.to_hex(roles[role]))
                 var.set(look.to_hex(roles[role]))
+        self.apply_kh()
         self.apply_cursor()
         self.apply_header_image()
+
+    # Kingdom Hearts style --------------------------------------------------------------
+    def kh_on(self):
+        return self.settings.get("ui_style") == "Kingdom Hearts"
+
+    KH_LAYOUTS = ("TButton", "Accent.TButton", "Danger.TButton", "TNotebook.Tab", "TLabelframe")
+
+    def apply_kh(self):
+        """Puppy Admin's Kingdom Hearts menu look on the ttk widgets (see khart): shaded
+        buttons that turn deep red with a red outline on hover, red selected tabs, framed
+        panels, the title capsule and the pointing glove. Off restores the normal layouts."""
+        style = ttk.Style(self.root)
+        st = self._kh
+        if st is None:
+            st = self._kh = {"imgs": {}, "made": False, "active": False,
+                             "saved": {n: style.layout(n.split(".", 1)[-1] if n.endswith("TButton") else n)
+                                       for n in self.KH_LAYOUTS},
+                             "lf": (style.lookup("TLabelframe", "padding") or 0, style.lookup("TLabelframe", "labelmargins") or 0)}
+        if not self.kh_on():
+            if st["active"]:
+                for name, layout in st["saved"].items():
+                    style.layout(name, layout)
+                style.configure("TLabelframe", padding=st["lf"][0], labelmargins=st["lf"][1])
+                self.kh_title.pack_forget()
+                self.title_lbl.pack(side="left", before=self.version_lbl)
+                st["active"] = False
+            self._kh_target = None
+            self._kh_hide_glove()
+            return
+        k = self.k
+        bg, card, field, line = (khart.hex_rgb(c) for c in (BG, CARD, FIELD, LINE))
+        accent, accent_lo = khart.hex_rgb(ACCENT), khart.hex_rgb(ACCENT_LO)
+        danger = (71, 34, 42)
+        pieces = {
+            "btn": khart.button(field, line, bg, k), "btn_h": khart.button(field, line, bg, k, "hover"),
+            "btn_p": khart.button(field, line, bg, k, "pressed"), "btn_d": khart.button(card, line, bg, k, "disabled"),
+            "acc": khart.button(accent, accent_lo, bg, k), "dan": khart.button(danger, (92, 42, 51), bg, k),
+            "tab": khart.tab(card, line, bg, k), "tab_h": khart.tab(card, line, bg, k, "hover"),
+            "tab_s": khart.tab(card, line, bg, k, "selected"), "panel": khart.panel(bg, accent, bg, k),
+        }
+        imgs = st["imgs"]
+        for name, rows in pieces.items():
+            if name in imgs:
+                khart.fill_photo(imgs[name], rows)  # elements keep pointing at the same image
+            else:
+                imgs[name] = khart.photo(self.root, rows)
+        if not st["made"]:
+            b = khart.button_border(k)
+            for el, face in (("KHButton.bg", "btn"), ("KHAccent.bg", "acc"), ("KHDanger.bg", "dan")):
+                style.element_create(el, "image", imgs[face], ("disabled", imgs["btn_d"]), ("pressed", imgs["btn_p"]),
+                                     ("active", imgs["btn_h"]), border=b, sticky="nsew")
+            style.element_create("KHTab.bg", "image", imgs["tab"], ("selected", imgs["tab_s"]), ("active", imgs["tab_h"]),
+                                 border=b, sticky="nsew")
+            style.element_create("KHPanel.border", "image", imgs["panel"], border=khart.panel_border(k), sticky="nsew")
+            st["made"] = True
+
+        def button_layout(el):
+            return [(el, {"sticky": "nsew", "children": [("Button.padding", {"sticky": "nsew", "children": [
+                ("Button.label", {"sticky": "nsew"})]})]})]
+        style.layout("TButton", button_layout("KHButton.bg"))
+        style.layout("Accent.TButton", button_layout("KHAccent.bg"))
+        style.layout("Danger.TButton", button_layout("KHDanger.bg"))
+        style.layout("TNotebook.Tab", [("KHTab.bg", {"sticky": "nsew", "children": [("Notebook.padding", {
+            "side": "top", "sticky": "nsew", "children": [("Notebook.label", {"side": "top", "sticky": ""})]})]})])
+        style.layout("TLabelframe", [("KHPanel.border", {"sticky": "nsew"})])
+        style.map("TButton", foreground=[("disabled", DIM), ("active", "#ffffff")])
+        style.map("Accent.TButton", foreground=[("disabled", DIM), ("active", "#ffffff")])
+        style.map("TNotebook.Tab", foreground=[("selected", "#ffffff"), ("active", FG)])
+        scale = look.text_scale(self.settings.get("text_scale"))
+        gummi = fonts.family_for("KH Gummi", lambda: tkfont.families(self.root))
+        style.configure("TLabelframe", padding=self.px(12), labelmargins=(self.px(14), 0, 0, 0))
+        # the image border already pads the label: keep buttons the size they are in the standard style
+        style.configure("TButton", padding=(self.px(3), 0))
+        style.configure("TLabelframe.Label", foreground=FG, font=(gummi, max(6, round(10 * scale))))
+        self._kh_draw_title(gummi, scale)
+        if st["active"] is False:
+            self.title_lbl.pack_forget()
+            self.kh_title.pack(side="left", before=self.version_lbl)
+        st["active"] = True
+        self._kh_make_glove()
+
+    def _kh_draw_title(self, family, scale):
+        k = self.k
+        c = self.kh_title
+        c.delete("all")
+        c.configure(bg=BG)
+        text = "PUPPY COMPANION"
+        size = max(8, round(15 * scale))
+        fnt = tkfont.Font(root=self.root, family=family, size=size)
+        pad = self.px(18)
+        w = fnt.measure(text) + pad * 2
+        h = max(round(34 * k), fnt.metrics("linespace") + self.px(6))
+        bg = khart.hex_rgb(BG)
+        cap = khart.capsule(w, khart.hex_rgb(ACCENT), bg, h / 34.0)
+        line = khart.underline(w + self.px(60), bg, k)
+        self._kh_title_imgs = (khart.photo(self.root, cap), khart.photo(self.root, line))
+        ch = len(cap)
+        c.configure(width=w + self.px(60), height=ch + self.px(8))
+        c.create_image(0, 0, image=self._kh_title_imgs[0], anchor="nw")
+        c.create_image(self.px(4), ch + self.px(2), image=self._kh_title_imgs[1], anchor="nw")
+        c.create_text(pad, ch // 2, text=text, font=fnt, fill="#ffffff", anchor="w")
+        self._kh_title_font = fnt
+
+    def _kh_make_glove(self):
+        size = khart.glove_size(self.k)
+        if getattr(self, "kh_glove", None) is None:
+            self._kh_glove_img = tk.PhotoImage(master=self.root, data="".join(kh_data.GLOVE[size]))
+            self._kh_glove_win = None
+            if sys.platform == "win32":
+                # its own borderless window whose background colour is see-through and click-through,
+                # so the glove can overlap the next button without a box around it
+                try:
+                    win = tk.Toplevel(self.root)
+                    win.overrideredirect(True)
+                    win.withdraw()
+                    win.configure(bg=BG)
+                    win.wm_attributes("-transparentcolor", BG)
+                    win.transient(self.root)
+                    self._kh_glove_win = win
+                except tk.TclError:
+                    self._kh_glove_win = None
+            parent = self._kh_glove_win or self.root
+            self.kh_glove = tk.Label(parent, image=self._kh_glove_img, bd=0, highlightthickness=0, bg=BG)
+            if self._kh_glove_win is not None:
+                self.kh_glove.pack()
+            for cls in ("TButton",):
+                self.root.bind_class(cls, "<Enter>", self._kh_enter, add="+")
+                self.root.bind_class(cls, "<Leave>", self._kh_leave, add="+")
+        self.kh_glove.configure(bg=BG)
+        if self._kh_glove_win is not None:
+            try:
+                self._kh_glove_win.configure(bg=BG)
+                self._kh_glove_win.wm_attributes("-transparentcolor", BG)
+            except tk.TclError:
+                pass
+
+    def kh_glove_shown(self):
+        try:
+            if getattr(self, "_kh_glove_win", None) is not None:
+                return self._kh_glove_win.winfo_ismapped()
+            return getattr(self, "kh_glove", None) is not None and self.kh_glove.winfo_ismapped()
+        except tk.TclError:
+            return False
+
+    def _kh_hide_glove(self):
+        if getattr(self, "kh_glove", None) is None:
+            return
+        try:
+            if self._kh_glove_win is not None:
+                self._kh_glove_win.withdraw()
+            else:
+                self.kh_glove.place_forget()
+        except tk.TclError:
+            pass
+
+    def _kh_enter(self, e):
+        if not self.kh_on():
+            return
+        w = e.widget if not isinstance(e.widget, str) else self.root.nametowidget(e.widget)
+        self._kh_target = w
+        if not self._kh_ticking:
+            self._kh_ticking = True
+            self._kh_tick()
+
+    def _kh_leave(self, e):
+        w = e.widget if not isinstance(e.widget, str) else self.root.nametowidget(e.widget)
+        if self._kh_target is w:
+            self._kh_target = None
+
+    def _kh_tick(self):
+        """Places the glove left of the hovered button, bobbing, every 40 ms while one is hovered."""
+        w = self._kh_target
+        try:
+            shown = (w is not None and self.kh_on() and not self._closing and w.winfo_exists() and w.winfo_ismapped())
+        except tk.TclError:
+            shown = False
+        if not shown:
+            self._kh_ticking = False
+            self._kh_target = None
+            self._kh_hide_glove()
+            return
+        gw, gh = self._kh_glove_img.width(), self._kh_glove_img.height()
+        x = w.winfo_rootx() - gw - self.px(3) + khart.bob(time.time(), self.k)
+        y = w.winfo_rooty() + (w.winfo_height() - gh) // 2
+        if self._kh_glove_win is not None:
+            self._kh_glove_win.geometry("+%d+%d" % (x, y))
+            self._kh_glove_win.deiconify()
+            self._kh_glove_win.lift()
+        else:
+            self.kh_glove.place(x=x - self.root.winfo_rootx(), y=y - self.root.winfo_rooty())
+            self.kh_glove.lift()
+        self.root.after(40, self._kh_tick)
 
     def apply_cursor(self):
         spec = look.cursor_spec(self.settings.get("cursor"), self.settings.get("cursor_file"))
@@ -506,7 +706,9 @@ class CompanionApp:
         ttk.Button(srow, text="Kingdom Hearts", style="Accent.TButton",
                    command=lambda: self.set_style("Kingdom Hearts")).pack(side="left", padx=self.pad(0, 6))
         ttk.Button(srow, text="Standard", command=lambda: self.set_style("Standard")).pack(side="left")
-        ttk.Label(srow, style="Dim.TLabel", text="  theme + KH Menu font + glove cursor in one click").pack(side="left")
+        ttk.Label(th, style="Dim.TLabel", wraplength=self.px(760), text="Kingdom Hearts = Puppy Admin's KH menu look: "
+                  "red hover with a pointing glove, framed panels, the title capsule, plus the KH theme, font and cursor. "
+                  "Standard brings back your look from before.").pack(anchor="w", pady=self.pad(0, 8))
         prow = ttk.Frame(th)
         prow.pack(anchor="w")
         for i, name in enumerate(look.PRESET_NAMES):  # two rows, so every preset fits
@@ -564,14 +766,26 @@ class CompanionApp:
         ttk.Label(cu, style="Dim.TLabel", wraplength=self.px(360), text="The picture sits in the top bar: Windows apps "
                   "can't draw one behind their buttons.").grid(row=2, column=0, columnspan=3, sticky="w", pady=self.pad(8, 0))
 
+    LOOK_KEYS = ("theme_preset", "theme_colors", "font", "cursor")
+
     def set_style(self, name):
+        """Kingdom Hearts: saves the current look, then the KH theme, font, cursor and menu
+        look (apply_kh). Standard: the look from before the KH style, else the app's default."""
         st = look.STYLES[name]
-        self.settings.set("theme_preset", st["preset"])
-        self.settings.set("theme_colors", {})
-        self.settings.set("font", st["font"])
-        self.settings.set("cursor", st["cursor"])
-        self.font_var.set(st["font"])
-        self.cursor_var.set(st["cursor"])
+        was_kh = self.kh_on()
+        if name == "Kingdom Hearts" and not was_kh:
+            self.settings.set("kh_prev", {key: self.settings.get(key) for key in self.LOOK_KEYS})
+        values = {"theme_preset": st["preset"], "theme_colors": {}, "font": st["font"], "cursor": st["cursor"]}
+        if name == "Standard":
+            prev = self.settings.get("kh_prev") or {}
+            if was_kh and isinstance(prev, dict) and prev:
+                values.update({key: prev[key] for key in self.LOOK_KEYS if key in prev})
+            self.settings.set("kh_prev", {})
+        for key, value in values.items():
+            self.settings.set(key, value)
+        self.settings.set("ui_style", name)
+        self.font_var.set(values["font"] if values["font"] in fonts.choices() else fonts.DEFAULT)
+        self.cursor_var.set(values["cursor"] if values["cursor"] in look.CURSOR_CHOICES else "Default")
         self.apply_look()
         self.log("UI style: %s." % name)
 
