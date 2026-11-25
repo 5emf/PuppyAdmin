@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.25-84" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.25-85" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -5422,6 +5422,16 @@ ALIASES.khstyle = "uistyle"
 ALIASES.khui = "uistyle"
 cmdDocs.cursor = "cursor [default|glove|light|keyblade|image id/URL] [size] - Mouse cursor image (also in Settings > Look)"
 
+-- true on an account Puppy Companion lists as an alt (roster.json); those keep the plain UI look
+function UIAPI.isAltClient()
+    local A = UIAPI.Alts
+    if A and A.role then
+        local ok, role = pcall(A.role)
+        if ok then return role == "alt" end
+    end
+    return false
+end
+
 -- the command list itself, in either style (the menu's "Command list" entry uses this)
 function UIAPI.showDirectory()
     if helpFrame then helpFrame.Visible = true end
@@ -5429,7 +5439,7 @@ end
 
 function H.help()
     -- in the Kingdom Hearts and Sword Art Online styles, help is their menu
-    if (Cfg.uiStyle == "Kingdom Hearts" or Cfg.uiStyle == "Sword Art Online") and H.menu then H.menu(); return end
+    if not UIAPI.plainUI and (Cfg.uiStyle == "Kingdom Hearts" or Cfg.uiStyle == "Sword Art Online") and H.menu then H.menu(); return end
     if helpFrame then helpFrame.Visible = not helpFrame.Visible end
 end
 
@@ -14463,7 +14473,9 @@ end)()
     MS.BUILTIN = { move = "assets/sounds/menu_move_v1.mp3", select = "assets/sounds/menu_select_v1.mp3",
         denied = "assets/sounds/menu_denied_v1.mp3" }
 
-    function MS.enabled() return (Cfg.uiStyle == "Kingdom Hearts" or Cfg.uiStyle == "Sword Art Online") and Cfg.menuSounds ~= false end
+    function MS.enabled()
+        return not UIAPI.plainUI and (Cfg.uiStyle == "Kingdom Hearts" or Cfg.uiStyle == "Sword Art Online") and Cfg.menuSounds ~= false
+    end
     -- each style has its own files: Menu_Move... (Kingdom Hearts), SAO_Move... (Sword Art Online)
     MS.PREFIX = { ["Kingdom Hearts"] = "Menu_", ["Sword Art Online"] = "SAO_" }
     function MS.fileName(kind)
@@ -14984,6 +14996,7 @@ do
     -- already the saved ones). Yields while the font / images download.
     function K.set(name, quiet)
         if name ~= "Kingdom Hearts" and name ~= "Sword Art Online" then name = "Standard" end
+        if not quiet then UIAPI.plainUI = false end -- chosen by hand (also on an alt): that wins
         local on = name == "Kingdom Hearts"
         -- the look before any styled UI is kept, so Standard brings it back (KH <-> SAO keeps it)
         if name ~= "Standard" and not quiet and (Cfg.uiStyle or "Standard") == "Standard" then
@@ -15186,7 +15199,7 @@ do
 
     -- The self HUD belongs to the Kingdom Hearts UI style: it only shows while that style
     -- is on. Cfg.selfHud remembers the choice, so it comes back with the style.
-    function S.allowed() return Cfg.uiStyle == "Kingdom Hearts" or Cfg.uiStyle == "Sword Art Online" end
+    function S.allowed() return not UIAPI.plainUI and (Cfg.uiStyle == "Kingdom Hearts" or Cfg.uiStyle == "Sword Art Online") end
 
     function S.refresh()
         S.off()
@@ -15696,7 +15709,7 @@ do
     end
 
     -- the menu belongs to the Kingdom Hearts style
-    function M.allowed() return Cfg.uiStyle == "Kingdom Hearts" or Cfg.uiStyle == "Sword Art Online" end
+    function M.allowed() return not UIAPI.plainUI and (Cfg.uiStyle == "Kingdom Hearts" or Cfg.uiStyle == "Sword Art Online") end
 
     function H.menu()
         if not M.allowed() then
@@ -18875,7 +18888,19 @@ do
     end
     if Cfg.uiStyle == "Kingdom Hearts" or Cfg.uiStyle == "Sword Art Online" then
         local style = Cfg.uiStyle
-        task.delay(0.5, function() pcall(UIAPI.KHStyle.set, style, true) end)
+        task.delay(0.5, function()
+            -- an alt account (Puppy Companion's roster) keeps the plain look: all accounts on one PC
+            -- share this config, and the styled UI (faces on every widget, art, fonts, HUD, menu loops,
+            -- sounds) is heavy for extra clients on a weak PC. The saved choice is left alone, so the
+            -- main keeps its style.
+            if UIAPI.isAltClient() then
+                UIAPI.plainUI = true
+                if UIAPI.menuBtn then UIAPI.menuBtn.Visible = false end
+                note("UI style", "Alt account: plain look here to save memory (" .. style .. " stays on your main)", LIGHT)
+                return
+            end
+            pcall(UIAPI.KHStyle.set, style, true)
+        end)
     end
     if Cfg.barHidden then pcall(UIAPI.setBarVisible, false, true) end
 

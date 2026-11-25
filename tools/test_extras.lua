@@ -256,6 +256,10 @@ do
     mH.menusounds({ "reload" })
     check(made[1].gone and MS.play("denied") == true and played[#played] == "asset://PuppyAdmin/sounds/Menu_Denied.ogg", "reload picks up new files (yours over the built-in)")
     check(mcmds[1] == "menusounds" and malias.khsounds == "menusounds" and mdocs.menusounds, "menusounds command registered")
+    menv.UIAPI.plainUI = true
+    clock = clock + 1
+    check(MS.play("select") == false, "alt account (plain look): no menu sounds")
+    menv.UIAPI.plainUI = nil
     Cfg.uiStyle = "Sword Art Online"
     FS["PuppyAdmin/sounds/SAO_Select.ogg"] = true
     MS.reload()

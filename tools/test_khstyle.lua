@@ -243,6 +243,13 @@ applied = {}
 K.set("Standard")
 check(env.Cfg.uiStyle == "Standard" and saoOn == false and applied.preset == "Forest" and applied.font == "Gotham" and applied.cursor == "Light",
     "Standard brings the remembered look back")
+-- alt accounts keep the plain look (shared config, weak PC): no menu, no HUD
+K.set("Sword Art Online")
+env.UIAPI.plainUI = true
+check(not env.UIAPI.SelfHud.allowed() and not env.UIAPI.Menu.allowed(), "plain look on an alt: no self HUD, no styled menu")
+K.set("Kingdom Hearts")
+check(env.UIAPI.plainUI == false and env.UIAPI.Menu.allowed(), "a style chosen by hand on the alt wins")
+K.set("Standard")
 K.set("nonsense")
 check(env.Cfg.uiStyle == "Standard", "unknown style names fall back to Standard")
 print("ALL OK")
