@@ -901,7 +901,8 @@ class CompanionApp:
         ws = self.settings.get("workspace")
         found = self.sounds.found(ws) if ws else {k: False for k in khmenu.SOUND_FILES}
         own = [khmenu.SOUND_FILES[k] for k in ("move", "select", "denied") if found[k]]
-        text = "Built-in menu sounds are included. "
+        text = ("Built-in menu sounds are included. " if khmenu.USE_BUILTIN else
+                "Menu sounds play from your own files only. ")
         if own:
             text += "Your own files are used instead: %s (in %s). " % (", ".join(own), khmenu.sound_dir(ws))
         else:

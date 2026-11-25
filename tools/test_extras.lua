@@ -235,11 +235,18 @@ do
     clock = clock + 0.2
     check(MS.play("move") == true and #played == 2 and made[1].TimePosition == 0, "plays again from the start")
     check(MS.play("select") == true and played[3] == "asset://PuppyAdmin/sounds/Menu_Select.wav", "select from its .wav")
+    check(MS.USE_BUILTIN == false and MS.play("denied") == false, "no Menu_Denied of your own: silent (built-in sounds are off)")
+    MS.USE_BUILTIN = true
+    MS.reload()
+    clock = clock + 1
     check(MS.play("denied") == true and played[#played] == "cached://https://repo/assets/sounds/menu_denied_v1.mp3",
-        "no Menu_Denied of your own: the built-in sound from the repository")
+        "with the switch on, the built-in sound from the repository")
+    MS.USE_BUILTIN = false
+    MS.reload()
+    clock = clock + 1
     check(MS.play("nonsense") == false, "unknown kinds ignored")
     local st = MS.status()
-    check(st[1]:find("Menu_Move.mp3", 1, true) and st[3]:find("built-in menu_denied_v1.mp3", 1, true), "status names your files and the built-in ones")
+    check(st[1]:find("Menu_Move.mp3", 1, true) and st[3]:find("no file", 1, true), "status names your files and what is missing")
     mH.menusounds({ "off" })
     clock = clock + 1
     check(Cfg.menuSounds == false and MS.play("select") == false, "menusounds off: silent")

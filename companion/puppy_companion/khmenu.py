@@ -247,6 +247,7 @@ SOUND_DIR = ("PuppyAdmin", "sounds")
 # built-in sounds (original, synthesized by tools/make_menu_sounds.py), used when the player has none
 BUILTIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sounds")
 BUILTIN_FILES = {"move": "menu_move.wav", "denied": "menu_denied.wav", "select": "menu_select.wav"}
+USE_BUILTIN = False  # switched off (owner's request); the files stay in the package. True turns them back on.
 SOUND_FILES = {"move": "Menu_Move.wav", "denied": "Menu_Denied.wav", "select": "Menu_Select.wav"}
 SOUND_GAP = {"move": 0.05, "select": 0.08, "denied": 0.3}  # seconds before the same sound may play again
 DENY_WORDS = ("could not", "couldn't", "failed", "error", "not allowed", "refused", "cannot", "can't", "denied",
@@ -297,8 +298,10 @@ def builtin_sound_path(kind):
     return path if path and os.path.isfile(path) else None
 
 
-def sound_path(workspace, kind, extra=(), builtin=True):
-    """The player's own file for a sound kind, else the built-in one (None if neither exists)."""
+def sound_path(workspace, kind, extra=(), builtin=None):
+    """The player's own file for a sound kind, else the built-in one when those are on (USE_BUILTIN)."""
+    if builtin is None:
+        builtin = USE_BUILTIN
     return own_sound_path(workspace, kind, extra) or (builtin_sound_path(kind) if builtin else None)
 
 
@@ -380,7 +383,8 @@ class MenuSounds:
         force skips the repeat gap (the Test button)."""
         path = sound_path(workspace, kind, self.extra)
         if not path:
-            self.why = "no %s in %s" % (SOUND_FILES.get(kind, kind), " or ".join(sound_dirs(workspace, self.extra)) or
+            self.why = "no %s (.wav or .mp3) in %s" % (os.path.splitext(SOUND_FILES.get(kind, kind))[0],
+                                                       " or ".join(sound_dirs(workspace, self.extra)) or
                                         "any folder (set the executor folder in Settings)")
             return False
         now = self.clock()

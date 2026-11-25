@@ -105,9 +105,10 @@ class MenuSoundsTest(unittest.TestCase):
         km = self.km
         self.assertTrue(km.sound_path(self.ws, "move").endswith(os.path.join("PuppyAdmin", "sounds", "Menu_Move.wav")))
         self.assertIsNone(km.own_sound_path(self.ws, "denied"), "no file of the player's own")
-        self.assertEqual(km.sound_path(self.ws, "denied"), km.builtin_sound_path("denied"), "so the built-in one plays")
-        self.assertIsNone(km.sound_path(self.ws, "denied", builtin=False))
-        self.assertEqual(km.sound_path("", "move"), km.builtin_sound_path("move"))
+        self.assertFalse(km.USE_BUILTIN, "built-in sounds are switched off")
+        self.assertIsNone(km.sound_path(self.ws, "denied"), "so a missing sound stays silent")
+        self.assertEqual(km.sound_path(self.ws, "denied", builtin=True), km.builtin_sound_path("denied"), "they can be turned back on")
+        self.assertIsNone(km.sound_path("", "move"))
         for kind in ("move", "select", "denied"):
             self.assertTrue(km.builtin_sound_path(kind), "built-in %s ships with the package" % kind)
         self.assertEqual(km.MenuSounds().found(self.ws), {"move": True, "denied": False, "select": True})
@@ -146,9 +147,9 @@ class MenuSoundsTest(unittest.TestCase):
         t[0] += 0.2
         self.assertTrue(ms.play(self.ws, "move"))
         self.assertTrue(ms.play(self.ws, "select"))
-        self.assertTrue(ms.play(self.ws, "denied"), "no own file: the built-in denied sound")
-        self.assertTrue(played[-1].endswith("menu_denied.wav"))
-        self.assertEqual(len(played), 4)
+        self.assertFalse(ms.play(self.ws, "denied"), "no own file: silent (built-in sounds are off)")
+        self.assertIn("Menu_Denied", ms.why, "and it says which file is missing")
+        self.assertEqual(len(played), 3)
         refuse = self.km.MenuSounds(player=lambda p: (False, "Windows could not play it (error 2)"))
         self.assertFalse(refuse.play(self.ws, "move"))
         self.assertIn("error 2", refuse.why)
@@ -299,13 +300,13 @@ class KHWindowTest(unittest.TestCase):
 
     def test_silent_reason_is_logged_once(self):
         from puppy_companion import khmenu
-        self.app.sounds = khmenu.MenuSounds(player=lambda p: (False, "Windows could not play it (error 263)"))
+        self.app.sounds = khmenu.MenuSounds(player=lambda p: True)
         self.app.set_style("Kingdom Hearts")
         for _ in range(3):
             self.app.sounds.last.clear()
             self.app.kh_sound("move")
         log = self.app.log_text.get("1.0", "end")
-        self.assertEqual(log.count("error 263"), 1, log)
+        self.assertEqual(log.count("Menu sounds: no Menu_Move (.wav or .mp3)"), 1, log)
 
     def test_style_survives_a_restart(self):
         self.app.set_style("Kingdom Hearts")
