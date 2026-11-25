@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-63" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-64" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -14747,7 +14747,24 @@ function UIAPI.altsSetup()
     -- BreakJointsOnDeath and drives its broken parts until the respawn.
     -- A fresh body (just spawned / respawned) first settles until this client owns it.
     Alts.SETTLE = 2 -- seconds a new body waits before it is separated
-    Alts.REANIM_WAIT = 10 -- seconds to wait for reanim to start before giving up
+    Alts.STAGGER = 1.5 -- extra seconds per alt index, so alts don't load the reanim engine all at once
+    Alts.REANIM_WAIT = 25 -- seconds to keep asking for reanim (the first start builds the reanim panel)
+    Alts.REANIM_RETRY = 3 -- seconds between reanim requests (the panel may not be ready yet)
+
+    -- What this alt's limbs are doing, for the main's Alts window (limbs_<UserId>.json,
+    -- written on every change) and a short history (limbs_<UserId>.txt).
+    function Alts.limbNote(phase, why)
+        Alts.limbStatus = { phase = phase, why = why, time = os.time() }
+        pcall(function()
+            if not writefile then return end
+            local dir = "PuppyAdmin/companion/"
+            writefile(dir .. "limbs_" .. plr.UserId .. ".json", HttpService:JSONEncode(Alts.limbStatus))
+            Alts.limbLog = Alts.limbLog or {}
+            table.insert(Alts.limbLog, os.date("!%H:%M:%S") .. "  " .. phase .. "  " .. tostring(why))
+            while #Alts.limbLog > 60 do table.remove(Alts.limbLog, 1) end
+            writefile(dir .. "limbs_" .. plr.UserId .. ".txt", table.concat(Alts.limbLog, "\n") .. "\n")
+        end)
+    end
 
     local function reanimApi()
         local api = pupApi()
@@ -14853,6 +14870,7 @@ function UIAPI.altsSetup()
             if ls then Alts.reassemble() end
             ls = { char = real, born = os.clock(), phase = "settle", parts = {} }
             Alts.limbState = ls
+            Alts.limbNote("settle", "new body: waiting to settle")
         end
         if ls.phase == "free" then
             if ls.method == "reanim" and not (reanimated() and ls.clone and ls.clone.Parent) then
@@ -14872,12 +14890,21 @@ function UIAPI.altsSetup()
                 if jointsLoose(real) then freeDeadParts(ls, real) end
                 return ls
             end
-            if now - ls.born < Alts.SETTLE or not ownsBody(real:FindFirstChild("HumanoidRootPart")) then return ls end
-            ls.phase, ls.asked = "reanim", now
-            if not reanimated() then
-                ls.startedReanim = true
-                task.spawn(function() pcall(Pup.setActive, true) end)
-            end
+            local wait = Alts.SETTLE + (st and st.index or 0) * Alts.STAGGER
+            if now - ls.born < wait or not ownsBody(real:FindFirstChild("HumanoidRootPart")) then return ls end
+            ls.phase, ls.asked, ls.tries = "reanim", now, 0
+        end
+        if ls.phase == "reanim" and not reanimated() and not ls.busy
+            and now - ls.asked <= Alts.REANIM_WAIT and now - (ls.lastTry or 0) >= Alts.REANIM_RETRY then
+            ls.lastTry, ls.tries, ls.busy, ls.startedReanim = now, ls.tries + 1, true, true
+            Alts.limbNote("reanim", "starting reanim (try " .. ls.tries .. ")")
+            task.spawn(function()
+                local ok, err = pcall(Pup.setActive, true)
+                ls.busy = false
+                if not ok then Alts.limbNote("reanim", "reanim error: " .. tostring(err):sub(1, 120)) end
+                if Pup.failed then Alts.limbNote("reanim", "engine failed: " .. tostring(Pup.failed):sub(1, 120)) end
+                if Pup.panelFailed then Alts.limbNote("reanim", "reanim panel failed: " .. tostring(Pup.panelFailed):sub(1, 120)) end
+            end)
         end
         if ls.phase == "reanim" then
             local api = reanimApi()
@@ -14888,14 +14915,17 @@ function UIAPI.altsSetup()
                     if croot:FindFirstChild("PuppetRoot") then
                         endReanim(ls) -- the game did not ragdoll: the limbs would only show here
                         ls.phase = "nodoll"
+                        Alts.limbNote("nodoll", "reanim did not ragdoll this game (body welded whole)")
                     else
                         takeClone(ls, clone, croot)
+                        Alts.limbNote("free", "separated: " .. #ls.parts .. " parts")
                         return ls
                     end
                 end
-            elseif now - ls.asked > Alts.REANIM_WAIT then
+            elseif now - ls.asked > Alts.REANIM_WAIT and not ls.busy then
                 ls.startedReanim = false
                 ls.phase = "nodoll" -- reanim did not start
+                Alts.limbNote("nodoll", "reanim did not start after " .. (ls.tries or 0) .. " tries")
             else
                 return ls
             end
@@ -14906,8 +14936,10 @@ function UIAPI.altsSetup()
                 pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true) end)
                 hum.Health = 0
                 freeDeadParts(ls, real) -- the server's break follows a moment later; this screen matches at once
+                Alts.limbNote("free", "no ragdoll: died to separate (death switch)")
             else
                 ls.phase = "whole" -- no ragdoll here and no death allowed: bodies tumble instead
+                Alts.limbNote("whole", "tumbling whole (no ragdoll, death switch off)")
                 if not Alts.noDollNoted then
                     Alts.noDollNoted = true
                     note("Alts", "Reanim can't ragdoll here, so limbs stay on (bodies tumble). The 'alts DIE' switch separates them by respawning.", LIGHT)
@@ -14923,6 +14955,7 @@ function UIAPI.altsSetup()
         local ls = Alts.limbState
         Alts.limbState = nil
         if not ls then return end
+        Alts.limbNote("off", "limbs back together")
         for _, c in ipairs(ls.constraints or {}) do pcall(function() c.Enabled = true end) end
         endReanim(ls)
     end
@@ -15703,7 +15736,14 @@ function UIAPI.altsSetup()
     function Alts.describe(id)
         local here = Players:GetPlayerByUserId(id) ~= nil
         local live, elsewhere = Alts.isLive(id)
-        if here and live then return "ready, in this server", PAL.GOOD end
+        if here and live then
+            local lim = readJson(DIR .. "/limbs_" .. tostring(id) .. ".json")
+            if type(lim) == "table" and tonumber(lim.time) and os.time() - tonumber(lim.time) < 120 and lim.phase ~= "off" then
+                local bad = lim.phase == "nodoll" or lim.phase == "whole"
+                return "limbs: " .. tostring(lim.why), bad and Color3.fromRGB(255, 190, 120) or PAL.GOOD
+            end
+            return "ready, in this server", PAL.GOOD
+        end
         if here then return "here, Puppy Admin not running", Color3.fromRGB(255, 190, 120) end
         if elsewhere then return "in another server", PAL.DIM end
         return "not playing", PAL.DIM
@@ -15988,10 +16028,11 @@ function UIAPI.altsSetup()
             for i, id in ipairs(r.alts) do
                 local text, color = Alts.describe(id)
                 local y = (i - 1) * 22 + 4
-                label(list, { Position = UDim2.fromOffset(8, y), Size = UDim2.new(0.5, -8, 0, 20), TextSize = 12,
+                label(list, { Position = UDim2.fromOffset(8, y), Size = UDim2.new(0.35, -8, 0, 20), TextSize = 12,
                     Text = r.names[id] or tostring(id), TextTruncate = Enum.TextTruncate.AtEnd })
-                label(list, { Position = UDim2.new(0.5, 0, 0, y), Size = UDim2.new(0.5, -8, 0, 20), TextSize = 11,
-                    Text = text, TextColor3 = color, TextXAlignment = Enum.TextXAlignment.Right })
+                label(list, { Position = UDim2.new(0.35, 0, 0, y), Size = UDim2.new(0.65, -8, 0, 20), TextSize = 11,
+                    Text = text, TextColor3 = color, TextXAlignment = Enum.TextXAlignment.Right,
+                    TextTruncate = Enum.TextTruncate.AtEnd })
             end
             list.CanvasSize = UDim2.fromOffset(0, #r.alts * 22 + 8)
             if not r.found then

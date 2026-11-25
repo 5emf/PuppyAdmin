@@ -233,7 +233,7 @@ REMOTES = {}
 local repStorage = { FindFirstChild = function(_, n) return REMOTES[n] end }
 local game = { PlaceId = 1818, GameId = 77, JobId = "job-A",
     GetService = function(_, n) if n == "ReplicatedStorage" then return repStorage end end }
-local os2 = { time = function() return NOW end, clock = function() return CLOCK end }
+local os2 = { time = function() return NOW end, clock = function() return CLOCK end, date = function() return "12:00:00" end }
 
 ------------------------------------------------------------------ one Puppy Admin copy per account
 -- fake reanim engine per player: mode "shared" (the game ragdolls), "puppet" (welded whole)
@@ -254,6 +254,7 @@ local function setActive(userId, on)
     e.calls = e.calls or {}
     table.insert(e.calls, on)
     if e.mode == "broken" then return end
+    if e.mode == "late" and #e.calls < 2 then return end -- panel not ready on the first request
     if on and not e.on then
         e.on, e.real = true, PLAYERS[userId].Character
         e.clone = character(rootPos(e.real.root))
@@ -567,9 +568,31 @@ do
     CLOCK = CLOCK + 3
     for f = 1, 6 do Heartbeat:fire(1 / 60) end
     check(alts[1].UIAPI.Alts.limbState.phase == "reanim", "waiting for reanim to start")
-    CLOCK = CLOCK + 11
-    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    for k = 1, 9 do CLOCK = CLOCK + 3; for f = 1, 3 do Heartbeat:fire(1 / 60) end end
+    check(#ENGINE[2].calls >= 5, "keeps asking for reanim while it waits (" .. #ENGINE[2].calls .. " tries)")
     check(alts[1].UIAPI.Alts.limbState.phase == "whole", "gives up after the wait and tumbles")
+    local lim = json.decode(FS["PuppyAdmin/companion/limbs_2.json"])
+    check(lim.phase == "whole", "the alt reports its limb step to the main")
+    check(FS["PuppyAdmin/companion/limbs_2.txt"]:find("reanim did not start", 1, true) ~= nil, "and keeps a short log")
+    check(select(1, main.UIAPI.Alts.describe(2)):find("limbs:", 1, true) == 1, "the main's Alts window shows it")
+    main.H.unform(); runTasks()
+    main.Cfg.altForm.limbs = false
+end
+
+-- the reanim panel is not ready on the first request: the alt asks again and separates
+do
+    ENGINE[2] = { mode = "late" }
+    PLAYERS[2].Character = character(Vector3.new(0, 3, 0))
+    main.Cfg.altForm.limbs = true
+    main.H.alt({ "orbit1" }); runTasks()
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    CLOCK = CLOCK + 3
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    check(#ENGINE[2].calls == 1 and not ENGINE[2].on, "first request ignored (panel not ready)")
+    CLOCK = CLOCK + 3.5
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    local ls = alts[1].UIAPI.Alts.limbState
+    check(#ENGINE[2].calls == 2 and ENGINE[2].on and ls and ls.phase == "free", "second request works: separated")
     main.H.unform(); runTasks()
     main.Cfg.altForm.limbs = false
 end
