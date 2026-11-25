@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-61" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-62" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -12453,6 +12453,7 @@ local function buildPanels(screenGui)
     B.doom = function() UIAPI.buildDoomPanel(screenGui) end
     B.finder = function() UIAPI.buildFinderPanel(screenGui) end
     B.alts = function() UIAPI.buildAltsPanel(screenGui) end
+    B.limbs = function() UIAPI.buildLimbsPanel(screenGui) end
 end
 
 -- Custom mouse cursor (Settings > Look). The image follows the mouse in its own
@@ -12939,6 +12940,194 @@ do
     table.insert(cleanups, S.off)
 end
 
+-- Limb animations (`limbs`, window "Limbs"): while reanimated, every body part of your
+-- real character (15 on R15, 6 on R6) is placed on its own path: orbit, halo, helix,
+-- burst, wings, snake, tornado or float. The reanim engine copies each clone part onto
+-- your real body every frame, and in games where it ragdolled you (it fires the game's
+-- ragdoll remote; your game 15546218972 is one) your real parts are separate pieces,
+-- so everyone sees each limb on its own. So this works on the clone: its joints are
+-- switched off and its parts anchored (the clone is only on your screen), and each frame
+-- they are placed around the clone's root, which still walks with you. In a game that
+-- does not ragdoll you, the engine welds your body whole ("puppet"), so the limbs are
+-- moved on your real body on your screen only, and you are told so.
+do
+    local L = { on = false, conn = nil, mode = "orbit", size = 1, speed = 1, height = 0, t = 0 }
+    UIAPI.Limbs = L
+    L.MODES = { "orbit", "halo", "helix", "burst", "wings", "snake", "tornado", "float" }
+    L.LABELS = { orbit = "Orbit ring", halo = "Halo", helix = "Double helix", burst = "Burst",
+        wings = "Wings", snake = "Snake", tornado = "Tornado", float = "Float" }
+    local TAU = math.pi * 2
+
+    -- pure: where part i of n sits (relative to your root, level, facing forward = -Z)
+    -- at time t; s = size. Every mode returns a CFrame.
+    function L.offset(mode, i, n, t, s)
+        local f = (i - 1) / math.max(1, n)
+        local spin = CFrame.Angles(t * 0.7 + i, t * 1.1 + i * 0.5, 0)
+        if mode == "halo" then
+            local a = f * TAU + t
+            return CFrame.new(math.cos(a) * 3 * s, 4.5 * s, math.sin(a) * 3 * s) * CFrame.Angles(0, -a, math.rad(90))
+        elseif mode == "helix" then
+            local strand = (i % 2 == 0) and math.pi or 0
+            local a = f * TAU * 1.5 + t * 1.6 + strand
+            return CFrame.new(math.cos(a) * 3.2 * s, (f - 0.5) * 9 * s, math.sin(a) * 3.2 * s) * spin
+        elseif mode == "burst" then
+            local a = (i - 1) * 2.39996 -- golden angle: evenly round a sphere
+            local y = 1 - 2 * f
+            local r = math.sqrt(math.max(0, 1 - y * y))
+            local d = (4 + math.sin(t * 2) * 1.5) * s
+            return CFrame.new(math.cos(a) * r * d, y * d + 1, math.sin(a) * r * d) * spin
+        elseif mode == "wings" then
+            local side = (i % 2 == 0) and 1 or -1
+            local k = math.floor((i - 1) / 2)
+            local flap = math.sin(t * 3) * 0.5
+            local a = math.rad(20 + k * 14) + flap
+            return CFrame.new(side * math.cos(a) * (2 + k * 1.1) * s, math.sin(a) * (1.5 + k * 0.9) * s + 1.5, 2.2 * s)
+                * CFrame.Angles(0, 0, side * a)
+        elseif mode == "snake" then
+            local back = (i - 1) * 1.6 * s + 2
+            return CFrame.new(math.sin(t * 3 - i * 0.6) * 1.8 * s, 0.5 + math.sin(t * 2 - i * 0.4) * 0.6 * s, back)
+                * CFrame.Angles(0, math.sin(t * 3 - i * 0.6) * 0.6, 0)
+        elseif mode == "tornado" then
+            local a = f * TAU * 2 + t * 3
+            local r = (1 + f * 3.5) * s
+            return CFrame.new(math.cos(a) * r, (f * 8 - 2) * s, math.sin(a) * r) * spin
+        elseif mode == "float" then
+            local a = f * TAU
+            return CFrame.new(math.cos(a) * 3 * s, 1.5 + math.sin(t * 1.5 + i) * 1.2 * s, math.sin(a) * 3 * s)
+                * CFrame.Angles(math.sin(t + i) * 0.4, t * 0.5 + i, 0)
+        end
+        local a = f * TAU + t -- orbit
+        return CFrame.new(math.cos(a) * 4 * s, 1, math.sin(a) * 4 * s) * spin
+    end
+
+    local function isPart(p) return p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" end
+
+    function L.stop(quiet)
+        if L.conn then L.conn:Disconnect(); L.conn = nil end
+        local st = L.state
+        L.state, L.on = nil, false
+        if st then
+            for p, was in pairs(st.parts) do
+                if p.Parent then pcall(function() p.Anchored = was.anchored; p.CanCollide = was.collide end) end
+            end
+            for _, m in ipairs(st.motors) do if m.Parent then pcall(function() m.Enabled = true end) end end
+        end
+        if UIAPI.limbsChanged then pcall(UIAPI.limbsChanged) end
+        if not quiet and st then note("Limbs", "Limbs back together", LIGHT) end
+    end
+
+    -- returns ok, message
+    function L.start(mode)
+        if mode and table.find(L.MODES, mode) then L.mode = mode end
+        local api = pupApi()
+        if not (api and api.is_reanimated and api.is_reanimated()) then
+            return false, "Reanimate first (reanim), then start the limbs"
+        end
+        local clone = api.get_clone and api.get_clone()
+        local real = api.get_real_character and api.get_real_character()
+        local croot = clone and clone:FindFirstChild("HumanoidRootPart")
+        if not (croot and real) then return false, "No reanimated body found" end
+        -- puppet = the engine welded your real body to the clone (this game does not ragdoll you)
+        local puppet = croot:FindFirstChild("PuppetRoot") ~= nil
+        local body = puppet and real or clone
+        local root = puppet and croot or croot
+        if L.state then L.stop(true) end
+        local st = { parts = {}, list = {}, motors = {}, body = body, root = root, shared = not puppet }
+        for _, d in ipairs(body:GetDescendants()) do
+            if d:IsA("Motor6D") and d.Enabled and d.Name ~= "PuppetRoot" then
+                pcall(function() d.Enabled = false end)
+                table.insert(st.motors, d)
+            end
+        end
+        for _, p in ipairs(body:GetChildren()) do
+            if isPart(p) then
+                st.parts[p] = { anchored = p.Anchored, collide = p.CanCollide }
+                pcall(function() p.Anchored = true; p.CanCollide = false end)
+                table.insert(st.list, p)
+            end
+        end
+        table.sort(st.list, function(a, b) return a.Name < b.Name end)
+        if #st.list == 0 then L.state = st; L.stop(true); return false, "No limbs to move" end
+        L.state, L.on, L.t = st, true, 0
+        L.conn = RunService.RenderStepped:Connect(function(dt)
+            local ok = pcall(function()
+                if not (api.is_reanimated() and root.Parent and body.Parent) then L.stop(true); return end
+                L.t = L.t + dt * L.speed
+                local _, yaw = root.CFrame:ToOrientation()
+                local base = CFrame.new(root.Position + Vector3.new(0, L.height, 0)) * CFrame.Angles(0, yaw, 0)
+                local n = #st.list
+                for i, p in ipairs(st.list) do
+                    if p.Parent then p.CFrame = base * L.offset(L.mode, i, n, L.t, L.size) end
+                end
+            end)
+            if not ok then L.stop(true) end
+        end)
+        if UIAPI.limbsChanged then pcall(UIAPI.limbsChanged) end
+        return true, string.format("Limbs: %s with %d parts%s", L.LABELS[L.mode], #st.list,
+            st.shared and " - everyone sees it (the game ragdolled you)" or " - only you can see it: this game does not ragdoll you")
+    end
+
+    function UIAPI.buildLimbsPanel(screenGui)
+        local W, HGT = 320, 330
+        local f = uiWindow(screenGui, "limbs", "Limbs", UDim2.fromOffset(W, HGT), UDim2.new(0.5, 40, 0.5, -HGT / 2))
+        local IW = W - 32
+        local names = {}
+        for i, m in ipairs(L.MODES) do names[i] = L.LABELS[m] end
+        uiDropdown(f, "Animation: ", UDim2.fromOffset(IW, 28), UDim2.fromOffset(16, 50), names,
+            table.find(L.MODES, L.mode) or 1, function(i)
+                L.mode = L.MODES[i]
+                if L.on then note("Limbs", L.LABELS[L.mode], LIGHT) end
+            end)
+        uiSlider(f, "Size", UDim2.fromOffset(16, 90), IW, { min = 0.4, max = 3, step = 0.1, value = L.size,
+            format = function(v) return string.format("%.1fx", v) end, onChange = function(v) L.size = v end })
+        uiSlider(f, "Speed", UDim2.fromOffset(16, 136), IW, { min = 0, max = 4, step = 0.1, value = L.speed,
+            format = function(v) return string.format("%.1fx", v) end, onChange = function(v) L.speed = v end })
+        uiSlider(f, "Height", UDim2.fromOffset(16, 182), IW, { min = -3, max = 12, step = 0.5, value = L.height,
+            format = function(v) return string.format("%+.1f", v) end, onChange = function(v) L.height = v end })
+        local bw = (IW - 8) / 2
+        local startBtn = uiButton(f, "Start", UDim2.fromOffset(bw, 32), UDim2.fromOffset(16, 234), function()
+            local ok, msg = L.start()
+            note("Limbs", msg, ok and LIGHT or RED)
+        end)
+        uiButton(f, "Put back", UDim2.fromOffset(bw, 32), UDim2.fromOffset(16 + bw + 8, 234), function() L.stop() end)
+        local status = label(f, { Position = UDim2.fromOffset(16, 274), Size = UDim2.fromOffset(IW, 44), TextSize = 11,
+            TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = PAL.DIM, Text = "" })
+        UIAPI.limbsChanged = function()
+            local st = L.state
+            startBtn.Text = L.on and "Restart" or "Start"
+            if not L.on then
+                status.Text = "Reanimate first, then Start. Every body part gets its own path; Put back joins them again."
+            elseif st and st.shared then
+                status.Text = string.format("%d parts moving. Everyone sees them (this game ragdolled you).", #st.list)
+            else
+                status.Text = string.format("%d parts moving on your screen only: this game does not ragdoll you.", st and #st.list or 0)
+            end
+        end
+        UIAPI.limbsChanged()
+    end
+
+    table.insert(cleanups, function() L.stop(true) end)
+end
+
+-- limbs [mode|off] - no argument opens the window
+function H.limbs(a)
+    local L = UIAPI.Limbs
+    local w = (a[1] or ""):lower()
+    if w == "" then
+        local p = UIAPI.panels.limbs
+        if p then p.Visible = true; UIAPI.sync() end
+        return
+    end
+    if w == "off" or w == "stop" or w == "back" then L.stop(); return end
+    if not table.find(L.MODES, w) then note("Limbs", "Animations: " .. table.concat(L.MODES, ", ") .. " (or off)", RED); return end
+    local ok, msg = L.start(w)
+    note("Limbs", msg, ok and LIGHT or RED)
+end
+table.insert(cmds, "limbs")
+cmdDocs.limbs = "limbs [orbit|halo|helix|burst|wings|snake|tornado|float|off] - While reanimated: every body part on its own path (no argument: the Limbs window)"
+ALIASES.limbanim = "limbs"
+ALIASES.breaklimbs = "limbs"
+
 -- Command directory tabs: every command has one category (explicit list first,
 -- then the engine's movement / performance groups, then words in its help line).
 do
@@ -12946,7 +13135,7 @@ do
         "Tags", "Games", "Server", "Performance", "Owner", "Settings", "Other" }
     local EXPLICIT = {
         Movement = { "moveui", "infbaseplate", "uninfbaseplate", "tp", "superfly", "clicktp" },
-        Reanim = { "reanim", "anim" },
+        Reanim = { "reanim", "anim", "limbs" },
         Players = { "esp", "unesp", "hide", "unhide", "mute", "unmute" },
         ["Tools & auras"] = { "tools", "aura", "unaura", "auras" },
         Alts = { "alts", "alt", "altcmds", "form", "unform" },
@@ -12986,7 +13175,7 @@ do
         tools = "tools", moveui = "move", infbaseplate = "floor", esp = "esp", superfly = true, reanim = true,
         tagui = true, taglist = true, owner = true, blacklist = true, performance = true,
         games = true, gameboy = true, gba = true, doom = true, finder = true, antivcban = true,
-        alts = true, altcmds = true, settings = true, theme = true, help = true,
+        alts = true, altcmds = true, settings = true, theme = true, help = true, limbs = "limbs",
     }
     function UIAPI.cmdOpensWindow(name)
         local v = UIAPI.CMD_OPENS[name]
@@ -13666,7 +13855,7 @@ local function createUI()
     local WINDOWS = {
         { "Commands", function() if helpFrame then helpFrame.Visible = true end end },
         { "Tools", "tools" }, { "Movement", "move" }, { "Superfly", "superfly" }, { "Floor", "floor" },
-        { "ESP", "esp" }, { "Reanim", "reanim" }, { "Alts", "alts" }, { "Alt commands", "altcmds" },
+        { "ESP", "esp" }, { "Reanim", "reanim" }, { "Limbs", "limbs" }, { "Alts", "alts" }, { "Alt commands", "altcmds" },
         { "Performance", "performance" }, { "Finder", "finder" }, { "Anti VC ban", "antivcban" },
         { "Tag editor", "tagui" }, { "Tags", "taglist" }, { "Mini games", "games" }, { "Game Boy", "gameboy" },
         { "GBA", "gba" }, { "Doom", "doom" }, { "Owner", "owner" }, { "Blacklist", "blacklist" },
