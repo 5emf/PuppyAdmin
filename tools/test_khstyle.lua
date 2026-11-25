@@ -16,6 +16,9 @@ local function new(class, props)
     return o
 end
 function Inst:IsA(c) return self.ClassName == c end
+function Inst:GetAttribute(k) return self.attrs and self.attrs[k] end
+function Inst:SetAttribute(k, v) self.attrs = self.attrs or {}; self.attrs[k] = v end
+function Inst:FindFirstChild(n) for _, ch in ipairs(self.children) do if ch.Name == n then return ch end end end
 function Inst:SetParent(p) self.Parent = p; table.insert(p.children, self) end
 function Inst:GetDescendants() local out = {} local function walk(o) for _, c in ipairs(o.children) do out[#out + 1] = c; walk(c) end end walk(self) return out end
 function Inst:FindFirstChildOfClass(c) for _, ch in ipairs(self.children) do if ch.ClassName == c then return ch end end end
@@ -29,13 +32,16 @@ setmetatable(Inst, { __index = function(_, k) end })
 local _new = new
 new = function(class, props)
     local o = _new(class, props)
-    o.MouseEnter, o.MouseLeave, o.DescendantAdded = sig(), sig(), sig()
+    o.MouseEnter, o.MouseLeave, o.DescendantAdded, o.MouseButton1Click = sig(), sig(), sig(), sig()
     o.__newindexhook = true
     setmetatable(o, { __index = Inst, __newindex = function(t, k, v) if k == "Parent" and v then rawset(t, "Parent", v); table.insert(v.children, t) else rawset(t, k, v) end end })
     return o
 end
 local screen = new("ScreenGui", { Name = "PuppyAdminGui" }); screen.Parent = new("CoreGui")
 local win = new("Frame", { AbsoluteSize = vec(300, 400) }); win.Parent = screen
+win.attrs = { PuppyAdminWindow = true }
+local title = new("TextLabel", { Text = "Settings" }); title.Parent = win
+title.attrs = { PuppyAdminTitle = true }
 new("UICorner").Parent = win
 local btn = new("TextButton", { AbsoluteSize = vec(120, 28), AbsolutePosition = vec(140, 90) }); btn.Parent = win
 local small = new("Frame", { AbsoluteSize = vec(20, 20) }); small.Parent = win
@@ -44,14 +50,18 @@ local applied = {}
 local env = setmetatable({
     UIAPI = { Cursor = { set = function(n) applied.cursor = n return true end } }, Cfg = { uiStyle = "Standard", uiFont = "Default", cursor = "Default", theme = { preset = "Midnight" } },
     Theme = { roots = { screen }, usePreset = function(n) applied.preset = n return true end },
-    UIFont = { set = function(n) applied.font = n return true end },
+    UIFont = { set = function(n) applied.font = n return true end, make = function(n) return { family = n } end, applyTo = function() end },
+    Rect = { new = function(...) return { ... } end }, Font = { fromEnum = function() return { family = "Gotham" } end },
+    plr = { UserId = 42, DisplayName = "Pup", Character = nil }, makeDraggable = function() end,
     Instance = { new = function(c) return new(c) end }, make = function(c, p, parent) local o = new(c, p); if parent then o.Parent = parent end return o end,
     parentGui = function(g) g.Parent = new("CoreGui") end, RunService = { RenderStepped = rs },
     SETTINGS = { Auras = { assetBase = "https://x/" } }, urlImageAsset = function(u) return "asset:" .. u end,
     task = { spawn = function(f) f() end, defer = function(f) f() end }, game = { GetService = function() return { GetGuiInset = function() return vec(0, 36) end } end },
     ColorSequence = { new = function(a, b) return { a, b } end }, Color3 = { new = function() return {} end, fromRGB = function() return {} end },
-    UDim2 = { fromOffset = function(x, y) return { X = x, Y = y } end }, Vector2 = { zero = vec(0, 0) },
-    Enum = { ScaleType = { Fit = 1 } }, cleanups = {}, cfgSave = function() applied.saved = (applied.saved or 0) + 1 end,
+    UDim2 = { fromOffset = function(x, y) return { X = x, Y = y } end, fromScale = function(x, y) return { sx = x, sy = y } end,
+        new = function(a, b, c, d) return { sx = a, X = b, sy = c, Y = d } end }, Vector2 = { zero = vec(0, 0), new = function(x, y) return vec(x, y) end },
+    UDim = { new = function(a, b) return { a, b } end },
+    Enum = setmetatable({}, { __index = function() return setmetatable({}, { __index = function(_, k) return k end }) end }), cleanups = {}, cfgSave = function() applied.saved = (applied.saved or 0) + 1 end,
 }, { __index = _G })
 env.math = setmetatable({ clamp = function(x, lo, hi) return math.max(lo, math.min(hi, x)) end }, { __index = math })
 assert(load(block, "kh", "t", env))()
@@ -63,6 +73,8 @@ check(applied.preset == "Kingdom Hearts" and applied.font == "KH Menu" and appli
 check(env.Cfg.khPrev.preset == "Midnight" and env.Cfg.khPrev.font == "Default", "previous look remembered")
 check(btn:FindFirstChildOfClass("UIGradient") and win:FindFirstChildOfClass("UIGradient"), "button and window shaded")
 check(not small:FindFirstChildOfClass("UIGradient"), "small frames left alone")
+check(win:FindFirstChild("PuppyKHFrame") and win:FindFirstChild("PuppyKHHeader"), "windows get the ornate panel and title strip")
+check(title.Text == "SETTINGS" and title.FontFace and title.FontFace.family == "KH Gummi", "window titles in KH Gummi capitals")
 btn.MouseEnter:fire(); rs:fire()
 check(K.glove.Visible and K.glove.Position.X < 140 and math.abs(K.glove.Position.Y - (90 + 36 + 14 - K.glove.Size.Y * 0.39)) < 1e-6, "glove points at the hovered button (inset counted)")
 btn.MouseLeave:fire(); rs:fire()
@@ -73,4 +85,20 @@ applied = {}
 K.set("Standard")
 check(env.Cfg.uiStyle == "Standard" and applied.preset == "Midnight" and applied.font == "Default" and applied.cursor == "Default", "off restores the previous look")
 check(not btn:FindFirstChildOfClass("UIGradient") and not win:FindFirstChildOfClass("UIGradient") and K.gui == nil, "all KH decorations removed")
+check(not win:FindFirstChild("PuppyKHFrame") and title.Text == "Settings" and not title:GetAttribute("PuppyAdminKeepFont"), "window frame removed, title restored")
+
+-- self HUD
+local S = env.UIAPI.SelfHud
+check(S.litCount(100, 100, 36) == 36 and S.litCount(50, 100, 36) == 18 and S.litCount(1, 100, 36) == 1, "HP ring: lit segments follow health")
+check(S.litCount(0, 100, 36) == 0 and S.litCount(150, 100, 36) == 36 and S.litCount(5, 0, 36) == 0 and S.litCount(0/0, 100, 36) == 0, "HP ring: odd values are safe")
+local hum = new("Humanoid", { Health = 25, MaxHealth = 100 })
+env.plr.Character = new("Model"); hum.Parent = env.plr.Character
+env.UIAPI.openForCommand = function(n) applied.opened = n end
+local okHud = S.set(true)
+check(okHud and env.Cfg.selfHud == true and S.gui ~= nil and #S.segs == 36, "self HUD builds with 36 segments")
+S.update(30)
+check(S.lit == 9 and S.hpText.Text == "HP  25 / 100" and S.fpsText.Text == "FPS  30", "HUD shows health, segments and FPS")
+check(S.segs[9].BackgroundColor3 ~= S.segs[10].BackgroundColor3, "lit and unlit segments differ")
+S.set(false)
+check(S.gui == nil and env.Cfg.selfHud == false, "self HUD removed")
 print("ALL OK")

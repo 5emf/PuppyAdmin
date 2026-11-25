@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-57" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-58" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -365,6 +365,7 @@ local Cfg = {
     cursorImage = "",   -- Custom cursor: image id or URL
     cursorSize = 40,    -- cursor size in pixels (16 - 128)
     uiStyle = "Standard", -- Settings > Look > UI style: Standard or Kingdom Hearts
+    selfHud = false,    -- Settings > Look: your avatar, HP ring, HP / FPS bars and a COMMAND list
     khPrev = nil,       -- theme / font / cursor to go back to when the Kingdom Hearts style is turned off
     games = {},        -- mini game best scores: game id -> number
     fpsCounter = { on = false }, -- Performance > FPS counter: on, x, y (pixels)
@@ -5278,6 +5279,21 @@ function H.uistyle(a)
     end)
 end
 table.insert(cmds, "uistyle")
+
+-- selfhud [on|off]
+function H.selfhud(a)
+    local w = (a[1] or ""):lower()
+    local on = (w == "on" and true) or (w == "off" and false) or not Cfg.selfHud
+    task.spawn(function()
+        local ok, msg = UIAPI.SelfHud.set(on)
+        if UIAPI.selfHudChanged then pcall(UIAPI.selfHudChanged) end
+        note("Self HUD", msg, ok and LIGHT or RED)
+    end)
+end
+table.insert(cmds, "selfhud")
+cmdDocs.selfhud = "selfhud [on|off] - Your avatar in an HP ring with HP / FPS bars and a COMMAND list (bottom-right, draggable)"
+ALIASES.khhud = "selfhud"
+ALIASES.myhud = "selfhud"
 cmdDocs.uistyle = "uistyle [standard|kh] - Kingdom Hearts style menus (blue panels, KH font, pointing glove) or the standard look"
 ALIASES.khstyle = "uistyle"
 ALIASES.khui = "uistyle"
@@ -6185,7 +6201,9 @@ local function uiWindow(screenGui, key, title, size, pos)
     pcall(function() shine.Interactable = false end)
 
     local bar = make("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, Active = true }, f)
-    label(bar, { Size = UDim2.new(1, -56, 1, 0), Position = UDim2.fromOffset(16, 0), Text = title, Font = Enum.Font.GothamBold, TextSize = 14 })
+    local titleLbl = label(bar, { Size = UDim2.new(1, -56, 1, 0), Position = UDim2.fromOffset(16, 0), Text = title, Font = Enum.Font.GothamBold, TextSize = 14 })
+    f:SetAttribute("PuppyAdminWindow", true) -- the Kingdom Hearts style frames these
+    titleLbl:SetAttribute("PuppyAdminTitle", true)
     local x = make("TextButton", {
         Size = UDim2.fromOffset(28, 28), Position = UDim2.new(1, -36, 0, 6), BackgroundTransparency = 1,
         Text = "X", TextColor3 = PAL.DIM, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false,
@@ -12540,8 +12558,52 @@ do
         g.Parent = inst
     end
 
+    -- ornate panel art (assets/hud, drawn by tools/make_hud_art.py), shared with the self HUD
+    K.ART = { panel = "panel_v1.png", header = "header_v1.png", ringback = "ringback_v1.png" }
+    K.img = {}
+    function K.loadArt()
+        for key, file in pairs(K.ART) do
+            if not K.img[key] then K.img[key] = urlImageAsset(SETTINGS.Auras.assetBase .. "assets/hud/" .. file, "hud") end
+        end
+        return K.img
+    end
+    K.PANEL_SLICE = Rect.new(14, 14, 82, 82) -- the panel's corners stay sharp at any size
+
+    local function frameWindow(f)
+        if f:FindFirstChild(TAG .. "Frame") then return end
+        if K.img.panel then
+            make("ImageLabel", { Name = TAG .. "Frame", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+                Image = K.img.panel, ScaleType = Enum.ScaleType.Slice, SliceCenter = K.PANEL_SLICE, ZIndex = 0, Active = false }, f)
+        end
+        if K.img.header then
+            make("ImageLabel", { Name = TAG .. "Header", Size = UDim2.new(0.75, 0, 0, 30), Position = UDim2.fromOffset(8, 6),
+                BackgroundTransparency = 1, Image = K.img.header, ZIndex = 0, Active = false }, f)
+        end
+    end
+
+    local function styleTitle(l)
+        if l:GetAttribute(TAG .. "Text") ~= nil then return end
+        l:SetAttribute(TAG .. "Text", l.Text)
+        l:SetAttribute("PuppyAdminKeepFont", true)
+        local face = UIFont.make("KH Gummi", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+        if face then pcall(function() l.FontFace = face end) end
+        l.Text = l.Text:upper()
+    end
+
+    local function unstyleTitle(l)
+        local text = l:GetAttribute(TAG .. "Text")
+        if text == nil then return end
+        l.Text = text
+        l:SetAttribute(TAG .. "Text", nil)
+        l:SetAttribute("PuppyAdminKeepFont", nil)
+        pcall(function() l.FontFace = Font.fromEnum(Enum.Font.GothamBold) end)
+        pcall(UIFont.applyTo, l)
+    end
+
     local function decorate(inst)
         if not K.on or skip(inst) then return end
+        if inst:GetAttribute("PuppyAdminWindow") then pcall(frameWindow, inst) end
+        if inst:GetAttribute("PuppyAdminTitle") then pcall(styleTitle, inst); return end
         if inst:IsA("TextButton") then
             shade(inst, Color3.fromRGB(160, 175, 225))
             table.insert(K.conns, inst.MouseEnter:Connect(function() K.target = inst end))
@@ -12592,7 +12654,8 @@ do
         for _, root in ipairs(Theme.roots) do
             if root.Parent then
                 for _, d in ipairs(root:GetDescendants()) do
-                    if d.Name:sub(1, #TAG) == TAG then pcall(function() d:Destroy() end) end
+                    if d.Name:sub(1, #TAG) == TAG then pcall(function() d:Destroy() end)
+                    elseif d:GetAttribute(TAG .. "Text") ~= nil then pcall(unstyleTitle, d) end
                 end
             end
         end
@@ -12631,6 +12694,7 @@ do
         undecorate()
         K.on = on
         if on then
+            pcall(K.loadArt)
             if not quiet then
                 Theme.usePreset("Kingdom Hearts")
                 pcall(UIFont.set, "KH Menu", true)
@@ -12652,6 +12716,143 @@ do
     table.insert(cleanups, function() K.on = false; undecorate() end)
 end
 
+-- Self HUD (Settings > Look, `selfhud`): an optional display of your own character in
+-- the same panel art: your avatar inside a ring of HP segments (green, then yellow and
+-- red as health drops), HP and FPS bars, your name, and a COMMAND list that opens the
+-- main windows. Bottom-right, draggable. Original art (assets/hud).
+do
+    local S = { gui = nil, conn = nil, segs = {}, lit = -1 }
+    UIAPI.SelfHud = S
+    S.SEGMENTS = 36
+    S.COMMANDS = { { "Commands", "help" }, { "Settings", "settings" }, { "Reanim", "reanim" }, { "Alts", "alts" } }
+
+    local function segColor(frac)
+        if frac > 0.5 then return Color3.fromRGB(120, 230, 90) end
+        if frac > 0.25 then return Color3.fromRGB(250, 210, 70) end
+        return Color3.fromRGB(240, 80, 80)
+    end
+
+    -- pure: how many of n segments are lit for health h of max m
+    function S.litCount(h, m, n)
+        if not (type(h) == "number" and type(m) == "number") or m <= 0 or h ~= h then return 0 end
+        return math.clamp(math.ceil(n * math.clamp(h / m, 0, 1) - 1e-9), 0, n)
+    end
+
+    function S.off()
+        if S.conn then S.conn:Disconnect(); S.conn = nil end
+        if S.gui then pcall(function() S.gui:Destroy() end) end
+        S.gui, S.segs, S.lit = nil, {}, -1
+    end
+
+    local function bar(parent, y, h, color, text)
+        local back = make("Frame", { Position = UDim2.fromOffset(0, y), Size = UDim2.new(1, 0, 0, h),
+            BackgroundColor3 = Color3.fromRGB(8, 12, 34), BackgroundTransparency = 0.15, BorderSizePixel = 0 }, parent)
+        make("UIStroke", { Color = Color3.fromRGB(80, 130, 220), Thickness = 1, Transparency = 0.2 }, back)
+        local fill = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = color, BorderSizePixel = 0 }, back)
+        local lbl = make("TextLabel", { Size = UDim2.new(1, -8, 1, 0), Position = UDim2.fromOffset(6, 0), BackgroundTransparency = 1,
+            Text = text, TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.GothamBlack, TextSize = h - 3,
+            TextXAlignment = Enum.TextXAlignment.Left, TextStrokeTransparency = 0.4 }, back)
+        return fill, lbl
+    end
+
+    function S.build()
+        local img = UIAPI.KHStyle.loadArt()
+        S.gui = Instance.new("ScreenGui")
+        S.gui.Name = "PuppyAdminHud"
+        S.gui.ResetOnSpawn = false
+        S.gui.DisplayOrder = 5
+        parentGui(S.gui)
+        local root = make("Frame", { Size = UDim2.fromOffset(440, 168), AnchorPoint = Vector2.new(1, 1),
+            Position = UDim2.new(1, -14, 1, -14), BackgroundTransparency = 1, Active = true }, S.gui)
+        S.root = root
+        -- COMMAND panel
+        local cmd = make("ImageLabel", { Size = UDim2.fromOffset(200, 118), BackgroundTransparency = img.panel and 1 or 0.2,
+            BackgroundColor3 = Color3.fromRGB(12, 20, 56), Image = img.panel or "", ScaleType = Enum.ScaleType.Slice,
+            SliceCenter = UIAPI.KHStyle.PANEL_SLICE, Active = true }, root)
+        make("ImageLabel", { Size = UDim2.fromOffset(180, 24), Position = UDim2.fromOffset(8, 6), BackgroundTransparency = 1,
+            Image = img.header or "" }, cmd)
+        local title = make("TextLabel", { Size = UDim2.fromOffset(170, 24), Position = UDim2.fromOffset(16, 5), BackgroundTransparency = 1,
+            Text = "COMMAND", TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.GothamBlack, TextSize = 14,
+            TextXAlignment = Enum.TextXAlignment.Left }, cmd)
+        title:SetAttribute("PuppyAdminKeepFont", true)
+        local face = UIFont.make("KH Gummi", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+        if face then pcall(function() title.FontFace = face end) end
+        makeDraggable(cmd, root)
+        for i, c in ipairs(S.COMMANDS) do
+            local b = make("TextButton", { Size = UDim2.fromOffset(170, 19), Position = UDim2.fromOffset(18, 30 + (i - 1) * 20),
+                BackgroundColor3 = Color3.fromRGB(40, 80, 170), BackgroundTransparency = 0.8, BorderSizePixel = 0, AutoButtonColor = true,
+                Text = "  " .. c[1], TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.GothamBold, TextSize = 13,
+                TextXAlignment = Enum.TextXAlignment.Left }, cmd)
+            b.MouseButton1Click:Connect(function() pcall(UIAPI.openForCommand, c[2]) end)
+        end
+        -- bars and name
+        local bars = make("Frame", { Size = UDim2.fromOffset(300, 40), Position = UDim2.fromOffset(0, 126), BackgroundTransparency = 1 }, root)
+        S.fpsFill, S.fpsText = bar(bars, 0, 15, Color3.fromRGB(40, 130, 240), "FPS")
+        S.hpFill, S.hpText = bar(bars, 20, 18, Color3.fromRGB(120, 230, 90), "HP")
+        S.name = make("TextLabel", { Size = UDim2.fromOffset(200, 18), Position = UDim2.fromOffset(206, 104), BackgroundTransparency = 1,
+            Text = plr.DisplayName, TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.GothamBlack, TextSize = 14,
+            TextXAlignment = Enum.TextXAlignment.Right, TextStrokeTransparency = 0.5 }, root)
+        -- avatar in the HP ring
+        local ring = make("ImageLabel", { Size = UDim2.fromOffset(150, 150), Position = UDim2.fromOffset(290, 10), BackgroundTransparency = 1,
+            Image = img.ringback or "" }, root)
+        local face2 = make("ImageLabel", { Size = UDim2.fromOffset(96, 96), Position = UDim2.fromOffset(27, 27), BackgroundTransparency = 1,
+            Image = "rbxthumb://type=AvatarHeadShot&id=" .. plr.UserId .. "&w=150&h=150" }, ring)
+        make("UICorner", { CornerRadius = UDim.new(1, 0) }, face2)
+        S.segs = {}
+        local n, cx, cy, r = S.SEGMENTS, 75, 75, 62
+        for i = 1, n do
+            -- clockwise from the bottom, like a filling gauge
+            local a = math.rad(90 + (i - 0.5) * 360 / n)
+            local seg = make("Frame", { Size = UDim2.fromOffset(6, 13), AnchorPoint = Vector2.new(0.5, 0.5),
+                Position = UDim2.fromOffset(cx + math.cos(a) * r, cy + math.sin(a) * r), Rotation = math.deg(a) + 90,
+                BackgroundColor3 = Color3.fromRGB(30, 40, 70), BorderSizePixel = 0 }, ring)
+            make("UICorner", { CornerRadius = UDim.new(0, 2) }, seg)
+            S.segs[i] = seg
+        end
+        S.lit = -1
+        local acc, frames, fps = 0, 0, 60
+        S.conn = RunService.RenderStepped:Connect(function(dt)
+            acc, frames = acc + dt, frames + 1
+            if acc < 0.15 then return end
+            fps = frames / acc
+            acc, frames = 0, 0
+            pcall(S.update, fps)
+        end)
+        S.update(60)
+    end
+
+    function S.update(fps)
+        if not S.gui then return end
+        local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+        local h, m = hum and hum.Health or 0, hum and hum.MaxHealth or 100
+        local frac = (m > 0 and math.clamp(h / m, 0, 1)) or 0
+        S.hpFill.Size = UDim2.fromScale(frac, 1)
+        S.hpFill.BackgroundColor3 = segColor(frac)
+        S.hpText.Text = string.format("HP  %d / %d", math.floor(h + 0.5), math.floor(m + 0.5))
+        local f = math.clamp(fps or 60, 0, 999)
+        S.fpsFill.Size = UDim2.fromScale(math.clamp(f / 60, 0, 1), 1)
+        S.fpsText.Text = string.format("FPS  %d", math.floor(f + 0.5))
+        S.name.Text = plr.DisplayName
+        local lit = S.litCount(h, m, S.SEGMENTS)
+        if lit ~= S.lit then
+            S.lit = lit
+            local on, offc = segColor(frac), Color3.fromRGB(30, 40, 70)
+            for i, seg in ipairs(S.segs) do seg.BackgroundColor3 = (i <= lit) and on or offc end
+        end
+    end
+
+    -- returns ok, message. Yields while the art downloads.
+    function S.set(on, quiet)
+        Cfg.selfHud = on == true
+        if not quiet then cfgSave() end
+        S.off()
+        if Cfg.selfHud then S.build() end
+        return true, "Self HUD " .. (Cfg.selfHud and "on (drag it by its COMMAND panel)" or "off")
+    end
+
+    table.insert(cleanups, S.off)
+end
+
 -- Command directory tabs: every command has one category (explicit list first,
 -- then the engine's movement / performance groups, then words in its help line).
 do
@@ -12668,7 +12869,7 @@ do
         Server = { "finder", "shmost", "shlowest", "serverhop", "rejoin", "antiafk", "unantiafk", "antikick", "unantikick", "antivcban" },
         Performance = { "perf", "performance" },
         Owner = { "owner", "kick", "ban", "unban", "bans", "blacklist" },
-        Settings = { "prefix", "uikey", "settings", "theme", "help", "kill", "stop", "cursor", "font", "uistyle" },
+        Settings = { "prefix", "uikey", "settings", "theme", "help", "kill", "stop", "cursor", "font", "uistyle", "selfhud" },
     }
     local byName = {}
     for cat, names in pairs(EXPLICIT) do for _, n in ipairs(names) do byName[n] = cat end end
@@ -12833,7 +13034,8 @@ local function createUI()
         Font = Enum.Font.Code,
         TextSize = 14,
         TextXAlignment = Enum.TextXAlignment.Left,
-    }, helpFrame)
+    }, helpFrame):SetAttribute("PuppyAdminTitle", true)
+    helpFrame:SetAttribute("PuppyAdminWindow", true)
 
     local closeBtn = make("TextButton", {
         Size = UDim2.new(0, 30, 0, 30),
@@ -12998,7 +13200,8 @@ local function createUI()
         make("UICorner", { CornerRadius = UDim.new(0, 8) }, f)
         make("UIStroke", { Color = Color3.fromRGB(80, 80, 80), Transparency = 0.5, Thickness = 1 }, f)
         Theme.addBackdrop(f, 8)
-        make("TextLabel", {
+        f:SetAttribute("PuppyAdminWindow", true)
+        local titleLbl = make("TextLabel", {
             Size = UDim2.new(1, -50, 0, 30),
             Position = UDim2.new(0, 15, 0, 5),
             BackgroundTransparency = 1,
@@ -13008,6 +13211,7 @@ local function createUI()
             TextSize = 14,
             TextXAlignment = Enum.TextXAlignment.Left,
         }, f)
+        titleLbl:SetAttribute("PuppyAdminTitle", true)
         local x = make("TextButton", {
             Size = UDim2.new(0, 30, 0, 30),
             Position = UDim2.new(1, -35, 0, 5),
@@ -13219,19 +13423,31 @@ local function createUI()
                 note("UI style", msg, ok and LIGHT or RED)
             end)
         end)
+    local hudBtn = actionButton(look, "", UDim2.new(0, 15, 0, 58), UDim2.new(1, -30, 0, 28))
+    hudBtn.TextSize = 12
+    local function hudText() hudBtn.Text = Cfg.selfHud and "Self HUD: on (avatar, HP ring, COMMAND list)" or "Self HUD: off (click for avatar, HP ring, COMMAND list)" end
+    hudText()
+    hudBtn.MouseButton1Click:Connect(function()
+        task.spawn(function()
+            local ok, msg = UIAPI.SelfHud.set(not Cfg.selfHud)
+            hudText()
+            note("Self HUD", msg, ok and LIGHT or RED)
+        end)
+    end)
+    UIAPI.selfHudChanged = hudText
     -- Theme: presets, then one row per colour role (hex, r,g,b or a colour name)
-    fieldLabel(look, "UI theme", 60)
+    fieldLabel(look, "UI theme", 96)
     local perRow = 4
     for i, p in ipairs(Theme.presets) do
         local col, row = (i - 1) % perRow, math.floor((i - 1) / perRow)
-        local b = actionButton(look, p.name, UDim2.new(0, 15 + col * 84, 0, 80 + row * 30), UDim2.new(0, 80, 0, 26))
+        local b = actionButton(look, p.name, UDim2.new(0, 15 + col * 84, 0, 116 + row * 30), UDim2.new(0, 80, 0, 26))
         b.TextSize = 11
         b.MouseButton1Click:Connect(function()
             Theme.usePreset(p.name)
             note("Theme", p.name, LIGHT)
         end)
     end
-    local y = 80 + math.ceil(#Theme.presets / perRow) * 30 + 6
+    local y = 116 + math.ceil(#Theme.presets / perRow) * 30 + 6
     fieldLabel(look, "Colors: #hex, r,g,b or a name (press Enter to apply)", y)
     y = y + 20
     local themeRows = {}
@@ -15561,6 +15777,9 @@ do
     end
     if Cfg.uiStyle == "Kingdom Hearts" then
         task.delay(0.5, function() pcall(UIAPI.KHStyle.set, "Kingdom Hearts", true) end)
+    end
+    if Cfg.selfHud then
+        task.delay(0.6, function() pcall(UIAPI.SelfHud.set, true, true) end)
     end
     Perf.since("Main UI (terminal, help, settings, panel registry)", uiStart)
 end
