@@ -509,6 +509,8 @@ do
 end
 
 -- separate limbs with reanim, in a game where reanim ragdolls you (shared): no death
+-- (alts 3 and 4 have no fake engine; mark theirs loaded so they don't hold the load lock)
+alts[2].Pup.booted, alts[3].Pup.booted = true, true
 do
     ENGINE[2] = { mode = "shared" }
     PLAYERS[2].Character = character(Vector3.new(0, 3, 0))
@@ -593,6 +595,27 @@ do
     for f = 1, 6 do Heartbeat:fire(1 / 60) end
     local ls = alts[1].UIAPI.Alts.limbState
     check(#ENGINE[2].calls == 2 and ENGINE[2].on and ls and ls.phase == "free", "second request works: separated")
+    main.H.unform(); runTasks()
+    main.Cfg.altForm.limbs = false
+end
+
+-- alts on one PC load the reanim engine one at a time (shared lock file)
+do
+    ENGINE[2] = { mode = "shared" }
+    PLAYERS[2].Character = character(Vector3.new(0, 3, 0))
+    FS["PuppyAdmin/companion/reanim_loading.json"] = json.encode({ userId = 3, time = NOW })
+    main.Cfg.altForm.limbs = true
+    main.H.alt({ "orbit1" }); runTasks()
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    CLOCK = CLOCK + 3
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    check(not ENGINE[2].calls and alts[1].UIAPI.Alts.limbState.phase == "reanim", "waits while another alt is loading reanim")
+    check(json.decode(FS["PuppyAdmin/companion/limbs_2.json"]).why:find("another alt", 1, true) ~= nil, "and says so to the main")
+    FS["PuppyAdmin/companion/reanim_loading.json"] = "{}" -- the other alt finished
+    CLOCK = CLOCK + 3.5
+    for f = 1, 6 do Heartbeat:fire(1 / 60) end
+    check(ENGINE[2].on and alts[1].UIAPI.Alts.limbState.phase == "free", "then takes its turn and separates")
+    check(FS["PuppyAdmin/companion/reanim_loading.json"] == "{}", "and frees the lock for the next alt")
     main.H.unform(); runTasks()
     main.Cfg.altForm.limbs = false
 end

@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-66" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-67" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -365,6 +365,8 @@ local Cfg = {
     cursorImage = "",   -- Custom cursor: image id or URL
     cursorSize = 40,    -- cursor size in pixels (16 - 128)
     uiStyle = "Standard", -- Settings > Look > UI style: Standard or Kingdom Hearts
+    barKey = "",        -- Settings > General: key / mouse button that shows or hides the command bar ("" = none)
+    barHidden = false,  -- command bar hidden (the rest of the UI stays)
     selfHud = false,    -- Settings > Look: your avatar, HP ring, HP / FPS bars and a COMMAND list
     khPrev = nil,       -- theme / font / cursor to go back to when the Kingdom Hearts style is turned off
     games = {},        -- mini game best scores: game id -> number
@@ -5198,6 +5200,48 @@ function H.prefix(a)
     note("Prefix", table.concat(Cfg.prefixes, "  "), LIGHT)
 end
 
+-- Command bar on its own (the rest of the UI stays): a key of your choice, `togglebar`, `barkey`
+function UIAPI.setBarVisible(on, quiet)
+    local bar = UIAPI.bar
+    if not bar then return end
+    Cfg.barHidden = not on
+    bar.Visible = on
+    if not quiet then cfgSave() end
+    if on and UIAPI.cmdInput then
+        task.defer(function() pcall(function() UIAPI.cmdInput:CaptureFocus() end) end) -- ready to type
+    end
+    if UIAPI.barKeyChanged then pcall(UIAPI.barKeyChanged) end
+end
+
+-- "F2", "Semicolon", "MouseButton3" (middle), "MouseButton2" (right) or "off"
+function UIAPI.resolveBarKey(text)
+    local t = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if t == "" or t:lower() == "off" or t:lower() == "none" then return "" end
+    local low = t:lower()
+    if low == "mousebutton3" or low == "middlemouse" or low == "middle" then return "MouseButton3" end
+    if low == "mousebutton2" or low == "rightmouse" or low == "right" then return "MouseButton2" end
+    local kc = resolveKeyCode(t)
+    return kc and kc.Name or nil
+end
+
+function H.barkey(a)
+    if not a[1] then
+        note("Command bar", Cfg.barKey ~= "" and ("Key: " .. Cfg.barKey) or "No key set - barkey <key> (e.g. barkey F2)", LIGHT)
+        return
+    end
+    local k = UIAPI.resolveBarKey(a[1])
+    if not k then note("Command bar", "Unknown key - try F2, Semicolon, MouseButton3 or off", RED); return end
+    if k ~= "" and k == Cfg.uiKey then note("Command bar", k .. " already shows/hides the whole UI", RED); return end
+    Cfg.barKey = k
+    cfgSave()
+    if UIAPI.barKeyChanged then pcall(UIAPI.barKeyChanged) end
+    note("Command bar", k ~= "" and (k .. " now shows/hides the command bar") or "Command bar key off", LIGHT)
+end
+
+function H.togglebar()
+    UIAPI.setBarVisible(Cfg.barHidden)
+end
+
 function H.uikey(a)
     local kc = resolveKeyCode(a[1])
     if not a[1] then note("UI Key", Cfg.uiKey); return end
@@ -5265,6 +5309,11 @@ function H.cursor(a)
     end)
 end
 table.insert(cmds, "cursor")
+table.insert(cmds, "barkey")
+cmdDocs.barkey = "barkey <key|MouseButton3|off> - Key or mouse button that shows / hides the command bar (also Settings > General)"
+table.insert(cmds, "togglebar")
+cmdDocs.togglebar = "togglebar - Show or hide the command bar (the rest of the UI stays)"
+ALIASES.bar = "togglebar"
 
 -- uistyle [standard|kh]
 function H.uistyle(a)
@@ -13321,7 +13370,8 @@ do
         Server = { "finder", "shmost", "shlowest", "serverhop", "rejoin", "antiafk", "unantiafk", "antikick", "unantikick", "antivcban" },
         Performance = { "perf", "performance" },
         Owner = { "owner", "kick", "ban", "unban", "bans", "blacklist" },
-        Settings = { "prefix", "uikey", "settings", "theme", "help", "kill", "stop", "cursor", "font", "uistyle", "selfhud", "menu" },
+        Settings = { "prefix", "uikey", "settings", "theme", "help", "kill", "stop", "cursor", "font", "uistyle", "selfhud", "menu",
+            "barkey", "togglebar" },
     }
     local byName = {}
     for cat, names in pairs(EXPLICIT) do for _, n in ipairs(names) do byName[n] = cat end end
@@ -13457,6 +13507,7 @@ local function createUI()
     gear.MouseButton1Click:Connect(function()
         if settingsFrame then settingsFrame.Visible = not settingsFrame.Visible end
     end)
+    UIAPI.bar = frame
     local menuBtn = make("TextButton", {
         Size = UDim2.new(0, 40, 0, 18), Position = UDim2.new(1, -88, 0, 8), BackgroundTransparency = 1,
         Text = "MENU", TextColor3 = GREY, Font = Enum.Font.Code, TextSize = 11,
@@ -13499,6 +13550,7 @@ local function createUI()
         ZIndex = 2,
         ClearTextOnFocus = false,
     }, inputContainer)
+    UIAPI.cmdInput = cmdInput
 
     helpFrame = make("Frame", {
         Size = UDim2.new(0.4, 0, 0.6, 0),
@@ -13821,7 +13873,17 @@ local function createUI()
         note("UI Key", kc.Name, LIGHT)
     end)
 
-    local introBtn = actionButton(gen, "", UDim2.new(0, 15, 0, 124), UDim2.new(0.5, -19, 0, 28))
+    fieldLabel(gen, "Command bar key: show/hide just the bar (F2, MouseButton3, ... ; empty = none)", 124)
+    local barBox = fieldBox(gen, 144, Cfg.barKey or "")
+    barBox.PlaceholderText = "e.g. F2"
+    local barApply = actionButton(gen, "Apply", UDim2.new(1, -85, 0, 144), UDim2.new(0, 70, 0, 28))
+    barApply.MouseButton1Click:Connect(function()
+        H.barkey({ barBox.Text ~= "" and barBox.Text or "off" })
+        barBox.Text = Cfg.barKey or ""
+    end)
+    UIAPI.barKeyChanged = function() if not barBox:IsFocused() then barBox.Text = Cfg.barKey or "" end end
+
+    local introBtn = actionButton(gen, "", UDim2.new(0, 15, 0, 184), UDim2.new(0.5, -19, 0, 28))
     introBtn.TextSize = 11
     local function introText() introBtn.Text = Cfg.skipIntro and "Intro: off" or "Intro: on" end
     introText()
@@ -13831,7 +13893,7 @@ local function createUI()
         introText()
         note("Intro", Cfg.skipIntro and "Skipped from the next start" or "Shown at the next start", LIGHT)
     end)
-    local afkBtn = actionButton(gen, "", UDim2.new(0.5, 4, 0, 124), UDim2.new(0.5, -19, 0, 28))
+    local afkBtn = actionButton(gen, "", UDim2.new(0.5, 4, 0, 184), UDim2.new(0.5, -19, 0, 28))
     afkBtn.TextSize = 11
     local function afkText()
         afkBtn.Text = UIAPI.antiAfk.on and "Anti-AFK: on" or "Anti-AFK: off"
@@ -13842,7 +13904,7 @@ local function createUI()
     afkBtn.MouseButton1Click:Connect(function() H.antiafk({}) end)
 
     -- nametags on your screen only (hidetags / showtags do the same)
-    local tagVisBtn = actionButton(gen, "", UDim2.new(0, 15, 0, 160), UDim2.new(1, -30, 0, 28))
+    local tagVisBtn = actionButton(gen, "", UDim2.new(0, 15, 0, 220), UDim2.new(1, -30, 0, 28))
     tagVisBtn.TextSize = 12
     local function tagVisText()
         tagVisBtn.Text = Cfg.tagsHidden and "Nametags: hidden on your screen (click to show)" or "Nametags: shown (click to hide on your screen)"
@@ -13853,7 +13915,7 @@ local function createUI()
     tagVisBtn.MouseButton1Click:Connect(function() UIAPI.setTagsHidden(not Cfg.tagsHidden) end)
 
     -- alt formations (Puppy Companion's main and alts)
-    local altsBtn = actionButton(gen, "Alts - accounts, formations & commands", UDim2.new(0, 15, 0, 196), UDim2.new(1, -30, 0, 28))
+    local altsBtn = actionButton(gen, "Alts - accounts, formations & commands", UDim2.new(0, 15, 0, 256), UDim2.new(1, -30, 0, 28))
     altsBtn.TextSize = 12
     altsBtn.MouseButton1Click:Connect(function() if H.alts then H.alts({}) end end)
     -- live status on the button, so you can see your alts without opening the window
@@ -13882,10 +13944,10 @@ local function createUI()
     end)
 
     -- The token only ever goes into a local file; it is never shown again or put in the config.
-    fieldLabel(gen, "Tag sync: GitHub token (saved only in " .. SETTINGS.TagSync.tokenFile .. ")", 236)
-    local tokenBox = fieldBox(gen, 256, "")
+    fieldLabel(gen, "Tag sync: GitHub token (saved only in " .. SETTINGS.TagSync.tokenFile .. ")", 296)
+    local tokenBox = fieldBox(gen, 316, "")
     tokenBox.PlaceholderText = TagSync.token() and "token saved - paste a new one, or 'remove'" or "github_pat_... (never type this in chat)"
-    local tokenApply = actionButton(gen, "Save", UDim2.new(1, -85, 0, 256), UDim2.new(0, 70, 0, 28))
+    local tokenApply = actionButton(gen, "Save", UDim2.new(1, -85, 0, 316), UDim2.new(0, 70, 0, 28))
     tokenApply.MouseButton1Click:Connect(function()
         local t = tokenBox.Text
         tokenBox.Text = ""
@@ -13899,7 +13961,7 @@ local function createUI()
             end)
         end
     end)
-    gen.CanvasSize = UDim2.new(0, 0, 0, 300)
+    gen.CanvasSize = UDim2.new(0, 0, 0, 360)
 
     ---------------------------------------------------------------- Look
     local look = pages.Look
@@ -14963,6 +15025,27 @@ function UIAPI.altsSetup()
     -- A fresh body (just spawned / respawned) first settles until this client owns it.
     Alts.SETTLE = 2 -- seconds a new body waits before it is separated
     Alts.STAGGER = 1.5 -- extra seconds per alt index, so alts don't load the reanim engine all at once
+    Alts.STAGGER_LITE = 6 -- the same in low-power mode (weak PCs: one engine load at a time is what fits)
+    Alts.LOAD_LOCK = "PuppyAdmin/companion/reanim_loading.json" -- alts on one PC load the engine one by one
+    Alts.LOAD_LOCK_TTL = 30 -- seconds a lock is trusted (a crashed alt can't block the rest for long)
+
+    -- true when this alt may load the reanim engine now (nobody else on this PC is loading it)
+    function Alts.takeLoadLock()
+        if Pup.booted then return true end -- engine already loaded here: nothing heavy to do
+        local cur = readJson(Alts.LOAD_LOCK)
+        local holder = type(cur) == "table" and tonumber(cur.userId) or nil
+        if holder and holder ~= plr.UserId and tonumber(cur.time) and os.time() - tonumber(cur.time) < Alts.LOAD_LOCK_TTL then
+            return false
+        end
+        pcall(function() writefile(Alts.LOAD_LOCK, HttpService:JSONEncode({ userId = plr.UserId, time = os.time() })) end)
+        return true
+    end
+    function Alts.dropLoadLock()
+        local cur = readJson(Alts.LOAD_LOCK)
+        if type(cur) == "table" and tonumber(cur.userId) == plr.UserId then
+            pcall(function() writefile(Alts.LOAD_LOCK, "{}") end)
+        end
+    end
     Alts.REANIM_WAIT = 25 -- seconds to keep asking for reanim (the first start builds the reanim panel)
     Alts.REANIM_RETRY = 3 -- seconds between reanim requests (the panel may not be ready yet)
 
@@ -15105,9 +15188,14 @@ function UIAPI.altsSetup()
                 if jointsLoose(real) then freeDeadParts(ls, real) end
                 return ls
             end
-            local wait = Alts.SETTLE + (st and st.index or 0) * Alts.STAGGER
+            local wait = Alts.SETTLE + (st and st.index or 0) * (Alts.lite and Alts.STAGGER_LITE or Alts.STAGGER)
             if now - ls.born < wait or not ownsBody(real:FindFirstChild("HumanoidRootPart")) then return ls end
             ls.phase, ls.asked, ls.tries = "reanim", now, 0
+        end
+        if ls.phase == "reanim" and not reanimated() and not ls.busy and not Alts.takeLoadLock() then
+            if not ls.queued then ls.queued = true; Alts.limbNote("reanim", "waiting: another alt is loading reanim") end
+            ls.asked = now -- waiting for our turn does not count towards giving up
+            return ls
         end
         if ls.phase == "reanim" and not reanimated() and not ls.busy
             and now - ls.asked <= Alts.REANIM_WAIT and now - (ls.lastTry or 0) >= Alts.REANIM_RETRY then
@@ -15129,16 +15217,19 @@ function UIAPI.altsSetup()
                 if croot then
                     if croot:FindFirstChild("PuppetRoot") then
                         endReanim(ls) -- the game did not ragdoll: the limbs would only show here
+                        Alts.dropLoadLock()
                         ls.phase = "nodoll"
                         Alts.limbNote("nodoll", "reanim did not ragdoll this game (body welded whole)")
                     else
                         takeClone(ls, clone, croot)
+                        Alts.dropLoadLock()
                         Alts.limbNote("free", "separated: " .. #ls.parts .. " parts")
                         return ls
                     end
                 end
             elseif now - ls.asked > Alts.REANIM_WAIT and not ls.busy then
                 ls.startedReanim = false
+                Alts.dropLoadLock()
                 ls.phase = "nodoll" -- reanim did not start
                 Alts.limbNote("nodoll", "reanim did not start after " .. (ls.tries or 0) .. " tries")
             else
@@ -16345,6 +16436,7 @@ do
     if Cfg.uiStyle == "Kingdom Hearts" then
         task.delay(0.5, function() pcall(UIAPI.KHStyle.set, "Kingdom Hearts", true) end)
     end
+    if Cfg.barHidden then pcall(UIAPI.setBarVisible, false, true) end
 
     Perf.since("Main UI (terminal, help, settings, panel registry)", uiStart)
 end
@@ -16360,6 +16452,11 @@ Chat.start()
 
 table.insert(conns, UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
+    -- the command bar key may be a keyboard key or the middle / right mouse button
+    if Cfg.barKey ~= "" and (input.KeyCode.Name == Cfg.barKey or input.UserInputType.Name == Cfg.barKey) then
+        pcall(UIAPI.setBarVisible, Cfg.barHidden)
+        return
+    end
     if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
     if input.KeyCode.Name == Cfg.uiKey then
         Hide.setUI(not Hide.uiHidden)
