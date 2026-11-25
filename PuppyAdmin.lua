@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.25-74" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.25-75" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -16630,6 +16630,55 @@ function UIAPI.altsSetup()
         ls.phase, ls.method, ls.anchored = "free", "death", false
     end
 
+    -- While separated: does the REAL body (what other players see) follow the clone? The
+    -- engine copies each clone part onto the real part of the same name; this measures it.
+    -- c = { total, near, owned, ownKnown, joints, constraints, anchored }
+    function Alts.limbCheckText(c)
+        local bits = { string.format("%d/%d real parts on their spot", c.near, c.total) }
+        if c.ownKnown then bits[#bits + 1] = string.format("%d/%d owned by this alt", c.owned, c.total) end
+        if c.joints > 0 then bits[#bits + 1] = c.joints .. " Motor6D still holding the real body" end
+        if c.constraints > 0 then bits[#bits + 1] = c.constraints .. " ragdoll constraints" end
+        if c.anchored > 0 then bits[#bits + 1] = c.anchored .. " real parts anchored" end
+        local verdict
+        if c.total == 0 then verdict = "no clone parts"
+        elseif c.near == c.total then verdict = "OK, real body follows"
+        elseif c.near == 0 then verdict = "real body NOT following"
+        else verdict = "real body partly following" end
+        return verdict .. ": " .. table.concat(bits, ", ")
+    end
+    function Alts.limbCheck(ls)
+        local now = os.clock()
+        if now < (ls.nextCheck or 0) then return end
+        ls.nextCheck = now + 5
+        local real = ls.char
+        if not (real and real.Parent) then return end
+        local c = { total = 0, near = 0, owned = 0, ownKnown = type(isnetworkowner) == "function", joints = 0, constraints = 0, anchored = 0 }
+        for _, p in ipairs(ls.parts or {}) do
+            local rp = p.Parent and real:FindFirstChild(p.Name)
+            if rp and rp:IsA("BasePart") then
+                c.total = c.total + 1
+                if (rp.Position - p.Position).Magnitude < 3 then c.near = c.near + 1 end
+                if c.ownKnown then
+                    local ok, mine = pcall(isnetworkowner, rp)
+                    if ok and mine then c.owned = c.owned + 1 end
+                end
+                if rp.Anchored then c.anchored = c.anchored + 1 end
+            end
+        end
+        for _, d in ipairs(real:GetDescendants()) do
+            if d:IsA("Motor6D") and d.Enabled and d.Part0 and d.Part1 and d.Part0.Parent == real and d.Part1.Parent == real then
+                c.joints = c.joints + 1
+            elseif d:IsA("Constraint") and d.Enabled and not d:IsA("AlignPosition") and not d:IsA("AlignOrientation") then
+                c.constraints = c.constraints + 1
+            end
+        end
+        local text = Alts.limbCheckText(c)
+        if text ~= ls.lastCheck then
+            ls.lastCheck = text
+            Alts.limbNote("check", text)
+        end
+    end
+
     -- Advances the separation of the current body; returns the state (phase "free" = parts
     -- to place). st carries the switches (st.limbsDeath allows the death fallback).
     function Alts.shatter(st)
@@ -16637,7 +16686,13 @@ function UIAPI.altsSetup()
         if not real then return nil end
         local ls = Alts.limbState
         if not ls or ls.char ~= real then
-            if ls then Alts.reassemble() end
+            if ls then
+                local oh = ls.char and ls.char:FindFirstChildOfClass("Humanoid")
+                Alts.limbNote("body", (oh and oh.Health <= 0) and "previous body died (health 0)"
+                    or (ls.char and ls.char.Parent == nil) and "previous body was removed (respawn or reset)"
+                    or "character changed")
+                Alts.reassemble()
+            end
             ls = { char = real, born = os.clock(), phase = "settle", parts = {} }
             Alts.limbState = ls
             Alts.limbNote("settle", "new body: waiting to settle")
@@ -16645,10 +16700,13 @@ function UIAPI.altsSetup()
         if ls.phase == "free" then
             if ls.method == "reanim" and not (reanimated() and ls.clone and ls.clone.Parent) then
                 -- reanim ended under us (reset, kill): start over with the next body
+                local rh = ls.char and ls.char:FindFirstChildOfClass("Humanoid")
+                Alts.limbNote("reset", "reanim ended while separated" .. ((rh and rh.Health <= 0) and " (the body died)" or ""))
                 releaseClone(ls)
                 Alts.limbState = nil
                 return nil
             end
+            if ls.method == "reanim" then pcall(Alts.limbCheck, ls) end
             return ls
         end
         if ls.phase == "whole" then return ls end

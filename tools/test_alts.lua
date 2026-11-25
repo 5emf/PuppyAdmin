@@ -805,5 +805,17 @@ do
     check(E.UIAPI.panels.alts ~= nil and E.UIAPI.panels.altcmds == nil, "altcmds reuses the one Alts window")
 end
 
+-- separated-limb check line (what the alt writes to its limbs log every change)
+do
+    local A = alts[1].UIAPI.Alts
+    check(FS["PuppyAdmin/companion/limbs_2.txt"]:find("  check  ", 1, true) ~= nil, "the shared-mode run logged a real-body check")
+    local ok = A.limbCheckText({ total = 15, near = 15, owned = 15, ownKnown = true, joints = 0, constraints = 14, anchored = 0 })
+    check(ok:find("^OK, real body follows") and ok:find("15/15 owned") and ok:find("14 ragdoll constraints"), "check: following body")
+    local bad = A.limbCheckText({ total = 15, near = 0, owned = 0, ownKnown = true, joints = 14, constraints = 0, anchored = 0 })
+    check(bad:find("^real body NOT following") and bad:find("14 Motor6D still holding"), "check: body not following, joints named")
+    local part = A.limbCheckText({ total = 15, near = 7, owned = 0, ownKnown = false, joints = 0, constraints = 0, anchored = 2 })
+    check(part:find("^real body partly following") and not part:find("owned") and part:find("2 real parts anchored"), "check: partial, no owner info")
+end
+
 print(fails == 0 and "ALL OK" or (fails .. " FAILED"))
 os.exit(fails == 0 and 0 or 1)
