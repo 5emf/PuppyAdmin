@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.25-85" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.25-86" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -366,6 +366,8 @@ local Cfg = {
     cursorSize = 40,    -- cursor size in pixels (16 - 128)
     uiStyle = "Standard", -- Settings > Look > UI style: Standard or Kingdom Hearts
     menuSounds = true,    -- Kingdom Hearts style: move / select / denied sounds from PuppyAdmin/sounds
+    mobileMode = "auto",  -- Settings > General: "auto" (touch devices), "on" or "off" (UIAPI.Mobile)
+    mobileButton = {},    -- where the floating mobile button was dragged to { xs, x, ys, y }
     barKey = "",        -- Settings > General: key / mouse button that shows or hides the command bar ("" = none)
     barHidden = false,  -- command bar hidden (the rest of the UI stays)
     puppyTime = 0,      -- seconds of active Puppy Admin use, all sessions (KH menu PUPPYTIME)
@@ -5401,6 +5403,8 @@ function H.uistyle(a)
     end)
 end
 table.insert(cmds, "uistyle")
+table.insert(cmds, "mobile")
+cmdDocs.mobile = "mobile [auto|on|off] - Touch-screen mode: UI scaled to fit, windows kept on screen, a floating button to show / hide the UI (auto = on phones and tablets)"
 
 -- selfhud [on|off]
 function H.selfhud(a)
@@ -6287,7 +6291,10 @@ local function makeDraggable(handle, target)
         end
     end))
     table.insert(conns, UserInputService.InputEnded:Connect(function(input)
-        if isPointer(input) then dragging = false end
+        if isPointer(input) then
+            if dragging and target:GetAttribute("PuppyAdminWindow") and UIAPI.Mobile then pcall(UIAPI.Mobile.clamp, target) end
+            dragging = false
+        end
     end))
 end
 
@@ -6304,7 +6311,8 @@ function UIAPI.fitWindow(f, topY)
     local designH = f.Size.Y.Offset
     local maxH = WINDOW_MAX_H
     local cam = workspace.CurrentCamera
-    if cam and cam.ViewportSize.Y > 0 then maxH = math.min(maxH, math.max(260, cam.ViewportSize.Y - 100)) end
+    local k = UIAPI.Mobile and UIAPI.Mobile.factor() or 1 -- windows are scaled by k on small screens
+    if cam and cam.ViewportSize.Y > 0 then maxH = math.min(maxH, math.max(260, (cam.ViewportSize.Y - 100) / k)) end
     if designH <= maxH then return end
     f.Size = UDim2.new(f.Size.X.Scale, f.Size.X.Offset, 0, maxH)
     -- windows placed by their top edge move down to stay centred where they were
@@ -6331,6 +6339,169 @@ function UIAPI.markChrome(f)
 end
 end
 
+-- Mobile / touch (`UIAPI.Mobile`; Settings > General "Mobile mode", `mobile [auto|on|off]`).
+-- On touch devices (or with the mode "on"): every window scales down to fit the screen (times
+-- its own resize-grip scale), windows are kept on screen, the HUDs and the SAO menu scale too,
+-- and a floating round button (draggable) shows / hides the UI (tap) or the command bar (hold),
+-- since there is no keyboard for the UI key. Windows are kept on screen on every device.
+;(function() -- own function scope: the main chunk is at the 200-local limit
+    local M = { windows = setmetatable({}, { __mode = "k" }), roots = setmetatable({}, { __mode = "k" }) }
+    UIAPI.Mobile = M
+    M.BASE_W, M.BASE_H = 800, 560 -- the screen size the windows were laid out for
+    M.MIN = 0.5
+
+    function M.touchDevice() return UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled end
+    function M.on()
+        local mode = Cfg.mobileMode
+        if mode == "on" then return true elseif mode == "off" then return false end
+        return M.touchDevice()
+    end
+    -- pure: the scale for a screen of vw x vh
+    function M.factorFor(vw, vh)
+        return math.max(M.MIN, math.min(1, vw / M.BASE_W, vh / M.BASE_H))
+    end
+    function M.factor()
+        if not M.on() then return 1 end
+        local cam = workspace.CurrentCamera
+        local vp = cam and cam.ViewportSize
+        if not vp or vp.X <= 0 or vp.Y <= 0 then return 1 end
+        return M.factorFor(vp.X, vp.Y)
+    end
+    -- pure: how far to move a box (x, y, w, h) so it sits inside a W x H screen (margin m);
+    -- a box bigger than the screen is centred across, and its top kept on screen
+    function M.nudge(x, y, w, h, W, H, m)
+        m = m or 6
+        local dx, dy = 0, 0
+        if w + 2 * m >= W then dx = (W - w) / 2 - x
+        elseif x < m then dx = m - x
+        elseif x + w > W - m then dx = W - m - (x + w) end
+        if h + 2 * m >= H then dy = m - y
+        elseif y < m then dy = m - y
+        elseif y + h > H - m then dy = H - m - (y + h) end
+        return dx, dy
+    end
+    function M.clamp(f)
+        local sg = f:FindFirstAncestorOfClass("ScreenGui")
+        if not sg then return end
+        local W, H = sg.AbsoluteSize.X, sg.AbsoluteSize.Y
+        if W <= 0 or H <= 0 then return end
+        local p = f.AbsolutePosition - sg.AbsolutePosition
+        local dx, dy = M.nudge(p.X, p.Y, f.AbsoluteSize.X, f.AbsoluteSize.Y, W, H)
+        if math.abs(dx) >= 1 or math.abs(dy) >= 1 then
+            f.Position = f.Position + UDim2.fromOffset(math.floor(dx + 0.5), math.floor(dy + 0.5))
+        end
+    end
+
+    -- a window's UIScale = its own grip scale x the mobile factor
+    function M.register(f, uiScale, key) M.windows[uiScale] = { frame = f, key = key } end
+    -- a UIScale (mobile factor only) for something built elsewhere: HUDs, the SAO menu, the command list
+    function M.scaleOf(obj)
+        local ui = obj:FindFirstChild("PuppyAdminMobileScale") or make("UIScale", { Name = "PuppyAdminMobileScale" }, obj)
+        ui.Scale = M.factor()
+        M.roots[ui] = true
+        return ui
+    end
+    function M.applyAll()
+        local k = M.factor()
+        local scales = type(Cfg.windowScales) == "table" and Cfg.windowScales or {}
+        for ui, e in pairs(M.windows) do
+            if ui.Parent then pcall(function() ui.Scale = (tonumber(scales[e.key]) or 1) * k end) end
+        end
+        for ui in pairs(M.roots) do
+            if ui.Parent then pcall(function() ui.Scale = k end) end
+        end
+        M.updateButton()
+    end
+
+    -- the floating button: tap = show / hide the UI, hold = show / hide the command bar, drag = move
+    function M.updateButton()
+        local want = M.on()
+        if want and not (M.btnGui and M.btnGui.Parent) then pcall(M.makeButton)
+        elseif not want and M.btnGui then pcall(function() M.btnGui:Destroy() end); M.btnGui = nil end
+    end
+    function M.makeButton()
+        local gui = Instance.new("ScreenGui")
+        gui.Name = "PuppyAdminMobileButton"
+        gui.ResetOnSpawn = false
+        gui.DisplayOrder = 2147481000
+        parentGui(gui)
+        M.btnGui = gui
+        local saved = type(Cfg.mobileButton) == "table" and Cfg.mobileButton or {}
+        local pos = (tonumber(saved.xs) and UDim2.new(tonumber(saved.xs), tonumber(saved.x) or 0, tonumber(saved.ys) or 0.5, tonumber(saved.y) or 0))
+            or UDim2.new(1, -72, 0.35, 0)
+        local b = make("TextButton", { Name = "Toggle", Size = UDim2.fromOffset(54, 54), Position = pos, BackgroundColor3 = Color3.fromRGB(28, 28, 32),
+            BackgroundTransparency = 0.15, Text = "PA", TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.GothamBlack, TextSize = 18,
+            AutoButtonColor = false }, gui)
+        corner(b, 27)
+        stroke(b, Color3.fromRGB(230, 230, 230), 2, 0.3)
+        M.button = b
+        local downAt, startPos, startInput, moved
+        b.InputBegan:Connect(function(input)
+            if not isPointer(input) then return end
+            downAt, startPos, startInput, moved = os.clock(), b.Position, input.Position, false
+            local token = downAt
+            task.delay(0.55, function()
+                if downAt == token and not moved then -- held: the command bar
+                    downAt = nil
+                    pcall(UIAPI.setBarVisible, Cfg.barHidden)
+                end
+            end)
+        end)
+        table.insert(conns, UserInputService.InputChanged:Connect(function(input)
+            if not startInput then return end
+            if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+            local d = input.Position - startInput
+            if not moved and math.abs(d.X) + math.abs(d.Y) > 10 then moved = true end
+            if moved then b.Position = startPos + UDim2.fromOffset(d.X, d.Y) end
+        end))
+        table.insert(conns, UserInputService.InputEnded:Connect(function(input)
+            if not (startInput and isPointer(input)) then return end
+            if moved then
+                pcall(M.clamp, b)
+                Cfg.mobileButton = { xs = b.Position.X.Scale, x = b.Position.X.Offset, ys = b.Position.Y.Scale, y = b.Position.Y.Offset }
+                cfgSave()
+            elseif downAt then -- a tap: the whole UI
+                Hide.setUI(not Hide.uiHidden)
+            end
+            downAt, startInput = nil, nil
+        end))
+    end
+
+    function M.set(mode)
+        if mode ~= "on" and mode ~= "off" then mode = "auto" end
+        Cfg.mobileMode = mode
+        cfgSave()
+        M.applyAll()
+        if M.changed then pcall(M.changed) end
+        return true, string.format("Mobile mode: %s (%s)", mode, M.on() and ("on, UI at " .. math.floor(M.factor() * 100 + 0.5) .. "%") or "off")
+    end
+    function H.mobile(a)
+        local w = (a[1] or ""):lower()
+        if w == "" then
+            note("Mobile", string.format("Mode %s: %s. mobile auto | on | off", Cfg.mobileMode, M.on() and "on" or "off"), LIGHT)
+            return
+        end
+        local ok, msg = M.set(w)
+        note("Mobile", msg, ok and LIGHT or RED)
+    end
+
+    -- screen size changes (rotating a phone, resizing the window) re-scale everything
+    local function watchCamera()
+        local cam = workspace.CurrentCamera
+        if cam then
+            table.insert(conns, cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+                task.defer(function() pcall(M.applyAll) end)
+            end))
+        end
+    end
+    pcall(watchCamera)
+    pcall(function()
+        table.insert(conns, workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function() pcall(watchCamera); pcall(M.applyAll) end))
+    end)
+    task.defer(function() pcall(M.updateButton) end)
+    table.insert(cleanups, function() if M.btnGui then pcall(function() M.btnGui:Destroy() end) end end)
+end)()
+
 -- Corner grip: drag the bottom-right corner to scale a window and everything
 -- in it (most windows are laid out at fixed positions, so scaling is what
 -- makes them bigger). Remembered per window; right-click the grip to reset.
@@ -6338,9 +6509,13 @@ do
     local MIN_SCALE, MAX_SCALE = 0.6, 2.2
     function UIAPI.makeResizable(f, key)
         if type(Cfg.windowScales) ~= "table" then Cfg.windowScales = {} end
-        local uiScale = make("UIScale", { Scale = math.clamp(tonumber(Cfg.windowScales[key]) or 1, MIN_SCALE, MAX_SCALE) }, f)
+        local Mob = UIAPI.Mobile
+        local function k() return Mob and Mob.factor() or 1 end
+        local uiScale = make("UIScale", { Scale = math.clamp(tonumber(Cfg.windowScales[key]) or 1, MIN_SCALE, MAX_SCALE) * k() }, f)
+        if Mob then Mob.register(f, uiScale, key) end
+        local gs = (Mob and Mob.on()) and 30 or 18 -- a bigger grip for fingers
         local grip = make("TextButton", {
-            Name = "ResizeGrip", Size = UDim2.fromOffset(18, 18), Position = UDim2.new(1, -18, 1, -18),
+            Name = "ResizeGrip", Size = UDim2.fromOffset(gs, gs), Position = UDim2.new(1, -gs, 1, -gs),
             BackgroundTransparency = 1, Text = "\226\151\162", TextColor3 = PAL.DIM, Font = Enum.Font.GothamBold,
             TextSize = 14, AutoButtonColor = false, ZIndex = 60,
         }, f)
@@ -6357,19 +6532,26 @@ do
             -- follow the corner: the new on-screen width decides the scale (diagonal drag uses the larger change)
             local d = input.Position - startMouse
             local grow = math.max(d.X, d.Y * (f.AbsoluteSize.X / math.max(1, f.AbsoluteSize.Y)))
-            uiScale.Scale = math.clamp(startScale * (startW + grow) / startW, MIN_SCALE, MAX_SCALE)
+            local kk = k()
+            uiScale.Scale = math.clamp(startScale / kk * (startW + grow) / startW, MIN_SCALE, MAX_SCALE) * kk
         end))
         table.insert(conns, UserInputService.InputEnded:Connect(function(input)
             if dragging and isPointer(input) then
                 dragging = false
-                Cfg.windowScales[key] = math.floor(uiScale.Scale * 100 + 0.5) / 100
+                Cfg.windowScales[key] = math.floor(uiScale.Scale / k() * 100 + 0.5) / 100
                 cfgSave()
             end
         end))
-        grip.MouseButton2Click:Connect(function()
-            uiScale.Scale = 1
+        local function reset()
+            uiScale.Scale = k()
             Cfg.windowScales[key] = nil
             cfgSave()
+        end
+        grip.MouseButton2Click:Connect(reset)
+        local lastTap = 0
+        grip.MouseButton1Click:Connect(function() -- double-tap resets too (no right click on touch)
+            local now = os.clock()
+            if now - lastTap < 0.35 then reset(); lastTap = 0 else lastTap = now end
         end)
         grip.MouseEnter:Connect(function() grip.TextColor3 = PAL.TEXT end)
         grip.MouseLeave:Connect(function() grip.TextColor3 = PAL.DIM end)
@@ -6412,6 +6594,9 @@ local function uiWindow(screenGui, key, title, size, pos)
     UIAPI.makeResizable(f, key)
     UIAPI.markChrome(f)
     UIAPI.panels[key] = f
+    f:GetPropertyChangedSignal("Visible"):Connect(function()
+        if f.Visible and UIAPI.Mobile then task.defer(function() pcall(UIAPI.Mobile.clamp, f) end) end
+    end)
     return f
 end
 
@@ -12196,6 +12381,40 @@ function UIAPI.buildDoomPanel(screenGui)
         end
     end
 
+    -- touch screens: on-screen controls under the game (hold to press), since there is no keyboard
+    if UIAPI.Mobile and UIAPI.Mobile.on() then
+        local PAD_H = 104
+        f.Size = f.Size + UDim2.fromOffset(0, PAD_H)
+        local pad = make("Frame", { Name = "TouchPad", Position = UDim2.fromOffset(8, HGT - 4), Size = UDim2.new(1, -16, 0, PAD_H - 6),
+            BackgroundTransparency = 1 }, f)
+        local function doomButton(text, code, x, y, w, h)
+            local b = make("TextButton", { Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, h), BackgroundColor3 = PAL.CARD,
+                BackgroundTransparency = 0.1, BorderSizePixel = 0, AutoButtonColor = false, Text = text, TextColor3 = PAL.TEXT,
+                Font = Enum.Font.GothamBold, TextSize = 13 }, pad)
+            corner(b, 8)
+            local function set(down)
+                if not (running and doom) then return end
+                if down then held[code] = true else held[code] = nil end
+                pcall(doom.key, down, code)
+                b.BackgroundColor3 = down and PAL.ELEVATED or PAL.CARD
+            end
+            b.InputBegan:Connect(function(input) if isPointer(input) then set(true) end end)
+            b.InputEnded:Connect(function(input) if isPointer(input) then set(false) end end)
+            return b
+        end
+        -- left: turn / walk; right: fire, use, run; middle: menu keys
+        doomButton("\u{25B2}", 0xad, 52, 0, 44, 44)
+        doomButton("\u{25C0}", 0xac, 4, 48, 44, 44)
+        doomButton("\u{25BC}", 0xaf, 52, 48, 44, 44)
+        doomButton("\u{25B6}", 0xae, 100, 48, 44, 44)
+        doomButton("Menu", 27, 156, 4, 56, 30)
+        doomButton("Enter", 13, 156, 38, 56, 30)
+        doomButton("Map", 9, 156, 72, 56, 22)
+        doomButton("Run", 0xb6, 222, 60, 52, 34)
+        doomButton("Use", 0xa2, 222, 4, 52, 50)
+        doomButton("FIRE", 0xa3, 282, 4, 76, 90)
+    end
+
     -- main loop: Doom's clock moves 1/35 s per tic of real time (up to 4 tics per frame when
     -- the device is slow, so the game keeps its speed and only the frame rate drops)
     local loop
@@ -12951,6 +13170,7 @@ end
         local root = make("Frame", { Name = "Root", Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(900, rootH),
             BackgroundTransparency = 1 }, gui)
         m.root = root
+        if UIAPI.Mobile then pcall(function() m.scale = UIAPI.Mobile.scaleOf(root) end) end
         local cx = 390 -- the column's centre (x) inside root
         local top = (math.max(colH, 520) - colH) / 2
 
@@ -13096,7 +13316,8 @@ end
                 local p, visible = cam:WorldToViewportPoint(headPart.Position + Vector3.new(0, 0.6, 0))
                 if visible then hx, hy = p.X, p.Y end
             end
-            local x, y = A.anchorFor(hx, hy, vw, vh, 900, rootH, cx, top)
+            local k = (m.scale and m.scale.Scale) or 1
+            local x, y = A.anchorFor(hx, hy, vw, vh, 900 * k, rootH * k, cx * k, top * k)
             root.Position = UDim2.fromOffset(x, y)
         end
         m.follow = RunService.RenderStepped:Connect(function()
@@ -13145,6 +13366,7 @@ end
         local root = make("Frame", { Name = "Root", Position = UDim2.fromOffset(16, 14), Size = UDim2.fromOffset(A.BAR_W + 70, 70),
             BackgroundTransparency = 1, Active = true }, gui)
         makeDraggable(root, root)
+        if UIAPI.Mobile then pcall(UIAPI.Mobile.scaleOf, root) end
         local name = sao(label(root, { Position = UDim2.fromOffset(66, 0), Size = UDim2.fromOffset(300, 20), TextSize = 17,
             TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.55, Text = plr.DisplayName }), true)
         local lvBox = make("Frame", { Position = UDim2.fromOffset(0, 22), Size = UDim2.fromOffset(58, A.BAR_H), BackgroundColor3 = A.CARD,
@@ -13331,6 +13553,30 @@ end)()
         end, false, Enum.ContextActionPriority.High.Value + 100, Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S,
             Enum.KeyCode.D, Enum.KeyCode.Q, Enum.KeyCode.E, Enum.KeyCode.LeftShift)
         cam.CameraType = Enum.CameraType.Scriptable
+        -- touch screens: the on-screen thumbstick moves the camera (Roblox's own controls give its
+        -- direction), dragging a finger elsewhere looks around, and the character stands still
+        fc.touch = UIAPI.Mobile and UIAPI.Mobile.on() or false
+        fc.controls = nil
+        if fc.touch then
+            pcall(function()
+                local pm = require(plr:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule", 3))
+                fc.controls = pm:GetControls()
+            end)
+            local h = myHum()
+            if h then
+                fc.walk = { hum = h, speed = h.WalkSpeed }
+                h.WalkSpeed = 0
+                keep("freecam", { Disconnect = function()
+                    if fc.walk and fc.walk.hum.Parent then fc.walk.hum.WalkSpeed = fc.walk.speed end
+                    fc.walk = nil
+                end })
+            end
+            keep("freecam", UserInputService.InputChanged:Connect(function(input, processed)
+                if processed or input.UserInputType ~= Enum.UserInputType.Touch then return end
+                fc.yaw = fc.yaw - input.Delta.X * 0.006
+                fc.pitch = math.max(-1.55, math.min(1.55, fc.pitch - input.Delta.Y * 0.006))
+            end))
+        end
         keep("freecam", RunService.RenderStepped:Connect(function(dt)
             local c = workspace.CurrentCamera
             if not c then return end
@@ -13345,6 +13591,10 @@ end)()
             end
             local rot = CFrame.fromOrientation(fc.pitch, fc.yaw, 0)
             local x, y, z = X.moveVector(fc.keys)
+            if fc.controls then
+                local ok, mv = pcall(function() return fc.controls:GetMoveVector() end)
+                if ok and mv then x, z = x + mv.X, z + mv.Z end
+            end
             if x ~= 0 or y ~= 0 or z ~= 0 then
                 local step = fc.speed * (fc.keys.Shift and 3 or 1) * math.min(dt, 0.1)
                 fc.pos = fc.pos + rot:VectorToWorldSpace(Vector3.new(x, y, z).Unit * step)
@@ -13374,7 +13624,8 @@ end)()
         if sp and sp > 0 and sp == sp then X.fc.speed = math.min(sp, 2000) end
         if isOn("freecam") and not sp then H.unfreecam(); return end
         if X.freecamStart() then
-            note("Freecam", string.format("On (speed %g): WASD move, Q/E down/up, hold right mouse to look, Shift faster. unfreecam ends it", X.fc.speed), LIGHT)
+            note("Freecam", X.fc.touch and string.format("On (speed %g): thumbstick moves, drag a finger to look. unfreecam ends it", X.fc.speed)
+                or string.format("On (speed %g): WASD move, Q/E down/up, hold right mouse to look, Shift faster. unfreecam ends it", X.fc.speed), LIGHT)
         else
             note("Freecam", "No camera", RED)
         end
@@ -13571,9 +13822,22 @@ end)()
         if not on then return end
         local mouse = plr:GetMouse()
         keep("clickdelete", UserInputService.InputBegan:Connect(function(input, processed)
-            if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-            if not (UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)) then return end
-            local t = mouse.Target
+            if processed then return end
+            local t
+            if input.UserInputType == Enum.UserInputType.Touch and UIAPI.Mobile and UIAPI.Mobile.on() then
+                -- touch screens have no Ctrl key: a tap removes what it lands on
+                local cam = workspace.CurrentCamera
+                local ray = cam and cam:ScreenPointToRay(input.Position.X, input.Position.Y)
+                local params = RaycastParams.new()
+                params.FilterType = Enum.RaycastFilterType.Exclude
+                params.FilterDescendantsInstances = { plr.Character }
+                local hit = ray and workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
+                t = hit and hit.Instance
+            else
+                if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+                if not (UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)) then return end
+                t = mouse.Target
+            end
             if not t or not t:IsA("BasePart") or t:IsA("Terrain") then return end
             if plr.Character and t:IsDescendantOf(plr.Character) then return end
             X.push(X.deleted, { part = t, parent = t.Parent }, 50)
@@ -13584,7 +13848,8 @@ end)()
     function H.clickdelete(a)
         local on = parseToggle(a[1], isOn("clickdelete"))
         X.clickDeleteSet(on)
-        note("Click delete", on and "On: Ctrl + click a part to remove it on your screen. undelete restores the last 50" or "Off", LIGHT)
+        local how = (UIAPI.Mobile and UIAPI.Mobile.on()) and "Tap a part" or "Ctrl + click a part"
+        note("Click delete", on and (how .. " to remove it on your screen. undelete restores the last 50") or "Off", LIGHT)
     end
     function H.unclickdelete() H.clickdelete({ "off" }) end
     function H.undelete(a)
@@ -15088,9 +15353,10 @@ do
         S.gui.ResetOnSpawn = false
         S.gui.DisplayOrder = 5
         parentGui(S.gui)
-        local root = make("Frame", { Size = UDim2.fromOffset(440, 168), AnchorPoint = Vector2.new(1, 1),
+        local root = make("Frame", { Name = "Root", Size = UDim2.fromOffset(440, 168), AnchorPoint = Vector2.new(1, 1),
             Position = UDim2.new(1, -14, 1, -14), BackgroundTransparency = 1, Active = true }, S.gui)
         S.root = root
+        if UIAPI.Mobile then pcall(UIAPI.Mobile.scaleOf, root) end
         -- COMMAND panel (themeable art)
         local cmd = make("Frame", { Size = UDim2.fromOffset(200, 118), BackgroundTransparency = 1, Active = true }, root)
         K.panel(cmd, 1)
@@ -15752,7 +16018,7 @@ do
         Performance = { "perf", "performance" },
         Owner = { "owner", "kick", "ban", "unban", "bans", "blacklist" },
         Settings = { "prefix", "uikey", "settings", "theme", "help", "kill", "stop", "cursor", "font", "uistyle", "selfhud", "menu",
-            "barkey", "togglebar", "menusounds" },
+            "barkey", "togglebar", "menusounds", "mobile" },
     }
     local byName = {}
     for cat, names in pairs(EXPLICIT) do for _, n in ipairs(names) do byName[n] = cat end end
@@ -15937,7 +16203,7 @@ local function createUI()
     UIAPI.cmdInput = cmdInput
 
     helpFrame = make("Frame", {
-        Size = UDim2.new(0.4, 0, 0.6, 0),
+        Size = (UIAPI.Mobile and UIAPI.Mobile.on()) and UDim2.new(0.92, 0, 0.86, 0) or UDim2.new(0.4, 0, 0.6, 0),
         Position = UDim2.new(0.5, 0, 0.5, 0),
         AnchorPoint = Vector2.new(0.5, 0.5),
         BackgroundColor3 = Color3.fromRGB(15, 15, 15),
@@ -16343,7 +16609,18 @@ local function createUI()
             end)
         end
     end)
-    gen.CanvasSize = UDim2.new(0, 0, 0, 360)
+    fieldLabel(gen, "Mobile mode (touch screens: UI scaled to fit, floating show / hide button)", 356)
+    do
+        local MODES = { "auto", "on", "off" }
+        local LABELS = { "Mobile mode: auto (phones / tablets)", "Mobile mode: on", "Mobile mode: off" }
+        local now = 1
+        for i, m in ipairs(MODES) do if m == Cfg.mobileMode then now = i end end
+        uiDropdown(gen, "", UDim2.new(1, -30, 0, 28), UDim2.new(0, 15, 0, 376), LABELS, now, function(i)
+            local ok, msg = UIAPI.Mobile.set(MODES[i])
+            note("Mobile", msg, ok and LIGHT or RED)
+        end)
+    end
+    gen.CanvasSize = UDim2.new(0, 0, 0, 420)
 
     ---------------------------------------------------------------- Look
     local look = pages.Look
