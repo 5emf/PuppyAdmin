@@ -43,9 +43,14 @@ win.attrs = { PuppyAdminWindow = true }
 local title = new("TextLabel", { Text = "Settings" }); title.Parent = win
 title.attrs = { PuppyAdminTitle = true }
 new("UICorner").Parent = win
-local btn = new("TextButton", { AbsoluteSize = vec(120, 28), AbsolutePosition = vec(140, 90) }); btn.Parent = win
+local btn = new("TextButton", { AbsoluteSize = vec(120, 28), AbsolutePosition = vec(140, 90), BackgroundColor3 = "navy", BackgroundTransparency = 0.3 }); btn.Parent = win
 local small = new("Frame", { AbsoluteSize = vec(20, 20) }); small.Parent = win
 local rs = sig()
+-- UDim2 with Scale / Offset and +
+local u2mt = {}
+local function u2(sx, ox, sy, oy) return setmetatable({ X = { Scale = sx, Offset = ox }, Y = { Scale = sy, Offset = oy } }, u2mt) end
+u2mt.__add = function(a, b) return u2(a.X.Scale + b.X.Scale, a.X.Offset + b.X.Offset, a.Y.Scale + b.Y.Scale, a.Y.Offset + b.Y.Offset) end
+U2 = { new = u2, fromOffset = function(x, y) return u2(0, x, 0, y) end, fromScale = function(x, y) return u2(x, 0, y, 0) end }
 local applied = {}
 local env = setmetatable({
     UIAPI = { Cursor = { set = function(n) applied.cursor = n return true end } }, Cfg = { uiStyle = "Standard", uiFont = "Default", cursor = "Default", theme = { preset = "Midnight" } },
@@ -60,8 +65,7 @@ local env = setmetatable({
     SETTINGS = { Auras = { assetBase = "https://x/" } }, urlImageAsset = function(u) return "asset:" .. u end,
     task = { spawn = function(f) f() end, defer = function(f) f() end }, game = { GetService = function() return { GetGuiInset = function() return vec(0, 36) end } end },
     ColorSequence = { new = function(a, b) return { a, b } end }, Color3 = { new = function() return {} end, fromRGB = function() return {} end },
-    UDim2 = { fromOffset = function(x, y) return { X = x, Y = y } end, fromScale = function(x, y) return { sx = x, sy = y } end,
-        new = function(a, b, c, d) return { sx = a, X = b, sy = c, Y = d } end }, Vector2 = { zero = vec(0, 0), new = function(x, y) return vec(x, y) end },
+    UDim2 = U2, Vector2 = { zero = vec(0, 0), new = function(x, y) return vec(x, y) end },
     UDim = { new = function(a, b) return { a, b } end },
     Enum = setmetatable({}, { __index = function() return setmetatable({}, { __index = function(_, k) return k end }) end }), cleanups = {}, cfgSave = function() applied.saved = (applied.saved or 0) + 1 end,
 }, { __index = _G })
@@ -75,13 +79,17 @@ check(applied.preset == "Kingdom Hearts" and applied.font == "KH Menu" and appli
 check(env.Cfg.khPrev.preset == "Midnight" and env.Cfg.khPrev.font == "Default", "previous look remembered")
 check(btn:FindFirstChildOfClass("UIGradient") and win:FindFirstChildOfClass("UIGradient"), "button and window shaded")
 check(not small:FindFirstChildOfClass("UIGradient"), "small frames left alone")
-check(win:FindFirstChild("PuppyKHPanelFill") and win:FindFirstChild("PuppyKHPanelRim") and win:FindFirstChild("PuppyKHHeaderStrip"), "windows get the ornate panel and title strip")
+check(win:FindFirstChild("PuppyKHPanelFill") and win:FindFirstChild("PuppyKHPanelRim") and win:FindFirstChild("PuppyKHPill")
+    and win:FindFirstChild("PuppyKHUnderline"), "windows get the ornate panel, title capsule and underline")
+check(win:FindFirstChild("PuppyKHUnderline").ImageColor3 == K.UNDERLINE, "the underline stays orange whatever the theme")
 check(win:FindFirstChild("PuppyKHPanelFill").ImageColor3 == "surf1" and win:FindFirstChild("PuppyKHPanelRim").ImageColor3 == "acc1", "window panel tinted by the theme")
 check(title.Text == "SETTINGS" and title.FontFace and title.FontFace.family == "KH Gummi", "window titles in KH Gummi capitals")
 btn.MouseEnter:fire(); rs:fire()
-check(K.glove.Visible and K.glove.Position.X < 140 and math.abs(K.glove.Position.Y - (90 + 36 + 14 - K.glove.Size.Y * 0.39)) < 1e-6, "glove points at the hovered button (inset counted)")
+check(K.glove.Visible and K.glove.Position.X.Offset < 140 and math.abs(K.glove.Position.Y.Offset - (90 + 36 + 14 - K.glove.Size.Y.Offset * 0.39)) < 1e-6, "glove points at the hovered button (inset counted)")
+check(btn.BackgroundColor3 == K.SELECT and btn:FindFirstChild("PuppyKHSelect") ~= nil, "hovered button turns red with a red outline")
 btn.MouseLeave:fire(); rs:fire()
 check(not K.glove.Visible, "glove hides when the mouse leaves")
+check(btn.BackgroundColor3 ~= K.SELECT and btn:FindFirstChild("PuppyKHSelect") == nil, "leaving restores the button's own colours")
 local late = new("TextButton"); late.Parent = win; screen.DescendantAdded:fire(late)
 check(late:FindFirstChildOfClass("UIGradient") ~= nil, "buttons made later are styled too")
 applied = {}

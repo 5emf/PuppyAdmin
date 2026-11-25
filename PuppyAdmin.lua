@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.24-64" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.24-65" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -5731,7 +5731,7 @@ do
         { name = "Forest", bg = { 16, 24, 18 }, surface = { 24, 36, 27 }, accent = { 120, 210, 140 }, text = { 232, 245, 234 }, dim = { 150, 180, 155 }, border = { 52, 78, 58 }, on = { 80, 200, 110 } },
         { name = "Crimson", bg = { 24, 12, 14 }, surface = { 38, 18, 22 }, accent = { 235, 80, 90 }, text = { 250, 234, 236 }, dim = { 190, 150, 155 }, border = { 86, 40, 46 }, on = { 230, 70, 80 } },
         { name = "Light", bg = { 240, 240, 244 }, surface = { 226, 226, 232 }, accent = { 60, 110, 230 }, text = { 24, 24, 28 }, dim = { 100, 100, 110 }, border = { 190, 190, 200 }, on = { 60, 170, 90 } },
-        { name = "Kingdom Hearts", bg = { 10, 18, 52 }, surface = { 22, 48, 120 }, accent = { 140, 200, 255 }, text = { 255, 255, 255 }, dim = { 175, 195, 235 }, border = { 80, 130, 220 }, on = { 255, 214, 92 } },
+        { name = "Kingdom Hearts", bg = { 6, 10, 40 }, surface = { 12, 24, 96 }, accent = { 60, 130, 255 }, text = { 255, 255, 255 }, dim = { 170, 190, 240 }, border = { 40, 90, 240 }, on = { 255, 214, 92 } },
     }
 
     -- Which roles each colour property may hold, in match order.
@@ -12563,7 +12563,13 @@ do
     -- white / grey layers tinted with ImageColor3: fill = theme surface, rim and strip = theme accent,
     -- so the panels follow every theme change (preset, single colours)
     K.ART = { panelFill = "panel_fill_v1.png", panelRim = "panel_rim_v1.png", ringFill = "ring_fill_v1.png",
-        ringRim = "ring_rim_v1.png", header = "header_tint_v1.png" }
+        ringRim = "ring_rim_v1.png", header = "header_tint_v1.png", pill = "pill_v1.png", underline = "underline_v1.png" }
+    -- menu look: a glossy capsule behind titles, an orange line under them, and the
+    -- hovered button turns deep red with a bright red rounded outline
+    K.UNDERLINE = Color3.fromRGB(255, 140, 40)
+    K.SELECT = Color3.fromRGB(150, 18, 28)
+    K.SELECT_EDGE = Color3.fromRGB(255, 60, 60)
+    K.PILL_SLICE = Rect.new(24, 24, 232, 24)
     K.img = {}
     function K.loadArt()
         for key, file in pairs(K.ART) do
@@ -12576,6 +12582,7 @@ do
     -- the colour each tinted layer takes from the theme (by the layer's name)
     function K.tintFor(name)
         local t = Theme.current
+        if name:find("Underline", 1, true) then return K.UNDERLINE end
         if name:find("Fill", 1, true) then return t.surface end
         return t.accent -- rims, strips
     end
@@ -12590,6 +12597,16 @@ do
             Image = img.panelRim or "", ImageColor3 = K.tintFor("Rim"), ScaleType = Enum.ScaleType.Slice,
             SliceCenter = K.PANEL_SLICE, ZIndex = z or 0, Active = false }, parent)
         return fill
+    end
+
+    -- title capsule (accent) + the orange line under it
+    function K.pill(parent, size, pos, z)
+        make("ImageLabel", { Name = TAG .. "Pill", Size = size, Position = pos, BackgroundTransparency = 1,
+            Image = K.img.pill or "", ImageColor3 = K.tintFor("Pill"), ScaleType = Enum.ScaleType.Slice,
+            SliceCenter = K.PILL_SLICE, ZIndex = z or 0, Active = false }, parent)
+        make("ImageLabel", { Name = TAG .. "Underline", Size = UDim2.new(size.X.Scale, size.X.Offset + 60, 0, 6),
+            Position = pos + UDim2.fromOffset(4, size.Y.Offset + 2), BackgroundTransparency = 1,
+            Image = K.img.underline or "", ImageColor3 = K.UNDERLINE, ZIndex = z or 0, Active = false }, parent)
     end
 
     function K.strip(parent, size, pos, z)
@@ -12609,7 +12626,7 @@ do
     local function frameWindow(f)
         if f:FindFirstChild(TAG .. "PanelFill") then return end
         if K.img.panelFill then K.panel(f, 0) end
-        if K.img.header then K.strip(f, UDim2.new(0.75, 0, 0, 30), UDim2.fromOffset(8, 6), 0) end
+        if K.img.pill then K.pill(f, UDim2.new(0.55, 0, 0, 30), UDim2.fromOffset(8, 5), 0) end
     end
 
     local function styleTitle(l)
@@ -12631,14 +12648,39 @@ do
         pcall(UIFont.applyTo, l)
     end
 
+    -- the hovered button's "selected" look; the button's own colours come back on leave
+    function K.select(b, on)
+        if on then
+            if b:GetAttribute(TAG .. "Bg") ~= nil then return end
+            b:SetAttribute(TAG .. "Bg", b.BackgroundColor3)
+            b:SetAttribute(TAG .. "BgT", b.BackgroundTransparency)
+            b.BackgroundColor3 = K.SELECT
+            b.BackgroundTransparency = math.min(b.BackgroundTransparency, 0.1)
+            make("UIStroke", { Name = TAG .. "Select", Color = K.SELECT_EDGE, Thickness = 2,
+                ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, b)
+        else
+            local bg = b:GetAttribute(TAG .. "Bg")
+            if bg == nil then return end
+            b.BackgroundColor3 = bg
+            b.BackgroundTransparency = b:GetAttribute(TAG .. "BgT") or b.BackgroundTransparency
+            b:SetAttribute(TAG .. "Bg", nil)
+            b:SetAttribute(TAG .. "BgT", nil)
+            local st = b:FindFirstChild(TAG .. "Select")
+            if st then st:Destroy() end
+        end
+    end
+
     local function decorate(inst)
         if not K.on or skip(inst) then return end
         if inst:GetAttribute("PuppyAdminWindow") then pcall(frameWindow, inst) end
         if inst:GetAttribute("PuppyAdminTitle") then pcall(styleTitle, inst); return end
         if inst:IsA("TextButton") then
             shade(inst, Color3.fromRGB(160, 175, 225))
-            table.insert(K.conns, inst.MouseEnter:Connect(function() K.target = inst end))
-            table.insert(K.conns, inst.MouseLeave:Connect(function() if K.target == inst then K.target = nil end end))
+            table.insert(K.conns, inst.MouseEnter:Connect(function() K.target = inst; pcall(K.select, inst, true) end))
+            table.insert(K.conns, inst.MouseLeave:Connect(function()
+                if K.target == inst then K.target = nil end
+                pcall(K.select, inst, false)
+            end))
         elseif inst:IsA("Frame") and inst.BackgroundTransparency < 0.9 and inst:FindFirstChildOfClass("UICorner")
             and inst.AbsoluteSize.X >= 150 and inst.AbsoluteSize.Y >= 100 then
             shade(inst, Color3.fromRGB(95, 120, 190)) -- window-sized panels: lighter at the top, deeper below
@@ -12695,6 +12737,7 @@ do
         for _, root in ipairs(Theme.roots) do
             if root.Parent then
                 for _, d in ipairs(root:GetDescendants()) do
+                    if d:GetAttribute(TAG .. "Bg") ~= nil then pcall(K.select, d, false) end
                     if d.Name:sub(1, #TAG) == TAG then pcall(function() d:Destroy() end)
                     elseif d:GetAttribute(TAG .. "Text") ~= nil then pcall(unstyleTitle, d) end
                 end
@@ -12818,7 +12861,7 @@ do
         -- COMMAND panel (themeable art)
         local cmd = make("Frame", { Size = UDim2.fromOffset(200, 118), BackgroundTransparency = 1, Active = true }, root)
         K.panel(cmd, 1)
-        K.strip(cmd, UDim2.fromOffset(180, 24), UDim2.fromOffset(8, 6), 1)
+        K.pill(cmd, UDim2.fromOffset(130, 24), UDim2.fromOffset(8, 5), 1)
         S.title = make("TextLabel", { Size = UDim2.fromOffset(170, 24), Position = UDim2.fromOffset(16, 5), BackgroundTransparency = 1,
             Text = "COMMAND", Font = Enum.Font.GothamBlack, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 2 }, cmd)
         makeDraggable(cmd, root)

@@ -8,6 +8,8 @@ Drawn with Pillow at 4x and downsampled (like the game sheets). Writes:
   assets/hud/panel_fill_v1.png, panel_rim_v1.png - panel body (theme surface) and its lines (theme accent)
   assets/hud/ring_fill_v1.png,  ring_rim_v1.png  - ring backing body and its rims
   assets/hud/header_tint_v1.png                  - the title strip in grey (theme accent)
+  assets/hud/pill_v1.png                         - glossy capsule behind window titles (white, tinted)
+  assets/hud/underline_v1.png                    - thin line under titles that fades out to the right (white, tinted)
 Run: python3 tools/make_hud_art.py   (bump the _v names when the art changes)
 """
 import os
@@ -168,8 +170,37 @@ def ring_rim():
     return img.resize((160, 160), Image.LANCZOS)
 
 
+def pill():
+    W, H = 256 * S, 48 * S
+    r = H // 2
+    mask = Image.new("L", (W, H), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, W - 1, H - 1], radius=r, fill=255)
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    img.paste(vgrad(W, H, (255, 255, 255), (150, 150, 150), alpha=255), (0, 0), mask)
+    # gloss: a brighter band over the top half
+    gloss = Image.new("L", (W, H), 0)
+    ImageDraw.Draw(gloss).rounded_rectangle([r // 2, 2 * S, W - 1 - r // 2, H // 2], radius=r // 2, fill=90)
+    gloss = gloss.filter(ImageFilter.GaussianBlur(2 * S))
+    white = Image.new("RGBA", (W, H), (255, 255, 255, 0))
+    white.putalpha(Image.composite(gloss, Image.new("L", (W, H), 0), mask))
+    img.alpha_composite(white)
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([S, S, W - 1 - S, H - 1 - S], radius=r - S, outline=(255, 255, 255, 230), width=2 * S)
+    return img.resize((256, 48), Image.LANCZOS)
+
+
+def underline():
+    W, H = 256 * S, 8 * S
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    for x in range(W):
+        a = int(255 * max(0.0, 1 - x / W) ** 0.8)
+        d.line([(x, 3 * S), (x, 5 * S)], fill=(255, 255, 255, a))
+    return img.filter(ImageFilter.GaussianBlur(S // 2)).resize((256, 8), Image.LANCZOS)
+
+
 os.makedirs(OUT, exist_ok=True)
-for name, fn in (("panel_v1.png", panel), ("header_v1.png", header), ("ringback_v1.png", ringback),
+for name, fn in (("pill_v1.png", pill), ("underline_v1.png", underline), ("panel_v1.png", panel), ("header_v1.png", header), ("ringback_v1.png", ringback),
                  ("panel_fill_v1.png", panel_fill), ("panel_rim_v1.png", panel_rim),
                  ("ring_fill_v1.png", ring_fill), ("ring_rim_v1.png", ring_rim),
                  ("header_tint_v1.png", lambda: tintable(header()))):

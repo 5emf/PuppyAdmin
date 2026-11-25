@@ -354,7 +354,7 @@ class ManageWindowTest(unittest.TestCase):
         self.app.set_cursor("Glove")
         self.assertEqual(self.settings.get("cursor"), "Glove")
         self.app.set_style("Kingdom Hearts")
-        self.assertEqual(style.lookup("TFrame", "background"), "#0a1234")
+        self.assertEqual(style.lookup("TFrame", "background"), "#060a28")
         self.assertEqual((self.settings.get("font"), self.settings.get("cursor")), ("KH Menu", "Glove"))
         self.app.set_style("Standard")
         self.assertEqual((self.settings.get("font"), self.settings.get("cursor")), ("Default", "Default"))
