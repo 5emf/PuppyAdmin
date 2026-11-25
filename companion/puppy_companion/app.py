@@ -899,15 +899,14 @@ class CompanionApp:
 
     def update_sound_label(self):
         ws = self.settings.get("workspace")
-        if not ws:
-            text = "Menu sounds come from PuppyAdmin/sounds in your executor folder: set that folder in Settings first."
+        found = self.sounds.found(ws) if ws else {k: False for k in khmenu.SOUND_FILES}
+        own = [khmenu.SOUND_FILES[k] for k in ("move", "select", "denied") if found[k]]
+        text = "Built-in menu sounds are included. "
+        if own:
+            text += "Your own files are used instead: %s (in %s). " % (", ".join(own), khmenu.sound_dir(ws))
         else:
-            found = self.sounds.found(ws)
-            have = [khmenu.SOUND_FILES[k] for k in ("move", "select", "denied") if found[k]]
-            missing = [khmenu.SOUND_FILES[k] for k in ("move", "select", "denied") if not found[k]]
-            text = "In %s: %s." % (khmenu.sound_dir(ws), ", ".join(have) if have else "no sound files yet")
-            if missing:
-                text += " Missing: %s (Add sound files... copies them there; Puppy Admin uses the same folder)." % ", ".join(missing)
+            text += ("To use your own, put Menu_Move.wav, Menu_Select.wav and Menu_Denied.wav in PuppyAdmin/sounds in your "
+                     "executor folder (Add sound files... copies them there; Puppy Admin uses the same folder).")
         try:
             self.sound_lbl.configure(text=text)
         except (tk.TclError, AttributeError):

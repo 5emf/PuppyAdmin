@@ -244,6 +244,9 @@ class KHMenu:
 # the repository (game files stay on the player's PC): both apps read them from the executor
 # workspace, PuppyAdmin/sounds/Menu_Move.wav, Menu_Denied.wav and Menu_Select.wav.
 SOUND_DIR = ("PuppyAdmin", "sounds")
+# built-in sounds (original, synthesized by tools/make_menu_sounds.py), used when the player has none
+BUILTIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sounds")
+BUILTIN_FILES = {"move": "menu_move.wav", "denied": "menu_denied.wav", "select": "menu_select.wav"}
 SOUND_FILES = {"move": "Menu_Move.wav", "denied": "Menu_Denied.wav", "select": "Menu_Select.wav"}
 SOUND_GAP = {"move": 0.05, "select": 0.08, "denied": 0.3}  # seconds before the same sound may play again
 DENY_WORDS = ("could not", "couldn't", "failed", "error", "not allowed", "refused", "cannot", "can't", "denied",
@@ -261,9 +264,9 @@ def sound_dirs(workspace, extra=()):
     return out
 
 
-def sound_path(workspace, kind, extra=()):
-    """The file for a sound kind, or None. The exact name first (Menu_Move.wav); otherwise any .wav
-    in the folder whose name says which sound it is (a download may have added text to the name)."""
+def own_sound_path(workspace, kind, extra=()):
+    """The player's own file for a sound kind, or None. The exact name first (Menu_Move.wav); otherwise
+    any .wav in the folder whose name says which sound it is (a download may have added text to the name)."""
     name = SOUND_FILES.get(kind)
     if not name:
         return None
@@ -280,6 +283,17 @@ def sound_path(workspace, kind, extra=()):
             if n.lower().endswith(".wav") and kind_for_file(n) == kind and os.path.isfile(os.path.join(folder, n)):
                 return os.path.join(folder, n)
     return None
+
+
+def builtin_sound_path(kind):
+    name = BUILTIN_FILES.get(kind)
+    path = os.path.join(BUILTIN_DIR, name) if name else ""
+    return path if path and os.path.isfile(path) else None
+
+
+def sound_path(workspace, kind, extra=(), builtin=True):
+    """The player's own file for a sound kind, else the built-in one (None if neither exists)."""
+    return own_sound_path(workspace, kind, extra) or (builtin_sound_path(kind) if builtin else None)
 
 
 def is_denied(text):
@@ -352,4 +366,5 @@ class MenuSounds:
         return ok
 
     def found(self, workspace):
-        return {kind: sound_path(workspace, kind, self.extra) is not None for kind in SOUND_FILES}
+        """Which sounds the player supplied (the rest use the built-in ones)."""
+        return {kind: own_sound_path(workspace, kind, self.extra) is not None for kind in SOUND_FILES}

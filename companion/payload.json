@@ -1,5 +1,5 @@
 {
-  "version": "1.6.4",
+  "version": "1.6.5",
   "files": [
     {
       "path": "puppy_companion/__init__.py",
@@ -8,13 +8,13 @@
     },
     {
       "path": "puppy_companion/_payload.py",
-      "sha256": "25508839296cdb4f62408cfd0305c930fea0855d9f5f3c4b59ebdcc576862974",
+      "sha256": "3ffc517a30ee507d2d745b3366229b996d6ddad88edd767369189ce4d1a3fe99",
       "size": 1652
     },
     {
       "path": "puppy_companion/app.py",
-      "sha256": "b8b37712448056c8d3193adb9702b8ccfe52ce07e4d0e0105967b7499bc09124",
-      "size": 87863
+      "sha256": "480a3266f8ae9684dcb56c0407d6ffa2d62c81171e9e12f87cb5239422dcc50c",
+      "size": 87815
     },
     {
       "path": "puppy_companion/cursors/glove.cur",
@@ -103,8 +103,8 @@
     },
     {
       "path": "puppy_companion/khmenu.py",
-      "sha256": "14883b549e415780ed8d2631049ed001a40fdd09e07bfba24b2d8f0aa33b5433",
-      "size": 16264
+      "sha256": "a04d1ce10308d052798f6a9ba86b6e936331b63453547530df1de49aadd52b94",
+      "size": 17092
     },
     {
       "path": "puppy_companion/launch.py",
@@ -150,6 +150,21 @@
       "path": "puppy_companion/selftest.py",
       "sha256": "b59b1a8b1e12d43ea822c9c51d0e076e95cbdbe94ae2bc946c166bcf89565b83",
       "size": 9043
+    },
+    {
+      "path": "puppy_companion/sounds/menu_denied.wav",
+      "sha256": "37f5159ed6e0c4b1a2b778f2d6ae73dee6077ee2332528a3d8be8c66958c05ee",
+      "size": 30032
+    },
+    {
+      "path": "puppy_companion/sounds/menu_move.wav",
+      "sha256": "3df6f100ef3b8f7fe34f89dbff08d5c0e122de44c7002a004177e11ef271fd3a",
+      "size": 10628
+    },
+    {
+      "path": "puppy_companion/sounds/menu_select.wav",
+      "sha256": "ab4445bf29b430f826028be7e865ed30d3771a59f31451942acd7c1efcd16a5d",
+      "size": 37088
     },
     {
       "path": "puppy_companion/store.py",

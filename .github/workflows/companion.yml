@@ -43,7 +43,7 @@ jobs:
           python -m PyInstaller --version
 
       - name: Build
-        run: pyinstaller --noconfirm --clean --windowed --name PuppyCompanion --icon assets\PuppyCompanion.ico --paths . --add-data "puppy_companion\fonts;puppy_companion\fonts" --add-data "puppy_companion\cursors;puppy_companion\cursors" run_companion.py
+        run: pyinstaller --noconfirm --clean --windowed --name PuppyCompanion --icon assets\PuppyCompanion.ico --paths . --add-data "puppy_companion\fonts;puppy_companion\fonts" --add-data "puppy_companion\cursors;puppy_companion\cursors" --add-data "puppy_companion\sounds;puppy_companion\sounds" run_companion.py
 
       - name: Self-test the built program
         shell: pwsh

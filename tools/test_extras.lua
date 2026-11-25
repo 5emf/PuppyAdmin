@@ -220,6 +220,8 @@ do
             return o
         end },
         game = { GetService = function() return {} end },
+        SETTINGS = { Auras = { assetBase = "https://repo/" } },
+        urlImageAsset = function(url) return "cached://" .. url end,
         os = setmetatable({ clock = function() return clock end }, { __index = os }),
         note = function(_, m) mnotes[#mnotes + 1] = m end, LIGHT = "l", RED = "r",
         parseToggle = function(v, cur) if v == "on" then return true elseif v == "off" then return false end return not cur end,
@@ -233,10 +235,11 @@ do
     clock = clock + 0.2
     check(MS.play("move") == true and #played == 2 and made[1].TimePosition == 0, "plays again from the start")
     check(MS.play("select") == true and played[3] == "asset://PuppyAdmin/sounds/Menu_Select.wav", "select from its .wav")
-    check(MS.play("denied") == false, "no Menu_Denied file: silent")
+    check(MS.play("denied") == true and played[#played] == "cached://https://repo/assets/sounds/menu_denied_v1.mp3",
+        "no Menu_Denied of your own: the built-in sound from the repository")
     check(MS.play("nonsense") == false, "unknown kinds ignored")
     local st = MS.status()
-    check(st[1]:find("Menu_Move.mp3", 1, true) and st[3]:find("no file", 1, true), "status names the files and what is missing")
+    check(st[1]:find("Menu_Move.mp3", 1, true) and st[3]:find("built-in menu_denied_v1.mp3", 1, true), "status names your files and the built-in ones")
     mH.menusounds({ "off" })
     clock = clock + 1
     check(Cfg.menuSounds == false and MS.play("select") == false, "menusounds off: silent")
@@ -244,7 +247,7 @@ do
     check(Cfg.menuSounds == true and MS.play("select") == true, "menusounds on again")
     FS["PuppyAdmin/sounds/Menu_Denied.ogg"] = true
     mH.menusounds({ "reload" })
-    check(made[1].gone and MS.play("denied") == true and played[#played] == "asset://PuppyAdmin/sounds/Menu_Denied.ogg", "reload picks up new files")
+    check(made[1].gone and MS.play("denied") == true and played[#played] == "asset://PuppyAdmin/sounds/Menu_Denied.ogg", "reload picks up new files (yours over the built-in)")
     check(mcmds[1] == "menusounds" and malias.khsounds == "menusounds" and mdocs.menusounds, "menusounds command registered")
 end
 

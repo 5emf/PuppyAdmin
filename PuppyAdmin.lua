@@ -23,7 +23,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local genv = (getgenv and getgenv()) or _G
 do
-local SCRIPT_BUILD = "2026.11.25-78" -- changes with every update; a newer build replaces a running older one
+local SCRIPT_BUILD = "2026.11.25-79" -- changes with every update; a newer build replaces a running older one
 if genv.PuppyAdminActive == true then
     if genv.PuppyAdminBuild == SCRIPT_BUILD or type(genv.PuppyAdminShutdown) ~= "function" then
         -- same version already running: executing again refreshes tags (and auras / moderation)
@@ -13974,9 +13974,10 @@ end)()
 
 -- Menu sounds (`UIAPI.MenuSound`, `menusounds`, Settings > Look): Kingdom Hearts style only, and
 -- only with Cfg.menuSounds on. move = the pointer goes onto another button, select = a click,
--- denied = a refusal or an error (red notes). The sound files are the player's own (game sounds
--- stay out of this public repository): PuppyAdmin/sounds/Menu_Move, Menu_Select, Menu_Denied, as
--- .ogg, .mp3 or .wav (the first that Roblox loads). Puppy Companion plays the same files.
+-- denied = a refusal or an error (red notes). Built-in sounds (original, assets/sounds/menu_<kind>_v1.mp3,
+-- made by tools/make_menu_sounds.py) are downloaded once; a player's own files take their place:
+-- PuppyAdmin/sounds/Menu_Move, Menu_Select, Menu_Denied as .ogg, .mp3 or .wav (game sounds stay out
+-- of this public repository). Puppy Companion uses the same folder and its own built-in copies.
 ;(function() -- own function scope: the main chunk is at the 200-local limit
     local MS = { sounds = {}, last = {}, DIR = "PuppyAdmin/sounds" }
     UIAPI.MenuSound = MS
@@ -13984,6 +13985,8 @@ end)()
     MS.EXTS = { "ogg", "mp3", "wav" }
     MS.GAP = { move = 0.05, select = 0.08, denied = 0.3 }
     MS.VOLUME = 0.6
+    MS.BUILTIN = { move = "assets/sounds/menu_move_v1.mp3", select = "assets/sounds/menu_select_v1.mp3",
+        denied = "assets/sounds/menu_denied_v1.mp3" }
 
     function MS.enabled() return Cfg.uiStyle == "Kingdom Hearts" and Cfg.menuSounds ~= false end
 
@@ -14003,22 +14006,27 @@ end)()
         MS.sounds[kind] = false
         local getAsset = (type(getcustomasset) == "function" and getcustomasset) or (type(getsynasset) == "function" and getsynasset)
         if not (getAsset and type(isfile) == "function") then return nil end
+        local function make(id, path)
+            local snd = Instance.new("Sound")
+            snd.Name = "PuppyAdminMenuSound_" .. kind
+            snd.SoundId = id
+            snd.Volume = MS.VOLUME
+            snd.Parent = game:GetService("SoundService")
+            MS.sounds[kind] = { snd = snd, path = path }
+            return MS.sounds[kind]
+        end
         for _, ext in ipairs(MS.EXTS) do
             local path = MS.DIR .. "/" .. MS.NAMES[kind] .. "." .. ext
             local okF, has = pcall(isfile, path)
             if okF and has then
                 local okA, id = pcall(getAsset, path)
-                if okA and id then
-                    local snd = Instance.new("Sound")
-                    snd.Name = "PuppyAdminMenuSound_" .. kind
-                    snd.SoundId = id
-                    snd.Volume = MS.VOLUME
-                    snd.Parent = game:GetService("SoundService")
-                    MS.sounds[kind] = { snd = snd, path = path }
-                    return MS.sounds[kind]
-                end
+                if okA and id then return make(id, path) end
             end
         end
+        -- none of the player's own: the built-in sound from the repository (downloaded once, then cached)
+        local url = MS.BUILTIN[kind] and (SETTINGS.Auras.assetBase .. MS.BUILTIN[kind])
+        local id = url and urlImageAsset(url, "sound")
+        if id then return make(id, "built-in " .. MS.BUILTIN[kind]:match("[^/]+$")) end
         return nil
     end
 
@@ -14044,7 +14052,7 @@ end)()
             local e = MS.load(kind)
             local text
             if not e then
-                text = MS.NAMES[kind] .. ": no file (put it in " .. MS.DIR .. " as .ogg, .mp3 or .wav)"
+                text = MS.NAMES[kind] .. ": could not load (no file in " .. MS.DIR .. ", built-in download failed)"
             else
                 local len = 0
                 pcall(function() len = e.snd.TimeLength end)
