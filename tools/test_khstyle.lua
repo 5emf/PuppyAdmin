@@ -54,6 +54,7 @@ local env = setmetatable({
     UIFont = { set = function(n) applied.font = n return true end, make = function(n) return { family = n } end, applyTo = function() end, attach = function(r) applied.fontRoot = r end },
     Rect = { new = function(...) return { ... } end }, Font = { fromEnum = function() return { family = "Gotham" } end },
     plr = { UserId = 42, DisplayName = "Pup", Character = nil }, makeDraggable = function() end,
+    H = {}, cmds = {}, cmdDocs = {}, ALIASES = {}, pupApi = function() return nil end, note = function() end,
     Instance = { new = function(c) return new(c) end }, make = function(c, p, parent) local o = new(c, p); if parent then o.Parent = parent end return o end,
     parentGui = function(g) g.Parent = new("CoreGui") end, RunService = { RenderStepped = rs },
     SETTINGS = { Auras = { assetBase = "https://x/" } }, urlImageAsset = function(u) return "asset:" .. u end,
