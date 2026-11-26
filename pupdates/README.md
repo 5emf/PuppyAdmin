@@ -28,6 +28,8 @@ just a column of round icons beside a white card.
   cheers, sleeps and cries. Feed, Play, Sleep / Wake up, tap to pat, rename. Food, fun and energy
   go down over time, also while the app is closed.
 - **Settings**: post straight to your webhook, or through the relay with an access key; the
+  webhook's picture (a picture link for each post, or set the webhook's own picture from a PNG /
+  JPG / GIF, which needs your webhook or the relay's admin key); the
   overlay (Windows: stay on top of other windows; Android: a bubble over every app that opens
   Pupdates on top of what you are doing); **Check for updates** (like the companion: downloads
   the newest build from GitHub, checks it and installs it).

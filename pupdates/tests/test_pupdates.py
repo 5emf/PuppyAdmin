@@ -197,6 +197,26 @@ class CoreTest(unittest.TestCase):
         pic = core.build_payload("a", "b", image_name="pupdates.png")
         self.assertEqual(pic["embeds"][0]["image"], {"url": "attachment://pupdates.png"})
 
+    def test_post_picture_and_webhook_picture(self):
+        b = core.build_payload("a", "b", avatar_url="https://example.com/pup.png")
+        self.assertEqual(b["avatar_url"], "https://example.com/pup.png")
+        self.assertNotIn("avatar_url", core.build_payload("a", "b"))
+        with self.assertRaises(ValueError):
+            core.build_payload("a", "b", avatar_url="http://insecure/p.png")
+        self.assertEqual(core.relay_fields("a", "b", avatar_url="https://x.y/p.png")["avatarUrl"], "https://x.y/p.png")
+        img = core.load_image(png_file(self.folder))
+        self.assertTrue(core.avatar_data_uri(img).startswith("data:image/png;base64,iVBOR"))
+        with self.assertRaises(ValueError):
+            core.avatar_data_uri(dict(img, mime="image/webp"))
+        d = FakeDiscord()
+        core.set_webhook_avatar(HOOK, img, opener=d)
+        self.assertEqual(d.sent[0][0], HOOK)
+        self.assertTrue(d.sent[0][1]["avatar"].startswith("data:image/png;base64,"))
+        core.set_webhook_avatar(HOOK, None, opener=d)
+        self.assertIsNone(d.sent[1][1]["avatar"])
+        with self.assertRaises(RuntimeError):
+            core.set_webhook_avatar("", img, opener=d)
+
     def test_plain_message(self):
         b = core.build_payload("", "just text", embed=False)
         self.assertEqual(b["content"], "just text")
@@ -423,6 +443,21 @@ class WindowTest(unittest.TestCase):
         self.app.tv["color"].set("nope")
         self.assertFalse(self.app._store_tag())
         self.assertIn("hex", self.app.status.cget("text"))
+
+    def test_webhook_picture_settings(self):
+        self.app.avatar_var.set("ftp://nope")
+        self.assertFalse(self.app.save_avatar_url())
+        self.app.avatar_var.set("https://example.com/pup.png")
+        self.assertTrue(self.app.save_avatar_url())
+        self.settings.set_webhook(HOOK)
+        self.app.message.insert("1.0", "hi")
+        self.assertTrue(self.app.post())
+        self.assertTrue(self.pump(lambda: self.discord.sent))
+        self.assertEqual(self.discord.sent[0][1]["avatar_url"], "https://example.com/pup.png")
+        self.assertTrue(self.app.set_webhook_avatar(core.load_image(png_file(self.folder))))
+        self.assertTrue(self.pump(lambda: len(self.discord.sent) == 2))
+        self.assertTrue(self.discord.sent[1][1]["avatar"].startswith("data:image/png"))
+        self.assertTrue(self.pump(lambda: "picture was changed" in self.app.status.cget("text")))
 
     def test_topmost_setting(self):
         self.app.topmost_var.set(True)

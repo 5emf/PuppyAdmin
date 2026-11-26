@@ -108,11 +108,21 @@ object Core {
 
     // ------------------------------------------------------------------ Discord payloads
     data class Post(val title: String, val message: String, val color: String = "Orange", val ping: String = "none",
-                    val roleId: String = "", val loadstring: Boolean = false, val username: String = APP, val embed: Boolean = true)
+                    val roleId: String = "", val loadstring: Boolean = false, val username: String = APP, val embed: Boolean = true,
+                    val avatarUrl: String = "")
+
+    fun validAvatarUrl(url: String?): Boolean {
+        val u = (url ?: "").trim()
+        return u.startsWith("https://") && !u.contains(" ") && u.length <= 2000
+    }
 
     fun buildPayload(p: Post, imageName: String? = null): JSONObject {
         val body = JSONObject().put("username", p.username.ifBlank { APP }.take(80))
             .put("allowed_mentions", JSONObject().put("parse", JSONArray()))
+        if (p.avatarUrl.isNotBlank()) {
+            if (!validAvatarUrl(p.avatarUrl)) throw PupError("The post picture must be an https:// link to an image")
+            body.put("avatar_url", p.avatarUrl.trim())
+        }
         var mention = ""
         when (p.ping) {
             "@here", "@everyone" -> {
@@ -147,6 +157,7 @@ object Core {
     fun relayFields(p: Post): JSONObject = JSONObject().put("title", p.title.trim()).put("message", p.message.trim())
         .put("color", COLORS[p.color] ?: COLORS.getValue("Orange")).put("ping", p.ping).put("roleId", p.roleId.trim())
         .put("loadstring", p.loadstring).put("username", p.username.ifBlank { APP }.take(80)).put("embed", p.embed)
+        .put("avatarUrl", p.avatarUrl.trim())
 
     fun previewText(body: JSONObject, picture: Picture?): String {
         val lines = mutableListOf<String>()
@@ -175,7 +186,19 @@ object Core {
     val NET = Http { method, url, headers, body ->
         val c = URL(url).openConnection() as HttpURLConnection
         try {
-            c.requestMethod = method
+            try {
+                c.requestMethod = method
+            } catch (e: java.net.ProtocolException) {
+                // the JDK's HttpURLConnection refuses PATCH (Android's allows it): set the field it checks
+                var k: Class<*>? = c.javaClass
+                var done = false
+                while (k != null && !done) {
+                    try { k.getDeclaredField("method").apply { isAccessible = true }.set(c, method); done = true }
+                    catch (x: NoSuchFieldException) { k = k.superclass }
+                    catch (x: Exception) { break }
+                }
+                if (!done) throw PupError("This phone cannot send a $method request")
+            }
             c.connectTimeout = 20000
             c.readTimeout = 30000
             c.setRequestProperty("User-Agent", "Pupdates-Android/1")
@@ -237,6 +260,31 @@ object Core {
     }
 
     private fun relayUrl(base: String, path: String) = base.trim().trimEnd('/') + path
+
+    /** the webhook's saved picture as Discord wants it (PNG / JPG / GIF) */
+    fun avatarDataUri(p: Picture): String {
+        if (p.mime !in listOf("image/png", "image/jpeg", "image/gif")) throw PupError("The webhook picture must be PNG, JPG or GIF")
+        return "data:${p.mime};base64," + java.util.Base64.getEncoder().encodeToString(p.data)
+    }
+
+    /** changes the webhook's own picture for good with only its URL (Discord's "modify webhook with token"); null removes it */
+    fun setWebhookAvatar(http: Http, url: String, picture: Picture?) {
+        val u = url.trim()
+        if (!validWebhook(u)) throw PupError("Save your webhook first")
+        val body = JSONObject().put("avatar", if (picture != null) avatarDataUri(picture) else JSONObject.NULL)
+        try {
+            send(http, "PATCH", u, mapOf("Content-Type" to "application/json"), body.toString().toByteArray(Charsets.UTF_8), listOf(u), tries = 2)
+        } catch (e: PupError) {
+            throw PupError("Discord did not change the picture: ${e.message}")
+        }
+    }
+
+    /** owner, relay mode: the relay changes its webhook's picture */
+    fun adminAvatar(http: Http, base: String, admin: String, picture: Picture?) {
+        val body = JSONObject().put("avatar", if (picture != null) avatarDataUri(picture) else JSONObject.NULL)
+        send(http, "POST", relayUrl(base, "/admin/avatar"), mapOf("X-Admin-Key" to admin, "Content-Type" to "application/json"),
+            body.toString().toByteArray(Charsets.UTF_8), listOf(admin))
+    }
 
     fun postRelay(http: Http, base: String, key: String, fields: JSONObject, picture: Picture?): JSONObject {
         if (!validRelay(base)) throw PupError("The relay address must start with https://")

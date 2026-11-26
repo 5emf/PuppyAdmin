@@ -100,6 +100,7 @@ class MainActivity : Activity() {
     private lateinit var keyIn: EditText
     private lateinit var relayLbl: TextView
     private lateinit var bubbleChk: CheckBox
+    private lateinit var avatarIn: EditText
     private lateinit var updateBtn: TextView
     private lateinit var updateLbl: TextView
 
@@ -396,7 +397,8 @@ class MainActivity : Activity() {
     }
 
     private fun currentPost(): Core.Post = Core.Post(titleIn.text.toString(), messageIn.text.toString(), colorSpin.selectedItem as String,
-        pingSpin.selectedItem as String, roleIn.text.toString(), loadstringChk.isChecked, nameIn.text.toString(), embedChk.isChecked)
+        pingSpin.selectedItem as String, roleIn.text.toString(), loadstringChk.isChecked, nameIn.text.toString(), embedChk.isChecked,
+        store.get("avatar_url"))
 
     private fun pickPicture() {
         val i = Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE)
@@ -415,6 +417,7 @@ class MainActivity : Activity() {
             REQ_ROM_GB -> importGame(uri, "gb")
             REQ_ROM_GBA -> importGame(uri, "gba")
             REQ_WAD -> importGame(uri, "doom")
+            REQ_AVATAR -> setWebhookAvatarFrom(uri)
         }
     }
 
@@ -643,6 +646,7 @@ class MainActivity : Activity() {
             setOnCheckedChangeListener { _, on -> if (on) startBubble(quiet = false) else stopBubble() }
         }
         updateBtn = button("Check for updates") { checkUpdate() }
+        avatarIn = field("Picture for each post (https link)").apply { setText(store.get("avatar_url")) }
         updateLbl = label("Version " + (try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "?" }), dim = true, size = 13f)
         val hook = RadioButton(this).apply { id = View.generateViewId(); text = "My webhook"; setTextColor(INK); buttonTintList = ColorStateList.valueOf(ORANGE) }
         val relay = RadioButton(this).apply { id = View.generateViewId(); text = "The relay (whitelisted)"; setTextColor(INK); buttonTintList = ColorStateList.valueOf(ORANGE) }
@@ -672,6 +676,10 @@ class MainActivity : Activity() {
             relayIn,
             row(grow(keyIn), gap(button("Save") { saveRelay() }), gap(button("Check") { checkRelay() }, 4)),
             relayLbl,
+            label("Webhook picture", bold = true, size = 16f).apply { setPadding(0, dp(10), 0, 0) },
+            row(grow(avatarIn), gap(button("Save") { saveAvatarUrl() })),
+            row(button("Set the webhook's own picture") { pickAvatar() }, gap(button("Remove it") { setWebhookAvatar(null) })),
+            label("Each post: an https link to an image shown instead of the webhook's picture (empty = the webhook's own). Own picture: a PNG / JPG / GIF saved on the webhook for good (needs your webhook, or the relay's admin key).", dim = true, size = 13f),
             label("Overlay", bold = true, size = 16f).apply { setPadding(0, dp(10), 0, 0) },
             bubbleChk,
             label("A round Pupdates bubble stays over every app: tap it to open Pupdates on top of what you are doing, drag it anywhere, long-press to remove it.", dim = true, size = 13f),
@@ -722,6 +730,39 @@ class MainActivity : Activity() {
             if (me == null) { say(err ?: "", BAD); return@bg }
             relayLabel(me)
             say("The relay knows you as ${me.optString("name")}.", GOOD)
+        }
+    }
+
+    // ------------------------------------------------------------------ webhook picture
+    private fun saveAvatarUrl() {
+        val url = avatarIn.text.toString().trim()
+        if (url.isNotEmpty() && !Core.validAvatarUrl(url)) { say("The post picture must be an https:// link to an image.", BAD); return }
+        store.set("avatar_url", url)
+        say(if (url.isEmpty()) "Posts use the webhook's own picture again." else "Posts now use this picture.", GOOD)
+    }
+
+    private fun pickAvatar() {
+        val i = Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE)
+        @Suppress("DEPRECATION")
+        startActivityForResult(Intent.createChooser(i, "The webhook's picture"), REQ_AVATAR)
+    }
+
+    private fun setWebhookAvatarFrom(uri: Uri) {
+        bg({
+            val data = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: throw Core.PupError("That picture could not be opened")
+            Core.picture(data, displayName(uri))
+        }) { pic, err -> if (pic == null) say(err ?: "", BAD) else setWebhookAvatar(pic) }
+    }
+
+    private fun setWebhookAvatar(pic: Core.Picture?) {
+        if (pic != null) try { Core.avatarDataUri(pic) } catch (e: Core.PupError) { say(e.message ?: "", BAD); return }
+        val url = store.secret("webhook")
+        val base = store.get("relay_url")
+        val admin = store.secret("admin_key")
+        if (url.isEmpty() && (base.isEmpty() || admin.isEmpty())) { say("Save your webhook first (or the relay address and admin key in Whitelist).", BAD); return }
+        say("Changing the webhook's picture...")
+        bg({ if (url.isNotEmpty()) Core.setWebhookAvatar(http, url, pic) else Core.adminAvatar(http, base, admin, pic) }) { _, err ->
+            if (err != null) say(err, BAD) else say(if (pic != null) "The webhook's picture was changed." else "The webhook's picture was removed.", GOOD)
         }
     }
 
@@ -1161,6 +1202,7 @@ class MainActivity : Activity() {
         private const val REQ_ROM_GBA = 9
         private const val REQ_WAD = 10
         private const val REQ_OVERLAY = 11
+        private const val REQ_AVATAR = 12
         private val CARD = 0xFFFBFBFB.toInt()
         private val LINE = 0xFFC8CCD4.toInt()
         private val STRIP = 0xFFE6E7EA.toInt()

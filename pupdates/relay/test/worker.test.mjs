@@ -65,6 +65,19 @@ test("whitelist: add, post, remove", async () => {
   assert.equal((await call(env, "/me", { headers: { authorization: "Bearer " + add.key } })).status, 401, "removed: the key stops working");
 });
 
+test("post picture and the webhook's own picture", async () => {
+  const { env, sent } = setup();
+  const p = discordPayload({ message: "x", avatarUrl: "https://example.com/a.png" }, { name: "Bob" });
+  assert.equal(p.avatar_url, "https://example.com/a.png");
+  assert.equal(discordPayload({ message: "x", avatarUrl: "javascript:alert(1)" }, { name: "Bob" }).avatar_url, undefined);
+  assert.equal((await call(env, "/admin/avatar", { method: "POST", body: "{}" })).status, 401);
+  const bad = await admin(env, "/admin/avatar", { method: "POST", body: JSON.stringify({ avatar: "data:text/html;base64,AAAA" }) });
+  assert.equal(bad.status, 400);
+  const ok = await admin(env, "/admin/avatar", { method: "POST", body: JSON.stringify({ avatar: "data:image/png;base64,iVBORw0KGgo=" }) });
+  assert.equal(ok.status, 200);
+  assert.equal(sent[0].url, "https://discord.com/api/webhooks/1/secret");
+});
+
 test("limits", async () => {
   const { env } = setup();
   const add = await (await admin(env, "/admin/users", { method: "POST", body: JSON.stringify({ name: "Spammer" }) })).json();

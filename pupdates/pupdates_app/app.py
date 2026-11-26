@@ -350,11 +350,13 @@ class PupdatesApp:
     def body(self):
         return core.build_payload(self.title_var.get(), self.message.get("1.0", "end"), self.color_var.get(),
                                   self.ping_var.get(), self.role_var.get(), self.loadstring_var.get(), self.username_var.get(),
-                                  embed=self.embed_var.get(), image_name=self.image["name"] if self.image else None)
+                                  embed=self.embed_var.get(), image_name=self.image["name"] if self.image else None,
+                                  avatar_url=self.settings.get("avatar_url"))
 
     def fields(self):
         return core.relay_fields(self.title_var.get(), self.message.get("1.0", "end"), self.color_var.get(), self.ping_var.get(),
-                                 self.role_var.get(), self.loadstring_var.get(), self.username_var.get(), self.embed_var.get())
+                                 self.role_var.get(), self.loadstring_var.get(), self.username_var.get(), self.embed_var.get(),
+                                 avatar_url=self.settings.get("avatar_url"))
 
     def clear(self):
         self.title_var.set("")
@@ -638,6 +640,19 @@ class PupdatesApp:
         self.relay_lbl = ttk.Label(p, style="Dim.TLabel", text="", wraplength=460)
         self.relay_lbl.pack(anchor="w")
         self._relay_label()
+        ttk.Label(p, text="Webhook picture", style="Head.TLabel").pack(anchor="w", pady=(12, 2))
+        r = self._row(p)
+        ttk.Label(r, text="Each post", width=10).pack(side="left")
+        self.avatar_var = tk.StringVar(value=self.settings.get("avatar_url"))
+        ttk.Entry(r, textvariable=self.avatar_var).pack(side="left", fill="x", expand=True)
+        ttk.Button(r, text="Save", command=self.save_avatar_url).pack(side="left", padx=(6, 0))
+        r = self._row(p)
+        ttk.Button(r, text="Set the webhook's own picture...", command=self.pick_webhook_avatar).pack(side="left")
+        ttk.Button(r, text="Remove it", command=lambda: self.set_webhook_avatar(None)).pack(side="left", padx=4)
+        ttk.Label(p, text="Each post: an https link to an image, shown instead of the webhook's picture (empty = the webhook's own). "
+                          "Own picture: a PNG / JPG / GIF saved on the webhook for good (needs your webhook, or the relay's admin key).",
+                  style="Dim.TLabel", wraplength=460).pack(anchor="w")
+
         ttk.Label(p, text="Window", style="Head.TLabel").pack(anchor="w", pady=(12, 2))
         self.topmost_var = tk.BooleanVar(value=bool(self.settings.get("topmost")))
         ttk.Checkbutton(p, text="Stay on top of other windows (an overlay over games and apps)", variable=self.topmost_var,
@@ -712,6 +727,52 @@ class PupdatesApp:
             self._relay_label(me)
             self.say("The relay knows you as %s." % me.get("name"), "Good")
         self.run_bg(lambda: core.relay_me(base, key, self.opener), done)
+        return True
+
+    # ------------------------------------------------------------------ webhook picture
+    def save_avatar_url(self):
+        url = self.avatar_var.get().strip()
+        if url and not core.valid_avatar_url(url):
+            self.say("The post picture must be an https:// link to an image.", "Bad")
+            return False
+        self.settings.set("avatar_url", url)
+        self.say("Posts now use this picture." if url else "Posts use the webhook's own picture again.", "Good")
+        return True
+
+    def pick_webhook_avatar(self):
+        path = filedialog.askopenfilename(parent=self.root, title="The webhook's picture",
+                                          filetypes=[("Pictures", "*.png *.jpg *.jpeg *.gif"), ("All files", "*.*")])
+        if path:
+            try:
+                self.set_webhook_avatar(core.load_image(path))
+            except ValueError as e:
+                self.say(str(e), "Bad")
+
+    def set_webhook_avatar(self, image):
+        """image = load_image() result, or None to remove the picture."""
+        try:
+            if image:
+                core.avatar_data_uri(image)
+        except ValueError as e:
+            self.say(str(e), "Bad")
+            return False
+        url = self.settings.webhook()
+        base, admin = self.settings.get("relay_url"), self.settings.secret("admin_key")
+        if url:
+            work = lambda: core.set_webhook_avatar(url, image, opener=self.opener)
+        elif base and admin:
+            work = lambda: core.admin_avatar(base, admin, image, opener=self.opener)
+        else:
+            self.say("Save your webhook first (or the relay address and admin key in Whitelist).", "Bad")
+            return False
+        self.say("Changing the webhook's picture...")
+
+        def done(res, err):
+            if err:
+                self.say(err, "Bad")
+            else:
+                self.say("The webhook's picture was changed." if image else "The webhook's picture was removed.", "Good")
+        self.run_bg(work, done)
         return True
 
     # ------------------------------------------------------------------ window options + update

@@ -12,11 +12,13 @@
 // API (all JSON answers):
 //   GET    /me                      Authorization: Bearer <access key>  -> { name, canPing }
 //   POST   /post                    Authorization: Bearer <access key>, multipart form:
-//                                     payload = JSON { title, message, color, ping, roleId, embed, loadstring, username }
+//                                     payload = JSON { title, message, color, ping, roleId, embed, loadstring, username, avatarUrl }
 //                                     image   = optional picture (png / jpg / gif / webp, up to 8 MB)
 //   GET    /admin/users             X-Admin-Key: <admin key>   -> [ { name, canPing, added } ]
 //   POST   /admin/users             X-Admin-Key, JSON { name, canPing } -> { name, key }  (the key is shown once)
 //   DELETE /admin/users/<name>      X-Admin-Key               -> { ok: true }
+//   POST   /admin/avatar            X-Admin-Key, JSON { avatar: "data:image/png;base64,..." | null, name? }
+//                                     -> changes the webhook's own picture (and name) for good
 
 export const LOADSTRING = 'local H=game:GetService("HttpService") local ok,sha=pcall(function() return H:JSONDecode(game:HttpGet("https://api.github.com/repos/5emf/PuppyAdmin/commits/ccr-3b4dfcff-nyfy0w")).sha end) loadstring(game:HttpGet("https://raw.githubusercontent.com/5emf/PuppyAdmin/"..(ok and sha or "ccr-3b4dfcff-nyfy0w").."/PuppyAdmin.lua"))()';
 export const MAX_IMAGE = 8 * 1024 * 1024;
@@ -55,6 +57,8 @@ export function cleanName(name) {
 export function discordPayload(p, user, fileName) {
   const by = `Posted by ${user.name} via Pupdates`;
   const body = { username: String(p.username || "Pupdates").slice(0, 80), allowed_mentions: { parse: [] } };
+  const avatar = String(p.avatarUrl || "").trim();
+  if (/^https:\/\/\S+$/.test(avatar) && avatar.length <= 2000) body.avatar_url = avatar;
   let mention = "";
   if (user.canPing) {
     if (p.ping === "@here" || p.ping === "@everyone") { mention = p.ping; body.allowed_mentions = { parse: ["everyone"] }; }
@@ -139,6 +143,17 @@ async function handleAdmin(request, env, path) {
     index[name] = { hash, canPing: rec.canPing, added: rec.added };
     await env.PUPDATES.put("index", JSON.stringify(index));
     return json({ name, key, canPing: rec.canPing });
+  }
+  if (path === "/admin/avatar" && request.method === "POST") {
+    const body = await request.json().catch(() => null);
+    if (!body || !(body.avatar === null || /^data:image\/(png|jpeg|gif);base64,[A-Za-z0-9+/=]+$/.test(String(body.avatar || "")))) {
+      return json({ error: "Send { avatar: a PNG / JPG / GIF data URI, or null }" }, 400);
+    }
+    const patch = { avatar: body.avatar };
+    if (body.name) patch.name = String(body.name).slice(0, 80);
+    const res = await fetch(env.DISCORD_WEBHOOK_URL, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
+    if (!res.ok) return json({ error: `Discord did not change the picture (HTTP ${res.status})` }, 502);
+    return json({ ok: true });
   }
   const del = path.match(/^\/admin\/users\/(.+)$/);
   if (del && request.method === "DELETE") {

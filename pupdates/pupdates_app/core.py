@@ -118,11 +118,21 @@ def multipart(fields, files):
 
 
 # ------------------------------------------------------------------ Discord payloads
+def valid_avatar_url(url):
+    u = str(url or "").strip()
+    return u.startswith("https://") and " " not in u and len(u) <= 2000
+
+
 def build_payload(title, message, color="Orange", ping="none", role_id="", loadstring=False,
-                  username=APP, embed=True, image_name=None, footer=""):
+                  username=APP, embed=True, image_name=None, footer="", avatar_url=""):
     """The webhook body. embed=False sends a plain message (any text, up to 2000 characters).
-    A picture is shown inside the embed (attachment://) or under the plain message."""
+    A picture is shown inside the embed (attachment://) or under the plain message.
+    avatar_url (an https image) replaces the webhook's picture for this post only."""
     body = {"username": (username or APP)[:80], "allowed_mentions": {"parse": []}}
+    if avatar_url:
+        if not valid_avatar_url(avatar_url):
+            raise ValueError("The post picture must be an https:// link to an image")
+        body["avatar_url"] = avatar_url.strip()
     mention = ""
     if ping in ("@here", "@everyone"):
         mention = ping
@@ -156,11 +166,41 @@ def build_payload(title, message, color="Orange", ping="none", role_id="", loads
     return body
 
 
-def relay_fields(title, message, color="Orange", ping="none", role_id="", loadstring=False, username=APP, embed=True):
+def relay_fields(title, message, color="Orange", ping="none", role_id="", loadstring=False, username=APP, embed=True,
+                 avatar_url=""):
     """What the relay gets (it builds the Discord message itself, adding who posted it)."""
+    if avatar_url and not valid_avatar_url(avatar_url):
+        raise ValueError("The post picture must be an https:// link to an image")
     return {"title": (title or "").strip(), "message": (message or "").strip(), "color": COLORS.get(color, COLORS["Orange"]),
             "ping": ping, "roleId": str(role_id or "").strip(), "loadstring": bool(loadstring),
-            "username": (username or APP)[:80], "embed": bool(embed)}
+            "username": (username or APP)[:80], "embed": bool(embed), "avatarUrl": (avatar_url or "").strip()}
+
+
+AVATAR_TYPES = ("image/png", "image/jpeg", "image/gif")
+
+
+def avatar_data_uri(image):
+    """The webhook's saved picture as Discord wants it (PNG / JPG / GIF, at most 8 MB)."""
+    if image["mime"] not in AVATAR_TYPES:
+        raise ValueError("The webhook picture must be PNG, JPG or GIF")
+    return "data:%s;base64,%s" % (image["mime"], base64.b64encode(image["data"]).decode("ascii"))
+
+
+def set_webhook_avatar(url, image, name=None, opener=None):
+    """Changes the webhook's own picture (and name) for good, with only the webhook URL (Discord's
+    "modify webhook with token"). image=None removes the picture."""
+    url = (url or "").strip()
+    if not valid_webhook(url):
+        raise RuntimeError("Save your webhook first")
+    body = {"avatar": avatar_data_uri(image) if image else None}
+    if name:
+        body["name"] = name[:80]
+    req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), method="PATCH",
+                                 headers={"Content-Type": "application/json", "User-Agent": USER_AGENT})
+    try:
+        return _send(req, opener, tries=2, secrets=(url,))
+    except RuntimeError as e:
+        raise RuntimeError("Discord did not change the picture: %s" % e)
 
 
 def preview_text(body, image=None):
@@ -260,6 +300,15 @@ def admin_add(base, admin, name, can_ping=False, opener=None):
     data = json.dumps({"name": name, "canPing": bool(can_ping)}).encode("utf-8")
     return _send(_relay_req(base, "/admin/users", "POST", admin=admin, data=data, ctype="application/json"),
                  opener, tries=1, secrets=(admin,))
+
+
+def admin_avatar(base, admin, image, name=None, opener=None):
+    """Owner, relay mode: the relay changes its webhook's own picture (it alone knows the webhook)."""
+    body = {"avatar": avatar_data_uri(image) if image else None}
+    if name:
+        body["name"] = name[:80]
+    return _send(_relay_req(base, "/admin/avatar", "POST", admin=admin, data=json.dumps(body).encode("utf-8"),
+                            ctype="application/json"), opener, tries=1, secrets=(admin,))
 
 
 def admin_remove(base, admin, name, opener=None):
@@ -395,7 +444,7 @@ class Settings:
     SECRETS = ("webhook", "relay_key", "admin_key", "tags_token")
     DEFAULTS = {"mode": "webhook", "webhook": "", "relay_url": "", "relay_key": "", "admin_key": "",
                 "username": APP, "color": "Orange", "ping": "none", "role_id": "", "embed": True,
-                "last_script_sha": "", "last_companion_sha": "", "tags_token": "", "topmost": False}
+                "last_script_sha": "", "last_companion_sha": "", "tags_token": "", "topmost": False, "avatar_url": ""}
 
     def __init__(self, folder=None, protector=None):
         self.folder = folder or data_dir()

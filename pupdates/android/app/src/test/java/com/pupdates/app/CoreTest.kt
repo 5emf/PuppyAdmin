@@ -92,6 +92,20 @@ class CoreTest {
         fails<Core.PupError> { Core.postWebhook(gone, "https://example.com/x", JSONObject(), null) { } }
     }
 
+    @Test fun webhookPictures() {
+        val b = Core.buildPayload(Core.Post("a", "b", avatarUrl = "https://example.com/p.png"))
+        assertEquals("https://example.com/p.png", b.getString("avatar_url"))
+        assertFalse(Core.buildPayload(Core.Post("a", "b")).has("avatar_url"))
+        fails<Core.PupError> { Core.buildPayload(Core.Post("a", "b", avatarUrl = "http://x/p.png")) }
+        assertEquals("https://x/p.png", Core.relayFields(Core.Post("a", "b", avatarUrl = "https://x/p.png")).getString("avatarUrl"))
+        val fake = Fake(mutableListOf(Core.Response(200, "{}"), Core.Response(200, "{}")))
+        Core.setWebhookAvatar(fake, hook, Core.picture(png, "p.png"))
+        assertEquals("PATCH", fake.sent[0].method)
+        assertTrue(JSONObject(String(fake.sent[0].body!!)).getString("avatar").startsWith("data:image/png;base64,"))
+        Core.setWebhookAvatar(fake, hook, null)
+        assertTrue(JSONObject(String(fake.sent[1].body!!)).isNull("avatar"))
+    }
+
     @Test fun relayAndWhitelist() {
         val fake = Fake(mutableListOf(
             Core.Response(200, "{\"name\":\"Alt Pup\",\"key\":\"pup_newkey12345\"}"),
