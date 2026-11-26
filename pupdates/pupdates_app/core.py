@@ -45,6 +45,7 @@ def redact(text, *secrets):
     t = str(text)
     t = re.sub(r"(discord(?:app)?\.com/api/webhooks/\d+/)[\w-]+", r"\1***", t)
     t = re.sub(r"pup_[\w-]{8,}", "pup_***", t)
+    t = re.sub(r"[\w-]{18,}\.[\w-]{4,}\.[\w-]{20,}", "***", t)   # Discord bot tokens
     for s in secrets:
         if s:
             t = t.replace(s, "***")
@@ -441,10 +442,12 @@ class Dpapi:
 
 class Settings:
     FILE = "settings.json"
-    SECRETS = ("webhook", "relay_key", "admin_key", "tags_token")
-    DEFAULTS = {"mode": "webhook", "webhook": "", "relay_url": "", "relay_key": "", "admin_key": "",
+    SECRETS = ("webhook", "relay_key", "admin_key", "tags_token", "bot_token")
+    DEFAULTS = {"mode": "bot", "webhook": "", "relay_url": "", "relay_key": "", "admin_key": "",
                 "username": APP, "color": "Orange", "ping": "none", "role_id": "", "embed": True,
-                "last_script_sha": "", "last_companion_sha": "", "tags_token": "", "topmost": False, "avatar_url": ""}
+                "last_script_sha": "", "last_companion_sha": "", "tags_token": "", "topmost": False, "avatar_url": "",
+                "bot_token": "", "bot_guild": "", "bot_guild_name": "", "bot_channel": "", "bot_channel_name": "",
+                "bot_channel_type": 0, "bot_publish": True, "recent_posts": []}
 
     def __init__(self, folder=None, protector=None):
         self.folder = folder or data_dir()

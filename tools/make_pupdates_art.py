@@ -28,7 +28,7 @@ DESK = os.path.join(ROOT, "pupdates", "pupdates_app", "art_data.py")
 RES = os.path.join(ROOT, "pupdates", "android", "app", "src", "main", "res")
 ICO = os.path.join(ROOT, "pupdates", "Pupdates.ico")
 S = 4
-ICONS = ("compose", "updates", "tags", "games", "pet", "whitelist", "settings", "picture", "send", "close")
+ICONS = ("compose", "bot", "updates", "tags", "games", "pet", "whitelist", "settings", "picture", "send", "close")
 STATES = ("normal", "hover", "chosen")
 ORANGE = (245, 155, 40)
 GREY_GLYPH = (112, 116, 126)
@@ -67,6 +67,13 @@ def glyph(name, size):
         d.line([(c - r * 0.8, c + r * 0.5), (c - r * 0.25, c - r * 0.1), (c + r * 0.15, c + r * 0.3),
                 (c + r * 0.42, c + r * 0.05), (c + r * 0.8, c + r * 0.5)], fill=255, width=w, joint="curve")
         d.ellipse([c + r * 0.25, c - r * 0.5, c + r * 0.55, c - r * 0.2], fill=255)
+    elif name == "bot":  # a robot head: antenna, rounded head, two eyes, a mouth
+        d.line([(c, c - r * 0.95), (c, c - r * 0.6)], fill=255, width=w)
+        d.ellipse([c - w * 1.1, c - r * 1.05 - w * 0.6, c + w * 1.1, c - r * 1.05 + w * 1.6], fill=255)
+        d.rounded_rectangle([c - r * 0.85, c - r * 0.6, c + r * 0.85, c + r * 0.75], radius=r * 0.25, outline=255, width=w)
+        for dx in (-0.38, 0.38):
+            d.ellipse([c + r * dx - w * 0.9, c - r * 0.12 - w * 0.9, c + r * dx + w * 0.9, c - r * 0.12 + w * 0.9], fill=255)
+        d.line([(c - r * 0.35, c + r * 0.38), (c + r * 0.35, c + r * 0.38)], fill=255, width=w)
     elif name == "pet":  # a cat's head: round face, two ears, eyes
         d.ellipse([c - r * 0.85, c - r * 0.55, c + r * 0.85, c + r * 0.95], outline=255, width=w)
         d.line([(c - r * 0.78, c - r * 0.2), (c - r * 0.7, c - r * 0.95), (c - r * 0.25, c - r * 0.55)], fill=255, width=w, joint="curve")

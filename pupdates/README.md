@@ -36,7 +36,18 @@ just a column of round icons beside a white card.
   Pupdates on top of what you are doing); **Check for updates** (like the companion: downloads
   the newest build from GitHub, checks it and installs it).
 
-## Owner: your webhook
+## Owner: your bot (recommended)
+1. https://discord.com/developers/applications > **New Application** > **Bot** > **Reset Token**, copy it.
+2. Pupdates > **Bot**: paste the token, **Save** (stored encrypted), then **Invite the bot to a server**
+   and pick your server (the link asks for: View Channel, Send Messages, Embed Links, Attach Files,
+   Read Message History, Mention Everyone).
+3. Pick the **Server** and **Channel**. Posts come from the bot; in an announcement channel they can be
+   published to every server that follows it. **Recent posts** can be edited (the picture stays,
+   edits never ping), deleted or opened in Discord. The bot's name and picture are changed there too.
+4. Settings > **Post through: My bot** (the default for new installs).
+The bot shows as offline: posting does not need it to be online.
+
+## Owner: your webhook (still works)
 In Discord: your channel > Edit Channel > Integrations > Webhooks > New Webhook > **Copy Webhook URL**.
 Paste it in **Settings > Webhook** and press **Save**. It is stored encrypted (Windows DPAPI in
 `%APPDATA%\Pupdates\settings.json`, the Android Keystore on a phone) and never shown again.

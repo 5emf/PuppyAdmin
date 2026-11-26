@@ -24,7 +24,7 @@ class LayoutTest {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         val root = activity.window.decorView
         val show = MainActivity::class.java.getDeclaredMethod("show", String::class.java).apply { isAccessible = true }
-        for (name in listOf("compose", "updates", "tags", "games", "pet", "whitelist", "settings")) {
+        for (name in listOf("compose", "bot", "updates", "tags", "games", "pet", "whitelist", "settings")) {
             show.invoke(activity, name)
             root.measure(View.MeasureSpec.makeMeasureSpec(1233, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(2673, View.MeasureSpec.EXACTLY))
             root.layout(0, 0, 1233, 2673)

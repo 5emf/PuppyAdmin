@@ -18,7 +18,7 @@ import urllib.error
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-from pupdates_app import core, tagpreview, tags, update  # noqa: E402
+from pupdates_app import bot, core, tagpreview, tags, update  # noqa: E402
 import run_pupdates  # noqa: E402
 
 HOOK = "https://discord.com/api/webhooks/1575303315/abc-DEF_9"
@@ -134,6 +134,75 @@ TAGS = [{"name": "Owner Tag", "text": "Puppy Admin", "sub": "Script Owner", "col
          "backdrop": {"on": True, "color": [18, 18, 22], "transparency": 0.35, "image": "", "imageTransparency": 0.15, "round": True},
          "pfp": {"mode": "avatar", "image": "", "round": True}},
         {"name": "Default", "isDefault": True, "text": "Pup", "members": []}]
+
+
+# a made-up token, put together at run time so no token-shaped text sits in the repository
+BOT_TOKEN = ".".join(["MTIzNDU2Nzg5MDEyMzQ1Njc4", "Ga" + "BcDe", "abcdefghijklmnop" + "qrstuvwxyz012345"])
+
+
+class FakeBotDiscord:
+    """Discord's API v10 for a bot, as Pupdates uses it."""
+    def __init__(self):
+        self.calls = []
+        self.messages = {}
+        self.next_id = 900
+        self.profile = {"id": "123456789012345678", "username": "PupBot", "avatar": None, "bot": True}
+
+    def __call__(self, req, timeout):
+        url, method = req.full_url, req.get_method()
+        path = url[len(bot.API):]
+        if req.headers.get("Authorization") != "Bot " + BOT_TOKEN:
+            raise http_error(req, 401, {"message": "401: Unauthorized", "code": 0})
+        body = None
+        files = []
+        if req.data:
+            if req.headers["Content-type"].startswith("multipart/"):
+                parts = parse_multipart(req)
+                body, files = json.loads(parts[0][3]), parts[1:]
+            else:
+                body = json.loads(req.data.decode())
+        self.calls.append((method, path, body, files))
+        if path == "/users/@me" and method == "GET":
+            return Resp(json.dumps(self.profile).encode())
+        if path == "/users/@me" and method == "PATCH":
+            self.profile.update({k: v for k, v in body.items() if k == "username"})
+            if "avatar" in body:
+                self.profile["avatar"] = "hash1" if body["avatar"] else None
+            return Resp(json.dumps(self.profile).encode())
+        if path == "/users/@me/guilds":
+            return Resp(json.dumps([{"id": "2", "name": "Zeta"}, {"id": "1", "name": "Puppy Server"}]).encode())
+        m = re.match(r"^/guilds/(\d+)/channels$", path)
+        if m:
+            return Resp(json.dumps([
+                {"id": "10", "type": 4, "name": "INFO", "position": 0},
+                {"id": "11", "type": 5, "name": "announcements", "position": 0, "parent_id": "10"},
+                {"id": "12", "type": 0, "name": "general", "position": 1, "parent_id": "10"},
+                {"id": "13", "type": 2, "name": "Voice", "position": 2},
+                {"id": "14", "type": 0, "name": "lobby", "position": 0}]).encode())
+        m = re.match(r"^/channels/(\d+)/messages(?:/(\d+))?(/crosspost)?$", path)
+        if m:
+            ch, mid, cross = m.groups()
+            if ch == "99":
+                raise http_error(req, 403, {"message": "Missing Permissions", "code": 50013})
+            if cross:
+                return Resp(json.dumps(self.messages[mid]).encode())
+            if method == "POST":
+                self.next_id += 1
+                mid = str(self.next_id)
+                atts = [{"id": "a" + mid, "filename": f[1]} for f in files]
+                self.messages[mid] = dict(body, id=mid, channel_id=ch, attachments=atts)
+                return Resp(json.dumps(self.messages[mid]).encode())
+            if mid not in self.messages:
+                raise http_error(req, 404, {"message": "Unknown Message", "code": 10008})
+            if method == "GET":
+                return Resp(json.dumps(self.messages[mid]).encode())
+            if method == "PATCH":
+                self.messages[mid].update(body)
+                return Resp(json.dumps(self.messages[mid]).encode())
+            if method == "DELETE":
+                del self.messages[mid]
+                return Resp(b"")
+        raise AssertionError((method, url))
 
 
 class FakeGitHub:
@@ -514,6 +583,50 @@ class CoreTest(unittest.TestCase):
         self.assertIn('move /y "C:\\t\\Pupdates.exe" "C:\\Apps\\Pupdates.exe"', bat)
         self.assertIn("goto wait", bat)
 
+    def test_bot_client(self):
+        self.assertTrue(bot.valid_token(BOT_TOKEN))
+        self.assertFalse(bot.valid_token("https://discord.com/api/webhooks/1/x"))
+        self.assertEqual(bot.app_id_from_token(BOT_TOKEN), "123456789012345678")
+        self.assertIn("client_id=123456789012345678&scope=bot", bot.invite_url("123456789012345678"))
+        self.assertNotIn(BOT_TOKEN, core.redact("failed: " + BOT_TOKEN))
+        d = FakeBotDiscord()
+        b = bot.Bot(BOT_TOKEN, d)
+        self.assertEqual(b.me()["username"], "PupBot")
+        self.assertEqual([g["name"] for g in b.guilds()], ["Puppy Server", "Zeta"])
+        chans = b.channels("1")
+        self.assertEqual([c["name"] for c in chans], ["lobby", "announcements", "general"], "no categories or voice; Discord's order")
+        self.assertEqual(chans[1]["category"], "INFO")
+        img = core.load_image(png_file(self.folder))
+        body = core.build_payload("Hi", "there", image_name=img["name"], avatar_url="https://x.y/a.png")
+        msg = b.post("11", body, img)
+        method, path, sent, files = d.calls[-1]
+        self.assertEqual((method, path), ("POST", "/channels/11/messages"))
+        self.assertNotIn("username", sent)
+        self.assertNotIn("avatar_url", sent, "bots keep their own name and picture")
+        self.assertEqual(files[0][1], "pupdates.png")
+        b.publish("11", msg["id"])
+        self.assertEqual(d.calls[-1][1], "/channels/11/messages/%s/crosspost" % msg["id"])
+        b.edit("11", msg["id"], core.build_payload("Hi again", "changed", image_name="pupdates.png"))
+        patched = d.calls[-1][2]
+        self.assertEqual(patched["attachments"], [{"id": "a" + msg["id"]}], "the picture is kept")
+        self.assertEqual(patched["embeds"][0]["image"]["url"], "attachment://pupdates.png")
+        b.delete("11", msg["id"])
+        with self.assertRaises(bot.BotError) as e:
+            b.message("11", msg["id"])
+        self.assertIn("no longer exists", str(e.exception))
+        with self.assertRaises(bot.BotError) as e:
+            b.post("99", core.build_payload("a", "b"))
+        self.assertIn("missing a permission", str(e.exception))
+        with self.assertRaises(bot.BotError) as e:
+            bot.Bot(BOT_TOKEN[:-3] + "zzz", d).me()
+        self.assertIn("wrong or was reset", str(e.exception))
+        self.assertNotIn(BOT_TOKEN[:20], str(e.exception))
+        b.set_profile(username="Pupdates Bot")
+        self.assertEqual(d.calls[-1][2], {"username": "Pupdates Bot"})
+        b.set_profile(avatar=img)
+        self.assertTrue(d.calls[-1][2]["avatar"].startswith("data:image/png;base64,"))
+        self.assertEqual(bot.remember([{"message": "1"}, {"message": "2"}], {"message": "2"}), [{"message": "2"}, {"message": "1"}])
+
     def test_settings_keep_secrets_encrypted(self):
         s = core.Settings(self.folder, FakeProtector())
         s.set_webhook(HOOK)
@@ -560,6 +673,7 @@ class WindowTest(unittest.TestCase):
         self.discord = FakeDiscord()
         self.relay = FakeRelay()
         self.settings = core.Settings(self.folder, FakeProtector())
+        self.settings.set("mode", "webhook")     # the older tests post to a webhook; the bot tests switch to "bot"
         self.app = PupdatesApp(self.root, self.settings, opener=self.discord, gh_opener=FakeGitHub(), floating=False)
         self.app.confirm = lambda text: True
 
@@ -663,18 +777,72 @@ class WindowTest(unittest.TestCase):
         self.assertTrue(self.pump(lambda: "could not load" in self.app.tag_preview_note.cget("text"), 5))
         self.assertIn("shows no picture", self.app.tag_preview_note.cget("text"))
 
+    def test_bot_mode(self):
+        d = FakeBotDiscord()
+        self.app.opener = d
+        self.app.mode_var.set("bot")
+        self.app.set_mode()
+        self.assertFalse(self.app.post())
+        self.assertIn("token", self.app.status.cget("text"))
+        self.app.show("bot")
+        self.app.bot_token_var.set("not a token")
+        self.assertFalse(self.app.save_bot_token())
+        self.app.bot_token_var.set(BOT_TOKEN)
+        self.assertTrue(self.app.save_bot_token())
+        with open(os.path.join(self.folder, "settings.json"), encoding="utf-8") as f:
+            self.assertNotIn(BOT_TOKEN, f.read())
+        self.assertTrue(self.pump(lambda: "Signed in as PupBot" in self.app.bot_who.cget("text")))
+        self.assertTrue(self.pump(lambda: self.settings.get("bot_channel") == "14"), "first server, first channel")
+        self.assertEqual(self.app.guild_var.get(), "Puppy Server")
+        self.app.channel_var.set(self.app._channel_text(self.app.bot_channels[1]))
+        self.assertTrue(self.app.pick_channel())
+        self.assertEqual((self.settings.get("bot_channel"), self.settings.get("bot_channel_type")), ("11", bot.ANNOUNCEMENT))
+        self.app.show("compose")
+        self.assertIn("#announcements", self.app.where_lbl.cget("text"))
+        self.app.title_var.set("Big news")
+        self.app.message.insert("1.0", "Pupdates has a bot now")
+        self.assertTrue(self.app.post())
+        self.assertTrue(self.pump(lambda: "Published" in self.app.status.cget("text")))
+        self.assertEqual(self.app.posts_box.size(), 1)
+        mid = self.settings.get("recent_posts")[0]["message"]
+        self.assertTrue(any(c[1].endswith("/crosspost") for c in d.calls))
+        # edit it
+        self.app.show("bot")
+        self.app.posts_box.selection_set(0)
+        self.assertTrue(self.app.edit_post())
+        self.assertTrue(self.pump(lambda: self.app.editing is not None))
+        self.assertEqual(self.app.title_var.get(), "Big news")
+        self.assertEqual(self.app.post_btn.cget("text"), "Save changes")
+        self.app.title_var.set("Bigger news")
+        self.assertTrue(self.app.post())
+        self.assertTrue(self.pump(lambda: "updated" in self.app.status.cget("text")))
+        self.assertEqual(d.messages[mid]["embeds"][0]["title"], "Bigger news")
+        self.assertEqual(self.settings.get("recent_posts")[0]["title"], "Bigger news")
+        self.assertIsNone(self.app.editing)
+        # delete it
+        self.app.posts_box.selection_set(0)
+        self.assertTrue(self.app.delete_post())
+        self.assertTrue(self.pump(lambda: self.app.posts_box.size() == 0))
+        self.assertNotIn(mid, d.messages)
+        # the bot itself
+        self.app.bot_name_var.set("Pup News")
+        self.assertTrue(self.app.rename_bot())
+        self.assertTrue(self.pump(lambda: "Pup News" in self.app.status.cget("text")))
+        self.assertTrue(self.app.set_bot_picture(core.load_image(png_file(self.folder))))
+        self.assertTrue(self.pump(lambda: "picture was changed" in self.app.status.cget("text")))
+
     def test_topmost_setting(self):
         self.app.topmost_var.set(True)
         self.app.set_topmost(True, save=True)
         self.assertTrue(self.settings.get("topmost"))  # (X11 reports -topmost 0 for a withdrawn test window)
 
     def test_sections_and_icons(self):
-        for name in ("updates", "tags", "whitelist", "settings", "compose"):
+        for name in ("bot", "updates", "tags", "whitelist", "settings", "compose"):
             self.app.show(name)
             self.assertEqual(self.app.section, name)
             self.assertEqual(str(self.app.icons[name].cget("image")), str(self.app.img[name + "_chosen"]))
         self.app._hover("settings", True)
-        self.assertIn("Webhook", self.app.strip.cget("text"))
+        self.assertIn("webhook", self.app.strip.cget("text"))
         self.app._hover("settings", False)
         self.assertIn("picture", self.app.strip.cget("text"), "back to the open section's description")
 

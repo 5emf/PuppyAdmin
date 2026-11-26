@@ -78,6 +78,30 @@ test("post picture and the webhook's own picture", async () => {
   assert.equal(sent[0].url, "https://discord.com/api/webhooks/1/secret");
 });
 
+test("bot mode: posts through the bot into its channel", async () => {
+  const sent = [];
+  globalThis.fetch = async (url, init) => {
+    sent.push({ url, init });
+    return new Response(JSON.stringify({ id: "77" }), { status: 200 });
+  };
+  const env = { DISCORD_BOT_TOKEN: "bot.token.here", DISCORD_CHANNEL_ID: "555", ADMIN_KEY: "admin-pass", PUPDATES: new KV() };
+  const add = await (await admin(env, "/admin/users", { method: "POST", body: JSON.stringify({ name: "Alt Pup" }) })).json();
+  const form = new FormData();
+  form.append("payload", JSON.stringify({ title: "Hello", message: "World", username: "Fake", avatarUrl: "https://x.y/a.png" }));
+  const res = await call(env, "/post", { method: "POST", body: form, headers: { authorization: "Bearer " + add.key } });
+  assert.equal(res.status, 200);
+  assert.equal(sent[0].url, "https://discord.com/api/v10/channels/555/messages");
+  assert.equal(sent[0].init.headers.authorization, "Bot bot.token.here");
+  const payload = JSON.parse(sent[0].init.body.get("payload_json"));
+  assert.equal(payload.username, undefined);
+  assert.equal(payload.avatar_url, undefined);
+  assert.match(payload.embeds[0].footer.text, /Posted by Alt Pup/);
+  const av = await admin(env, "/admin/avatar", { method: "POST", body: JSON.stringify({ avatar: null, name: "Pup News" }) });
+  assert.equal(av.status, 200);
+  assert.equal(sent[1].url, "https://discord.com/api/v10/users/@me");
+  assert.deepEqual(JSON.parse(sent[1].init.body), { avatar: null, username: "Pup News" });
+});
+
 test("limits", async () => {
   const { env } = setup();
   const add = await (await admin(env, "/admin/users", { method: "POST", body: JSON.stringify({ name: "Spammer" }) })).json();

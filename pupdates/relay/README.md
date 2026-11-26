@@ -12,9 +12,12 @@ Option A, in the browser (no tools):
    `worker.js` from this folder and **Deploy** again.
 2. **Storage & Databases > KV > Create a namespace** named `PUPDATES`.
 3. Your worker > **Settings > Bindings > Add > KV namespace**: variable name `PUPDATES`, namespace `PUPDATES`.
-4. Your worker > **Settings > Variables and Secrets > Add** (type **Secret**):
-   - `DISCORD_WEBHOOK_URL` = your channel's webhook URL
-   - `ADMIN_KEY` = a long random password only you know
+4. Your worker > **Settings > Variables and Secrets > Add**:
+   - with your bot (recommended): `DISCORD_BOT_TOKEN` (type **Secret**) = the bot's token and
+     `DISCORD_CHANNEL_ID` (plain text) = the channel's id (Discord: Settings > Advanced > Developer Mode,
+     then right-click the channel > Copy Channel ID). Posts then come from the bot.
+   - or with a webhook: `DISCORD_WEBHOOK_URL` (type **Secret**) = your channel's webhook URL
+   - `ADMIN_KEY` (type **Secret**) = a long random password only you know
 5. Copy the worker's address (like `https://pupdates-relay.<you>.workers.dev`).
 
 Option B, with Node: `npx wrangler login`, `npx wrangler kv namespace create PUPDATES`, put the id in

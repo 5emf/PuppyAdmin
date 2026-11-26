@@ -41,6 +41,7 @@ object Core {
     fun redact(text: String, vararg secrets: String?): String {
         var t = text.replace(Regex("(discord(?:app)?\\.com/api/webhooks/\\d+/)[\\w-]+"), "$1***")
         t = t.replace(Regex("pup_[\\w-]{8,}"), "pup_***")
+        t = t.replace(Regex("[\\w-]{18,}\\.[\\w-]{4,}\\.[\\w-]{20,}"), "***")   // Discord bot tokens
         for (s in secrets) if (!s.isNullOrEmpty()) t = t.replace(s, "***")
         return t
     }

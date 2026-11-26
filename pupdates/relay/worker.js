@@ -5,6 +5,10 @@
 // desktop app (Whitelist section) with your admin key.
 //
 // Settings (Cloudflare dashboard > Workers > your worker > Settings):
+//   Either your bot (preferred):
+//   secret DISCORD_BOT_TOKEN    the bot's token (Developer Portal > your app > Bot)
+//   var    DISCORD_CHANNEL_ID   the channel it posts in (Discord: Developer Mode on, right-click the channel > Copy Channel ID)
+//   or a webhook:
 //   secret DISCORD_WEBHOOK_URL  the channel's webhook URL
 //   secret ADMIN_KEY            a long random password only you know (manages the whitelist)
 //   KV binding PUPDATES         a KV namespace (stores the whitelist; keys are stored hashed)
@@ -18,7 +22,7 @@
 //   POST   /admin/users             X-Admin-Key, JSON { name, canPing } -> { name, key }  (the key is shown once)
 //   DELETE /admin/users/<name>      X-Admin-Key               -> { ok: true }
 //   POST   /admin/avatar            X-Admin-Key, JSON { avatar: "data:image/png;base64,..." | null, name? }
-//                                     -> changes the webhook's own picture (and name) for good
+//                                     -> changes the bot's (or the webhook's) own picture (and name) for good
 
 export const LOADSTRING = 'local H=game:GetService("HttpService") local ok,sha=pcall(function() return H:JSONDecode(game:HttpGet("https://api.github.com/repos/5emf/PuppyAdmin/commits/ccr-3b4dfcff-nyfy0w")).sha end) loadstring(game:HttpGet("https://raw.githubusercontent.com/5emf/PuppyAdmin/"..(ok and sha or "ccr-3b4dfcff-nyfy0w").."/PuppyAdmin.lua"))()';
 export const MAX_IMAGE = 8 * 1024 * 1024;
@@ -97,6 +101,18 @@ async function rateLimited(env, user) {
   return false;
 }
 
+const API = "https://discord.com/api/v10";
+
+export function usesBot(env) {
+  return Boolean(env.DISCORD_BOT_TOKEN && env.DISCORD_CHANNEL_ID);
+}
+
+function botHeaders(env, json) {
+  const h = { authorization: "Bot " + env.DISCORD_BOT_TOKEN, "user-agent": "DiscordBot (https://github.com/5emf/PuppyAdmin, 2) Pupdates relay" };
+  if (json) h["content-type"] = "application/json";
+  return h;
+}
+
 async function handlePost(request, env) {
   const user = await userFor(request, env);
   if (!user) return json({ error: "Not on the whitelist (wrong or removed access key)" }, 401);
@@ -118,8 +134,17 @@ async function handlePost(request, env) {
     fileName = "pupdates." + ext;
     out.append("files[0]", new Blob([await image.arrayBuffer()], { type: image.type }), fileName);
   }
-  out.append("payload_json", JSON.stringify(discordPayload(p, user, fileName)));
-  const res = await fetch(env.DISCORD_WEBHOOK_URL + "?wait=true", { method: "POST", body: out });
+  const payload = discordPayload(p, user, fileName);
+  let res;
+  if (usesBot(env)) {
+    delete payload.username;          // a bot posts with its own name and picture
+    delete payload.avatar_url;
+    out.append("payload_json", JSON.stringify(payload));
+    res = await fetch(`${API}/channels/${env.DISCORD_CHANNEL_ID}/messages`, { method: "POST", headers: botHeaders(env, false), body: out });
+  } else {
+    out.append("payload_json", JSON.stringify(payload));
+    res = await fetch(env.DISCORD_WEBHOOK_URL + "?wait=true", { method: "POST", body: out });
+  }
   if (!res.ok) return json({ error: `Discord refused the post (HTTP ${res.status})` }, 502);
   const msg = await res.json().catch(() => ({}));
   return json({ ok: true, id: msg.id || "", pingDropped: Boolean(p.ping && p.ping !== "none" && !user.canPing) });
@@ -150,8 +175,11 @@ async function handleAdmin(request, env, path) {
       return json({ error: "Send { avatar: a PNG / JPG / GIF data URI, or null }" }, 400);
     }
     const patch = { avatar: body.avatar };
-    if (body.name) patch.name = String(body.name).slice(0, 80);
-    const res = await fetch(env.DISCORD_WEBHOOK_URL, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
+    const bot = usesBot(env);
+    if (body.name) patch[bot ? "username" : "name"] = String(body.name).slice(0, bot ? 32 : 80);
+    const res = bot
+      ? await fetch(`${API}/users/@me`, { method: "PATCH", headers: botHeaders(env, true), body: JSON.stringify(patch) })
+      : await fetch(env.DISCORD_WEBHOOK_URL, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
     if (!res.ok) return json({ error: `Discord did not change the picture (HTTP ${res.status})` }, 502);
     return json({ ok: true });
   }
@@ -170,8 +198,8 @@ async function handleAdmin(request, env, path) {
 export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname.replace(/\/+$/, "") || "/";
-    if (!env.DISCORD_WEBHOOK_URL || !env.ADMIN_KEY || !env.PUPDATES) {
-      return json({ error: "The relay is not set up (DISCORD_WEBHOOK_URL, ADMIN_KEY and the PUPDATES KV binding)" }, 500);
+    if (!(env.DISCORD_WEBHOOK_URL || usesBot(env)) || !env.ADMIN_KEY || !env.PUPDATES) {
+      return json({ error: "The relay is not set up (DISCORD_BOT_TOKEN + DISCORD_CHANNEL_ID or DISCORD_WEBHOOK_URL, ADMIN_KEY and the PUPDATES KV binding)" }, 500);
     }
     try {
       if (path === "/me" && request.method === "GET") {

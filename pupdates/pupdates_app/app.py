@@ -11,21 +11,23 @@ import sys
 import threading
 import time
 import tkinter as tk
+import webbrowser
 from tkinter import colorchooser, filedialog, messagebox, ttk
 
-from . import art_data, core, tagpreview, tags, update
+from . import art_data, bot, core, tagpreview, tags, update
 
 KEY = "#0d0e13"                       # see-through colour (only used for the backdrop)
 CARD, FIELD, LINE, STRIP = "#fbfbfb", "#ffffff", "#c8ccd4", "#e6e7ea"
 INK, DIM, ORANGE, GOOD, BAD = "#464646", "#8a8d96", "#f59b28", "#3f9b56", "#d0453a"
-SECTIONS = ("compose", "updates", "tags", "whitelist", "settings")
-TITLES = {"compose": "Compose", "updates": "Updates", "tags": "Tags", "whitelist": "Whitelist", "settings": "Settings"}
+SECTIONS = ("compose", "bot", "updates", "tags", "whitelist", "settings")
+TITLES = {"compose": "Compose", "bot": "Bot", "updates": "Updates", "tags": "Tags", "whitelist": "Whitelist", "settings": "Settings"}
 DESCRIPTIONS = {
     "compose": "Write any message, add a picture, and post it to your Discord channel.",
     "updates": "Fill in a Puppy Admin or Puppy Companion update from GitHub.",
     "whitelist": "Choose who may post through your relay (owner only: needs the admin key).",
     "tags": "Edit Puppy Admin's shared tags (tags.json): text, colour, picture and who wears them.",
-    "settings": "Webhook or relay, stay on top of other windows, and updates.",
+    "bot": "Your Discord bot: sign in, pick where it posts, edit or delete its posts, change its name and picture.",
+    "settings": "Bot, webhook or relay, stay on top of other windows, and updates.",
     "minimise": "Minimise Pupdates.",
     "close": "Close Pupdates.",
 }
@@ -128,6 +130,7 @@ class PupdatesApp:
         self._build_compose()
         self._build_updates()
         self._build_tags()
+        self._build_bot()
         self._build_whitelist()
         self._build_settings()
         self.set_topmost(bool(self.settings.get("topmost")))
@@ -211,6 +214,10 @@ class PupdatesApp:
         self._describe(None)
         if name == "tags":
             self._draw_tag_preview()
+        if name == "compose":
+            self._where_label()
+        if name == "bot":
+            self._bot_shown()
         if name == "whitelist" and self.settings.secret("admin_key") and self.settings.get("relay_url") and not self.users_list.size():
             self.refresh_users()
 
@@ -219,6 +226,12 @@ class PupdatesApp:
         self.status.configure(text=text, style=kind + ".TLabel")
 
     def _mode_text(self):
+        if self.settings.get("mode") == "bot":
+            if not self.settings.secret("bot_token"):
+                return "Bot mode: save your bot's token in Bot."
+            if not self.settings.get("bot_channel"):
+                return "Bot mode: pick a channel in Bot."
+            return "Posting as your bot in #%s." % self.settings.get("bot_channel_name")
         if self.settings.get("mode") == "relay":
             return "Posting through the relay." if self.settings.secret("relay_key") else "Relay mode: enter your access key in Settings."
         return "Posting to your webhook." if self.settings.webhook() else "Save your webhook in Settings (or use the relay)."
@@ -258,6 +271,12 @@ class PupdatesApp:
     # ------------------------------------------------------------------ compose
     def _build_compose(self):
         p = self._page("compose")
+        r = self._row(p, pady=(0, 4))
+        self.where_lbl = ttk.Label(r, text="", style="Dim.TLabel")
+        self.where_lbl.pack(side="left")
+        self.cancel_edit_btn = ttk.Button(r, text="Stop editing", command=self.stop_editing)
+        ttk.Button(r, text="Change", command=lambda: self.show("bot" if self.settings.get("mode") == "bot" else "settings")).pack(side="right")
+        self.editing = None
         ttk.Label(p, text="Title").pack(anchor="w")
         self.title_var = tk.StringVar()
         ttk.Entry(p, textvariable=self.title_var).pack(fill="x", pady=(2, 6))
@@ -385,6 +404,8 @@ class PupdatesApp:
         return win
 
     def post(self):
+        if self.settings.get("mode") == "bot":
+            return self._post_bot()
         relay = self.settings.get("mode") == "relay"
         url = self.settings.webhook()
         relay_url, key = self.settings.get("relay_url"), self.settings.secret("relay_key")
@@ -429,6 +450,420 @@ class PupdatesApp:
             self.run_bg(lambda: core.post_relay(relay_url, key, fields, image, self.opener), done)
         else:
             self.run_bg(lambda: core.post_webhook(url, body, image, self.opener), done)
+        return True
+
+    # ------------------------------------------------------------------ bot
+    def _build_bot(self):
+        p = self._page("bot")
+        r = self._row(p)
+        ttk.Label(r, text="Bot token", width=10).pack(side="left")
+        self.bot_token_var = tk.StringVar()
+        self._secret_entry(r, self.bot_token_var).pack(side="left", fill="x", expand=True)
+        ttk.Button(r, text="Save", command=self.save_bot_token).pack(side="left", padx=(6, 0))
+        ttk.Button(r, text="Check", command=self.check_bot).pack(side="left", padx=(4, 0))
+        self.bot_who = ttk.Label(p, style="Dim.TLabel", wraplength=470, justify="left", text="")
+        self.bot_who.pack(anchor="w")
+        r = self._row(p, pady=(4, 2))
+        self.invite_btn = ttk.Button(r, text="Invite the bot to a server", command=self.invite_bot)
+        self.invite_btn.pack(side="left")
+        ttk.Button(r, text="Developer Portal", command=lambda: webbrowser.open("https://discord.com/developers/applications")).pack(side="left", padx=6)
+
+        ttk.Label(p, text="Where it posts", style="Head.TLabel").pack(anchor="w", pady=(10, 2))
+        r = self._row(p)
+        ttk.Label(r, text="Server", width=10).pack(side="left")
+        self.guild_var = tk.StringVar(value=self.settings.get("bot_guild_name"))
+        self.guild_box = ttk.Combobox(r, textvariable=self.guild_var, state="readonly")
+        self.guild_box.pack(side="left", fill="x", expand=True)
+        self.guild_box.bind("<<ComboboxSelected>>", lambda e: self.pick_guild())
+        ttk.Button(r, text="Refresh", command=self.load_guilds).pack(side="left", padx=(6, 0))
+        r = self._row(p)
+        ttk.Label(r, text="Channel", width=10).pack(side="left")
+        self.channel_var = tk.StringVar(value=("#" + self.settings.get("bot_channel_name")) if self.settings.get("bot_channel_name") else "")
+        self.channel_box = ttk.Combobox(r, textvariable=self.channel_var, state="readonly")
+        self.channel_box.pack(side="left", fill="x", expand=True)
+        self.channel_box.bind("<<ComboboxSelected>>", lambda e: self.pick_channel())
+        self.publish_var = tk.BooleanVar(value=bool(self.settings.get("bot_publish")))
+        ttk.Checkbutton(p, text="In announcement channels, publish to the servers that follow it", variable=self.publish_var,
+                        command=lambda: self.settings.set("bot_publish", self.publish_var.get())).pack(anchor="w", pady=(2, 0))
+        self.bot_guilds, self.bot_channels = [], []
+
+        ttk.Label(p, text="Recent posts", style="Head.TLabel").pack(anchor="w", pady=(10, 2))
+        r = self._row(p)
+        lf = tk.Frame(r, bg=FIELD, highlightthickness=1, highlightbackground=LINE)
+        lf.pack(side="left", fill="both", expand=True)
+        self.posts_box = tk.Listbox(lf, height=5, bg=FIELD, fg=INK, relief="flat", highlightthickness=0, bd=0, exportselection=False,
+                                    selectbackground=ORANGE, selectforeground="#ffffff", font=(self.family, 10), activestyle="none")
+        self.posts_box.pack(fill="both", expand=True, padx=4, pady=4)
+        side = ttk.Frame(r)
+        side.pack(side="left", fill="y", padx=(6, 0))
+        ttk.Button(side, text="Edit", command=self.edit_post).pack(fill="x")
+        ttk.Button(side, text="Delete", command=self.delete_post).pack(fill="x", pady=4)
+        ttk.Button(side, text="Open", command=self.open_post).pack(fill="x")
+
+        ttk.Label(p, text="The bot itself", style="Head.TLabel").pack(anchor="w", pady=(10, 2))
+        r = self._row(p)
+        ttk.Label(r, text="Name", width=10).pack(side="left")
+        self.bot_name_var = tk.StringVar()
+        ttk.Entry(r, textvariable=self.bot_name_var).pack(side="left", fill="x", expand=True)
+        ttk.Button(r, text="Rename", command=self.rename_bot).pack(side="left", padx=(6, 0))
+        r = self._row(p)
+        ttk.Button(r, text="Set its picture...", command=self.pick_bot_picture).pack(side="left")
+        ttk.Button(r, text="Remove picture", command=lambda: self.set_bot_picture(None)).pack(side="left", padx=4)
+        ttk.Label(p, text="A bot always posts with its own name and picture. Discord lets a bot change its name about twice an hour.",
+                  style="Dim.TLabel", wraplength=470).pack(anchor="w", pady=(4, 0))
+        self._bot_label()
+        self._fill_posts()
+
+    def _bot(self):
+        return bot.Bot(self.settings.secret("bot_token"), self.opener)
+
+    def _bot_label(self, me=None):
+        if me:
+            text = "Signed in as %s (id %s)." % (me.get("username", "?"), me.get("id", "?"))
+        elif self.settings.secret("bot_token"):
+            text = "A token is saved (encrypted). Press Check to sign in."
+        else:
+            text = ("Make a bot: Developer Portal > New Application > Bot > Reset Token, copy the token here and Save. "
+                    "Then invite it to your server.")
+        self.bot_who.configure(text=text)
+
+    def _bot_shown(self):
+        if self.settings.secret("bot_token") and not self.bot_guilds:
+            self.load_guilds()
+
+    def save_bot_token(self):
+        token = self.bot_token_var.get().strip()
+        if token and not bot.valid_token(token):
+            self.say("That is not a bot token (Developer Portal > your app > Bot > Reset Token).", "Bad")
+            return False
+        try:
+            self.settings.set_secret("bot_token", token)
+        except RuntimeError as e:
+            self.say(str(e), "Bad")
+            return False
+        self.bot_token_var.set("")
+        self.bot_guilds, self.bot_channels = [], []
+        self._bot_label()
+        self.say("Bot token saved." if token else "Bot token removed.", "Good")
+        if token:
+            self.check_bot()
+        return True
+
+    def check_bot(self):
+        if not self.settings.secret("bot_token"):
+            self.say("Save the bot's token first.", "Bad")
+            return False
+        b = self._bot()
+
+        def done(me, err):
+            if err:
+                self.say(err, "Bad")
+                return
+            self._bot_label(me)
+            if not self.bot_name_var.get():
+                self.bot_name_var.set(me.get("username", ""))
+            self.say("Signed in as %s." % me.get("username"), "Good")
+            self.load_guilds()
+        self.run_bg(b.me, done)
+        return True
+
+    def invite_bot(self):
+        app_id = bot.app_id_from_token(self.settings.secret("bot_token"))
+        url = bot.invite_url(app_id)
+        if not url:
+            self.say("Save the bot's token first (the invite link is made from it).", "Bad")
+            return None
+        webbrowser.open(url)
+        self.say("The invite page opened in your browser: pick your server and Authorize.")
+        return url
+
+    def load_guilds(self):
+        if not self.settings.secret("bot_token"):
+            return False
+        b = self._bot()
+
+        def done(guilds, err):
+            if err:
+                self.say(err, "Bad")
+                return
+            self.bot_guilds = guilds
+            self.guild_box.configure(values=[g["name"] for g in guilds])
+            if not guilds:
+                self.say("The bot is in no server yet: press Invite the bot to a server.", "Bad")
+                return
+            saved = self.settings.get("bot_guild")
+            if not any(g["id"] == saved for g in guilds):
+                saved = guilds[0]["id"]
+            g = next(x for x in guilds if x["id"] == saved)
+            self.guild_var.set(g["name"])
+            self.pick_guild(keep_channel=True)
+        self.run_bg(b.guilds, done)
+        return True
+
+    def pick_guild(self, keep_channel=False):
+        g = next((x for x in self.bot_guilds if x["name"] == self.guild_var.get()), None)
+        if not g:
+            return False
+        if g["id"] != self.settings.get("bot_guild"):
+            keep_channel = False
+        self.settings.data.update({"bot_guild": g["id"], "bot_guild_name": g["name"]})
+        self.settings.save()
+        b = self._bot()
+
+        def done(channels, err):
+            if err:
+                self.say(err, "Bad")
+                return
+            self.bot_channels = channels
+            self.channel_box.configure(values=[self._channel_text(c) for c in channels])
+            current = self.settings.get("bot_channel")
+            c = next((x for x in channels if x["id"] == current), None) if keep_channel else None
+            if c is None and channels:
+                c = channels[0]
+                self.channel_var.set(self._channel_text(c))
+                self.pick_channel()
+            elif c is not None:
+                self.channel_var.set(self._channel_text(c))
+            if not channels:
+                self.say("The bot cannot see any text channel in %s." % g["name"], "Bad")
+        self.run_bg(lambda: b.channels(g["id"]), done)
+        return True
+
+    @staticmethod
+    def _channel_text(c):
+        return "#%s%s%s" % (c["name"], "  (announcements)" if c["type"] == bot.ANNOUNCEMENT else "",
+                            ("  - " + c["category"]) if c.get("category") else "")
+
+    def pick_channel(self):
+        c = next((x for x in self.bot_channels if self._channel_text(x) == self.channel_var.get()), None)
+        if not c:
+            return False
+        self.settings.data.update({"bot_channel": c["id"], "bot_channel_name": c["name"], "bot_channel_type": c["type"]})
+        self.settings.save()
+        self.say("The bot posts in #%s." % c["name"], "Good")
+        self._where_label()
+        return True
+
+    def _where_label(self):
+        mode = self.settings.get("mode")
+        if self.editing:
+            text = "Editing the bot's post in #%s" % self.editing.get("channel_name", "?")
+        elif mode == "bot":
+            name = self.settings.get("bot_channel_name")
+            text = ("As your bot in #%s (%s)" % (name, self.settings.get("bot_guild_name"))) if name else "As your bot: pick a channel"
+        elif mode == "relay":
+            text = "Through the relay"
+        else:
+            text = "To your webhook's channel"
+        self.where_lbl.configure(text=text)
+        if self.editing:
+            self.cancel_edit_btn.pack(side="right", padx=(4, 0))
+            self.post_btn.configure(text="Save changes")
+        else:
+            self.cancel_edit_btn.pack_forget()
+            self.post_btn.configure(text="Post to Discord")
+
+    def _fill_posts(self):
+        self.posts_box.delete(0, "end")
+        for p in self.settings.get("recent_posts") or []:
+            self.posts_box.insert("end", "%s   #%s   %s" % (time.strftime("%d %b %H:%M", time.localtime(p.get("time", 0))),
+                                                          p.get("channel_name", "?"), p.get("title") or "(no title)"))
+
+    def _selected_post(self):
+        sel = self.posts_box.curselection()
+        posts = self.settings.get("recent_posts") or []
+        if not sel or sel[0] >= len(posts):
+            self.say("Pick a post in the list first.", "Bad")
+            return None
+        return posts[sel[0]]
+
+    def _post_bot(self):
+        token = self.settings.secret("bot_token")
+        channel = (self.editing or {}).get("channel") or self.settings.get("bot_channel")
+        if not token:
+            self.say("Save your bot's token in Bot first.", "Bad")
+            return False
+        if not channel:
+            self.say("Pick the channel in Bot first.", "Bad")
+            return False
+        if not self.title_var.get().strip() and not self.message.get("1.0", "end").strip() and not self.image:
+            self.say("Write a title or a message, or add a picture.", "Bad")
+            return False
+        try:
+            body = self.body()
+        except ValueError as e:
+            self.say(str(e), "Bad")
+            return False
+        editing = self.editing
+        if editing:
+            body["allowed_mentions"] = {"parse": []}     # an edit never pings again
+            if self.image:
+                self.say("A picture cannot be swapped on an existing post: delete it and post again.", "Bad")
+                return False
+        else:
+            mention = body.get("content", "").split("\n")[0] if self.ping_var.get() != "none" else ""
+            if mention and not self.confirm("This will ping %s. Post it?" % mention):
+                return False
+        for k, var in (("color", self.color_var), ("ping", self.ping_var), ("role_id", self.role_var), ("embed", self.embed_var)):
+            self.settings.data[k] = var.get()
+        self.settings.save()
+        b = self._bot()
+        image = self.image
+        publish = self.settings.get("bot_publish") and self.settings.get("bot_channel_type") == bot.ANNOUNCEMENT
+        template, info = self.template, self.info
+        title = (self.title_var.get().strip() or self.message.get("1.0", "end").strip())[:60]
+        guild, channel_name = self.settings.get("bot_guild"), self.settings.get("bot_channel_name")
+
+        def work():
+            if editing:
+                return {"message": b.edit(editing["channel"], editing["message"], body), "edited": True}
+            msg = b.post(channel, body, image)
+            out = {"message": msg}
+            if publish:
+                try:
+                    b.publish(channel, msg["id"])
+                    out["published"] = True
+                except bot.BotError as e:
+                    out["publish_error"] = str(e)
+            return out
+
+        def done(res, err):
+            self.post_btn.state(["!disabled"])
+            if err:
+                self.say(err, "Bad")
+                return
+            msg = res["message"]
+            if res.get("edited"):
+                posts = self.settings.get("recent_posts") or []
+                for p in posts:
+                    if p.get("message") == editing["message"]:
+                        p["title"] = title
+                self.settings.set("recent_posts", posts)
+                self.editing = None
+                self._where_label()
+                self._fill_posts()
+                self.say("Post updated.", "Good")
+                return
+            entry = {"guild": guild, "channel": channel, "channel_name": channel_name, "message": msg.get("id", ""),
+                     "title": title, "time": int(time.time())}
+            self.settings.set("recent_posts", bot.remember(self.settings.get("recent_posts") or [], entry))
+            self._fill_posts()
+            if template and info:
+                self.settings.set("last_script_sha" if template == "script" else "last_companion_sha", info["sha"])
+            extra = " Published to following servers." if res.get("published") else ""
+            if res.get("publish_error"):
+                extra = " (Not published: %s)" % res["publish_error"]
+            self.say("Posted in #%s.%s" % (channel_name, extra), "Good" if not res.get("publish_error") else "Bad")
+        self.post_btn.state(["disabled"])
+        self.say("Saving the changes..." if editing else "Posting...")
+        self.run_bg(work, done)
+        return True
+
+    def edit_post(self):
+        p = self._selected_post()
+        if not p:
+            return False
+        if not self.settings.secret("bot_token"):
+            self.say("Save the bot's token first.", "Bad")
+            return False
+        b = self._bot()
+
+        def done(msg, err):
+            if err:
+                self.say(err, "Bad")
+                return
+            self.clear()
+            embeds = msg.get("embeds") or []
+            content = msg.get("content") or ""
+            if embeds:
+                e = embeds[0]
+                self.embed_var.set(True)
+                self.title_var.set(e.get("title", ""))
+                self.message.insert("1.0", e.get("description", "") if e.get("description") != "-" else "")
+                colour = next((k for k, v in core.COLORS.items() if v == e.get("color")), "Orange")
+                self.color_var.set(colour)
+                self.loadstring_var.set(any(f.get("name") == "Loadstring" for f in e.get("fields") or []))
+            else:
+                self.embed_var.set(False)
+                lines = content.split("\n")
+                if lines and (lines[0].startswith("@") or lines[0].startswith("<@&")):
+                    lines = lines[1:]
+                if lines and lines[0].startswith("**") and lines[0].endswith("**"):
+                    self.title_var.set(lines[0].strip("*"))
+                    lines = lines[1:]
+                text = "\n".join(lines)
+                if "```lua" in text:
+                    text = text.split("\n```lua")[0]
+                    self.loadstring_var.set(True)
+                self.message.insert("1.0", text)
+            self.ping_var.set("none")
+            self.editing = {"channel": p["channel"], "message": p["message"], "channel_name": p.get("channel_name", "?")}
+            self.show("compose")
+            self.say("Editing the post: change it, then Save changes. (Its picture stays; edits do not ping.)")
+        self.run_bg(lambda: b.message(p["channel"], p["message"]), done)
+        return True
+
+    def stop_editing(self):
+        self.editing = None
+        self.clear()
+        self._where_label()
+        self.say("Stopped editing.")
+
+    def delete_post(self):
+        p = self._selected_post()
+        if not p or not self.confirm("Delete this post from Discord?\n\n%s" % (p.get("title") or "(no title)")):
+            return False
+        b = self._bot()
+
+        def done(res, err):
+            if err and "no longer exists" not in err:
+                self.say(err, "Bad")
+                return
+            self.settings.set("recent_posts", [x for x in self.settings.get("recent_posts") or [] if x.get("message") != p["message"]])
+            self._fill_posts()
+            self.say("Post deleted.", "Good")
+        self.run_bg(lambda: b.delete(p["channel"], p["message"]), done)
+        return True
+
+    def open_post(self):
+        p = self._selected_post()
+        if p:
+            webbrowser.open(bot.jump_url(p.get("guild"), p["channel"], p["message"]))
+
+    def rename_bot(self):
+        name = self.bot_name_var.get().strip()
+        if not (2 <= len(name) <= 32):
+            self.say("A bot's name is 2 to 32 characters.", "Bad")
+            return False
+        b = self._bot()
+        self.run_bg(lambda: b.set_profile(username=name),
+                    lambda res, err: self.say(err, "Bad") if err else (self._bot_label(res), self.say("The bot is now %s." % res.get("username", name), "Good")))
+        return True
+
+    def pick_bot_picture(self):
+        path = filedialog.askopenfilename(parent=self.root, title="The bot's picture",
+                                          filetypes=[("Pictures", "*.png *.jpg *.jpeg *.gif"), ("All files", "*.*")])
+        if path:
+            try:
+                self.set_bot_picture(core.load_image(path))
+            except ValueError as e:
+                self.say(str(e), "Bad")
+
+    def set_bot_picture(self, image):
+        if image is not None:
+            try:
+                core.avatar_data_uri(image)
+            except ValueError as e:
+                self.say(str(e), "Bad")
+                return False
+        if not self.settings.secret("bot_token"):
+            self.say("Save the bot's token first.", "Bad")
+            return False
+        b = self._bot()
+        self.say("Changing the bot's picture...")
+        self.run_bg(lambda: b.set_profile(avatar=image, clear_avatar=image is None),
+                    lambda res, err: self.say(err, "Bad") if err else self.say(
+                        "The bot's picture was changed." if image else "The bot's picture was removed.", "Good"))
         return True
 
     # ------------------------------------------------------------------ updates
@@ -617,8 +1052,9 @@ class PupdatesApp:
         p = self._page("settings")
         r = self._row(p)
         ttk.Label(r, text="Post through").pack(side="left")
-        self.mode_var = tk.StringVar(value="relay" if self.settings.get("mode") == "relay" else "webhook")
-        for text, val in (("My webhook", "webhook"), ("The relay (whitelisted)", "relay")):
+        mode = self.settings.get("mode")
+        self.mode_var = tk.StringVar(value=mode if mode in ("bot", "webhook", "relay") else "bot")
+        for text, val in (("My bot", "bot"), ("My webhook", "webhook"), ("The relay (whitelisted)", "relay")):
             ttk.Radiobutton(r, text=text, value=val, variable=self.mode_var, command=self.set_mode).pack(side="left", padx=(10, 0))
 
         ttk.Label(p, text="Webhook (owner)", style="Head.TLabel").pack(anchor="w", pady=(12, 2))
@@ -683,6 +1119,7 @@ class PupdatesApp:
 
     def set_mode(self):
         self.settings.set("mode", self.mode_var.get())
+        self._where_label()
         self.say(self._mode_text())
 
     def save_webhook(self):

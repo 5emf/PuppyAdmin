@@ -48,8 +48,8 @@ class MainActivity : Activity() {
     private val pool = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
 
-    private val sections = listOf("compose", "updates", "tags", "games", "pet", "whitelist", "settings")
-    private val titles = mapOf("compose" to "Compose", "updates" to "Updates", "tags" to "Tags", "games" to "Games", "pet" to "Pet", "whitelist" to "Whitelist", "settings" to "Settings")
+    private val sections = listOf("compose", "bot", "updates", "tags", "games", "pet", "whitelist", "settings")
+    private val titles = mapOf("compose" to "Compose", "bot" to "Bot", "updates" to "Updates", "tags" to "Tags", "games" to "Games", "pet" to "Pet", "whitelist" to "Whitelist", "settings" to "Settings")
     private val descriptions = mapOf(
         "compose" to "Write any message, add a picture, and post it to your Discord channel.",
         "updates" to "Fill in a Puppy Admin or Puppy Companion update from GitHub.",
@@ -57,7 +57,8 @@ class MainActivity : Activity() {
         "tags" to "Edit Puppy Admin's shared tags: text, colour, picture and who wears them.",
         "games" to "Puppy Admin's mini games, and Game Boy, Game Boy Advance and Doom with its emulators.",
         "pet" to "Your pet cat: feed it, play with it, put it to bed. It lives on while the app is closed.",
-        "settings" to "Webhook or relay, the bubble over other apps, and updates.")
+        "bot" to "Your Discord bot: sign in, pick where it posts, edit or delete its posts, change its name and picture.",
+        "settings" to "Bot, webhook or relay, the bubble over other apps, and updates.")
     private val pages = HashMap<String, View>()
     private val icons = HashMap<String, ImageView>()
     private var section = ""
@@ -100,6 +101,21 @@ class MainActivity : Activity() {
     private lateinit var keyIn: EditText
     private lateinit var relayLbl: TextView
     private lateinit var bubbleChk: CheckBox
+
+    // bot
+    private lateinit var whereLbl: TextView
+    private lateinit var stopEditBtn: TextView
+    private lateinit var botTokenIn: EditText
+    private lateinit var botWho: TextView
+    private lateinit var guildSpin: Spinner
+    private lateinit var channelSpin: Spinner
+    private lateinit var publishChk: CheckBox
+    private lateinit var postsBox: LinearLayout
+    private lateinit var botNameIn: EditText
+    private var botGuilds = listOf<org.json.JSONObject>()
+    private var botChannels = listOf<DiscordBot.Channel>()
+    private var filling = false
+    private var editing: org.json.JSONObject? = null
     private lateinit var avatarIn: EditText
     private lateinit var updateBtn: TextView
     private lateinit var updateLbl: TextView
@@ -269,6 +285,7 @@ class MainActivity : Activity() {
             "updates_normal" -> R.drawable.ic_updates_normal; "updates_hover" -> R.drawable.ic_updates_hover; "updates_chosen" -> R.drawable.ic_updates_chosen
             "whitelist_normal" -> R.drawable.ic_whitelist_normal; "whitelist_hover" -> R.drawable.ic_whitelist_hover; "whitelist_chosen" -> R.drawable.ic_whitelist_chosen
             "settings_normal" -> R.drawable.ic_settings_normal; "settings_hover" -> R.drawable.ic_settings_hover; "settings_chosen" -> R.drawable.ic_settings_chosen
+            "bot_normal" -> R.drawable.ic_bot_normal; "bot_hover" -> R.drawable.ic_bot_hover; "bot_chosen" -> R.drawable.ic_bot_chosen
             "tags_normal" -> R.drawable.ic_tags_normal; "tags_hover" -> R.drawable.ic_tags_hover; "tags_chosen" -> R.drawable.ic_tags_chosen
             "games_normal" -> R.drawable.ic_games_normal; "games_hover" -> R.drawable.ic_games_hover; "games_chosen" -> R.drawable.ic_games_chosen
             "pet_normal" -> R.drawable.ic_pet_normal; "pet_hover" -> R.drawable.ic_pet_hover; "pet_chosen" -> R.drawable.ic_pet_chosen
@@ -330,6 +347,7 @@ class MainActivity : Activity() {
         pages["compose"] = buildCompose()
         pages["updates"] = buildUpdates()
         pages["whitelist"] = buildWhitelist()
+        pages["bot"] = buildBot()
         pages["tags"] = buildTags()
         pages["games"] = buildGames()
         pages["pet"] = buildPet()
@@ -346,6 +364,8 @@ class MainActivity : Activity() {
         scroll.scrollTo(0, 0)
         sectionLbl.text = "/ " + titles[name]
         strip.text = descriptions[name]
+        if (name == "compose") whereLabel()
+        if (name == "bot") botShown()
         if (name == "whitelist" && store.secret("admin_key").isNotEmpty() && store.get("relay_url").isNotEmpty() && usersBox.childCount == 0) refreshUsers()
     }
 
@@ -354,7 +374,16 @@ class MainActivity : Activity() {
         status.setTextColor(kind)
     }
 
-    private fun modeText(): String = if (store.get("mode") == "relay") {
+    /** bot / webhook / relay: a saved choice, else webhook for older installs that have one, else bot */
+    private fun mode(): String = store.get("mode").ifEmpty { if (store.secret("webhook").isNotEmpty()) "webhook" else "bot" }
+
+    private fun modeText(): String = if (mode() == "bot") {
+        when {
+            store.secret("bot_token").isEmpty() -> "Bot mode: save your bot's token in Bot."
+            store.get("bot_channel").isEmpty() -> "Bot mode: pick a channel in Bot."
+            else -> "Posting as your bot in #${store.get("bot_channel_name")}."
+        }
+    } else if (mode() == "relay") {
         if (store.secret("relay_key").isNotEmpty()) "Posting through the relay." else "Relay mode: enter your access key in Settings."
     } else {
         if (store.secret("webhook").isNotEmpty()) "Posting to your webhook." else "Save your webhook in Settings (or use the relay)."
@@ -375,6 +404,8 @@ class MainActivity : Activity() {
 
     // ------------------------------------------------------------------ compose
     private fun buildCompose(): View {
+        whereLbl = label("", dim = true, size = 13f)
+        stopEditBtn = button("Stop editing") { stopEditing() }.apply { visibility = View.GONE }
         titleIn = field("Title")
         messageIn = field("Message", lines = 6)
         embedChk = check("Card (embed)", store.getBool("embed", true))
@@ -398,6 +429,7 @@ class MainActivity : Activity() {
             addView(row(button("Add picture") { pickPicture() }, gap(removePic), top = 4))
         }
         return page(
+            row(grow(whereLbl), gap(stopEditBtn), gap(button("Change") { show(if (mode() == "bot") "bot" else "settings") }), top = 0),
             titleIn, messageIn,
             row(embedChk, gap(label("Colour"), 12), gap(colorSpin)),
             row(label("Name"), grow(nameIn, 6)),
@@ -430,6 +462,7 @@ class MainActivity : Activity() {
             REQ_ROM_GBA -> importGame(uri, "gba")
             REQ_WAD -> importGame(uri, "doom")
             REQ_AVATAR -> setWebhookAvatarFrom(uri)
+            REQ_BOT_PICTURE -> setBotPictureFrom(uri)
         }
     }
 
@@ -501,8 +534,9 @@ class MainActivity : Activity() {
     }
 
     private fun post() {
+        if (mode() == "bot") { postBot(); return }
         val p = currentPost()
-        val relay = store.get("mode") == "relay"
+        val relay = mode() == "relay"
         val url = store.secret("webhook")
         val relayUrl = store.get("relay_url")
         val key = store.secret("relay_key")
@@ -533,6 +567,308 @@ class MainActivity : Activity() {
             AlertDialog.Builder(this).setMessage("This will ping $who. Post it?")
                 .setPositiveButton("Post") { _, _ -> go() }.setNegativeButton("Cancel", null).show()
         } else go()
+    }
+
+    // ------------------------------------------------------------------ bot
+    private fun botClient() = DiscordBot.Client(http, store.secret("bot_token"))
+
+    private fun recentPosts(): org.json.JSONArray = try { org.json.JSONArray(store.get("recent_posts").ifEmpty { "[]" }) } catch (e: Exception) { org.json.JSONArray() }
+
+    private fun buildBot(): View {
+        botTokenIn = field("Bot token", secret = true)
+        botWho = label("", dim = true, size = 13f)
+        guildSpin = spinner(listOf(store.get("bot_guild_name").ifEmpty { "(press Check)" }), "")
+        channelSpin = spinner(listOf(store.get("bot_channel_name").let { if (it.isEmpty()) "(no channel yet)" else "#$it" }), "")
+        publishChk = check("In announcement channels, publish to the servers that follow it", store.getBool("bot_publish", true)).apply {
+            setOnCheckedChangeListener { _, on -> store.setBool("bot_publish", on) }
+        }
+        postsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = plate(Color.WHITE, LINE); setPadding(dp(8), dp(4), dp(8), dp(4)) }
+        botNameIn = field("Bot name").apply { inputType = InputType.TYPE_CLASS_TEXT }
+        guildSpin.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { if (!filling && pos < botGuilds.size) pickGuild(botGuilds[pos], false) }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+        channelSpin.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { if (!filling && pos < botChannels.size) pickChannel(botChannels[pos]) }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+        botLabel(null)
+        fillPosts()
+        return page(
+            row(grow(botTokenIn), gap(button("Save") { saveBotToken() }), gap(button("Check") { checkBot() }, 4)),
+            botWho,
+            row(button("Invite to a server") { inviteBot() }, gap(button("Developer Portal") {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://discord.com/developers/applications")))
+            }), top = 4),
+            label("Where it posts", bold = true, size = 16f).apply { setPadding(0, dp(10), 0, 0) },
+            row(label("Server", size = 13f), gap(grow(guildSpin), 6), gap(button("Refresh") { loadGuilds() })),
+            row(label("Channel", size = 13f), grow(channelSpin, 6)),
+            publishChk,
+            label("Recent posts", bold = true, size = 16f).apply { setPadding(0, dp(10), 0, 0) },
+            postsBox,
+            label("The bot itself", bold = true, size = 16f).apply { setPadding(0, dp(10), 0, 0) },
+            row(grow(botNameIn), gap(button("Rename") { renameBot() })),
+            row(button("Set its picture") {
+                val i = Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE)
+                @Suppress("DEPRECATION")
+                startActivityForResult(Intent.createChooser(i, "The bot's picture"), REQ_BOT_PICTURE)
+            }, gap(button("Remove picture") { setBotPicture(null) })),
+            label("A bot always posts with its own name and picture. Discord lets a bot change its name about twice an hour.", dim = true, size = 13f))
+    }
+
+    private fun botLabel(me: org.json.JSONObject?) {
+        botWho.text = when {
+            me != null -> "Signed in as ${me.optString("username")} (id ${me.optString("id")})."
+            store.secret("bot_token").isNotEmpty() -> "A token is saved (encrypted). Press Check to sign in."
+            else -> "Make a bot: Developer Portal > New Application > Bot > Reset Token, paste the token here and Save. Then invite it to your server."
+        }
+    }
+
+    private fun botShown() {
+        if (store.secret("bot_token").isNotEmpty() && botGuilds.isEmpty()) loadGuilds()
+    }
+
+    private fun saveBotToken() {
+        val t = botTokenIn.text.toString().trim()
+        if (t.isNotEmpty() && !DiscordBot.validToken(t)) { say("That is not a bot token (Developer Portal > your app > Bot > Reset Token).", BAD); return }
+        store.setSecret("bot_token", t)
+        botTokenIn.setText("")
+        botGuilds = emptyList(); botChannels = emptyList()
+        botLabel(null)
+        say(if (t.isEmpty()) "Bot token removed." else "Bot token saved.", GOOD)
+        if (t.isNotEmpty()) checkBot()
+    }
+
+    private fun checkBot() {
+        if (store.secret("bot_token").isEmpty()) { say("Save the bot's token first.", BAD); return }
+        val c = botClient()
+        bg({ c.me() }) { me, err ->
+            if (me == null) { say(err ?: "", BAD); return@bg }
+            botLabel(me)
+            if (botNameIn.text.isEmpty()) botNameIn.setText(me.optString("username"))
+            say("Signed in as ${me.optString("username")}.", GOOD)
+            loadGuilds()
+        }
+    }
+
+    private fun inviteBot() {
+        val url = DiscordBot.inviteUrl(DiscordBot.appId(store.secret("bot_token")))
+        if (url == null) { say("Save the bot's token first (the invite link is made from it).", BAD); return }
+        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+
+    private fun setSpinner(sp: Spinner, items: List<String>, select: Int) {
+        filling = true
+        sp.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, ArrayList(items)).also {
+            it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        if (select in items.indices) sp.setSelection(select)
+        sp.post { filling = false }
+    }
+
+    private fun loadGuilds() {
+        if (store.secret("bot_token").isEmpty()) return
+        val c = botClient()
+        bg({ c.guilds() }) { guilds, err ->
+            if (guilds == null) { say(err ?: "", BAD); return@bg }
+            botGuilds = guilds
+            if (guilds.isEmpty()) { setSpinner(guildSpin, listOf("(not in any server)"), 0); say("The bot is in no server yet: press Invite to a server.", BAD); return@bg }
+            val i = guilds.indexOfFirst { it.optString("id") == store.get("bot_guild") }.let { if (it < 0) 0 else it }
+            setSpinner(guildSpin, guilds.map { it.optString("name") }, i)
+            pickGuild(guilds[i], true)
+        }
+    }
+
+    private fun channelText(ch: DiscordBot.Channel) = "#" + ch.name + (if (ch.type == DiscordBot.ANNOUNCEMENT) "  (announcements)" else "") +
+        (if (ch.category.isNotEmpty()) "  - ${ch.category}" else "")
+
+    private fun pickGuild(g: org.json.JSONObject, keepChannel: Boolean) {
+        val keep = keepChannel && g.optString("id") == store.get("bot_guild")
+        store.set("bot_guild", g.optString("id")); store.set("bot_guild_name", g.optString("name"))
+        val c = botClient()
+        bg({ c.channels(g.optString("id")) }) { chans, err ->
+            if (chans == null) { say(err ?: "", BAD); return@bg }
+            botChannels = chans
+            if (chans.isEmpty()) { setSpinner(channelSpin, listOf("(no text channel it can see)"), 0); say("The bot cannot see any text channel in ${g.optString("name")}.", BAD); return@bg }
+            var i = if (keep) chans.indexOfFirst { it.id == store.get("bot_channel") } else -1
+            if (i < 0) i = 0
+            setSpinner(channelSpin, chans.map { channelText(it) }, i)
+            if (!keep || chans[i].id != store.get("bot_channel")) pickChannel(chans[i])
+        }
+    }
+
+    private fun pickChannel(ch: DiscordBot.Channel) {
+        store.set("bot_channel", ch.id); store.set("bot_channel_name", ch.name); store.set("bot_channel_type", ch.type.toString())
+        say("The bot posts in #${ch.name}.", GOOD)
+        whereLabel()
+    }
+
+    private fun whereLabel() {
+        if (!::whereLbl.isInitialized) return
+        val e = editing
+        whereLbl.text = when {
+            e != null -> "Editing the bot's post in #${e.optString("channel_name")}"
+            mode() == "bot" -> store.get("bot_channel_name").let { if (it.isEmpty()) "As your bot: pick a channel" else "As your bot in #$it (${store.get("bot_guild_name")})" }
+            mode() == "relay" -> "Through the relay"
+            else -> "To your webhook's channel"
+        }
+        stopEditBtn.visibility = if (e != null) View.VISIBLE else View.GONE
+        postBtn.text = if (e != null) "Save changes" else "Post to Discord"
+    }
+
+    private fun fillPosts() {
+        postsBox.removeAllViews()
+        val posts = recentPosts()
+        if (posts.length() == 0) postsBox.addView(label("Nothing posted by the bot yet.", dim = true))
+        val fmt = java.text.SimpleDateFormat("d MMM HH:mm", java.util.Locale.getDefault())
+        for (i in 0 until posts.length()) {
+            val p = posts.getJSONObject(i)
+            val line = "${fmt.format(java.util.Date(p.optLong("time") * 1000))}  #${p.optString("channel_name")}\n${p.optString("title").ifEmpty { "(no title)" }}"
+            postsBox.addView(label(line, size = 13f).apply { setPadding(0, dp(6), 0, dp(2)) })
+            postsBox.addView(row(button("Edit") { editPost(p) }, gap(button("Delete") { deletePost(p) }), gap(button("Open") {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(DiscordBot.jumpUrl(p.optString("guild"), p.optString("channel"), p.optString("message")))))
+            }), top = 2))
+        }
+    }
+
+    private fun postBot() {
+        val p = currentPost().copy(avatarUrl = "")
+        val e = editing
+        val channel = e?.optString("channel") ?: store.get("bot_channel")
+        if (store.secret("bot_token").isEmpty()) { say("Save your bot's token in Bot first.", BAD); return }
+        if (channel.isEmpty()) { say("Pick the channel in Bot first.", BAD); return }
+        if (p.title.isBlank() && p.message.isBlank() && picture == null) { say("Write a title or a message, or add a picture.", BAD); return }
+        if (e != null && picture != null) { say("A picture cannot be swapped on an existing post: delete it and post again.", BAD); return }
+        val body = try { Core.buildPayload(p, picture?.name) } catch (x: Core.PupError) { say(x.message ?: "", BAD); return }
+        if (e != null) body.put("allowed_mentions", org.json.JSONObject().put("parse", org.json.JSONArray()))   // an edit never pings again
+        val go = {
+            store.set("color", p.color); store.set("ping", p.ping); store.set("role_id", p.roleId); store.setBool("embed", p.embed)
+            postBtn.isEnabled = false
+            say(if (e != null) "Saving the changes..." else "Posting...")
+            val c = botClient()
+            val pic = picture
+            val tpl = template
+            val inf = info
+            val publish = store.getBool("bot_publish", true) && store.get("bot_channel_type") == DiscordBot.ANNOUNCEMENT.toString()
+            val title = (p.title.trim().ifEmpty { p.message.trim() }).take(60)
+            val channelName = store.get("bot_channel_name")
+            val guild = store.get("bot_guild")
+            bg({
+                if (e != null) { c.edit(channel, e.optString("message"), body); "edited" }
+                else {
+                    val msg = c.post(channel, body, pic)
+                    val note = if (publish) try { c.publish(channel, msg.optString("id")); " Published to following servers." } catch (x: Core.PupError) { " (Not published: ${x.message})" } else ""
+                    val entry = org.json.JSONObject().put("guild", guild).put("channel", channel).put("channel_name", channelName)
+                        .put("message", msg.optString("id")).put("title", title).put("time", System.currentTimeMillis() / 1000)
+                    store.set("recent_posts", DiscordBot.remember(recentPosts(), entry).toString())
+                    "Posted in #$channelName.$note"
+                }
+            }) { res, err ->
+                postBtn.isEnabled = true
+                if (res == null) { say(err ?: "", BAD); return@bg }
+                if (res == "edited") {
+                    val posts = recentPosts()
+                    for (i in 0 until posts.length()) if (posts.getJSONObject(i).optString("message") == e!!.optString("message")) posts.getJSONObject(i).put("title", title)
+                    store.set("recent_posts", posts.toString())
+                    editing = null
+                    whereLabel()
+                    fillPosts()
+                    say("Post updated.", GOOD)
+                    return@bg
+                }
+                if (tpl != null && inf != null) store.set(if (tpl == "script") "last_script_sha" else "last_companion_sha", inf.sha)
+                fillPosts()
+                say(res, if (res.contains("Not published")) BAD else GOOD)
+            }
+        }
+        if (e == null && p.ping != "none") {
+            val who = if (p.ping == "role") "the role" else p.ping
+            AlertDialog.Builder(this).setMessage("This will ping $who. Post it?")
+                .setPositiveButton("Post") { _, _ -> go() }.setNegativeButton("Cancel", null).show()
+        } else go()
+    }
+
+    private fun editPost(p: org.json.JSONObject) {
+        if (store.secret("bot_token").isEmpty()) { say("Save the bot's token first.", BAD); return }
+        val c = botClient()
+        bg({ c.message(p.optString("channel"), p.optString("message")) }) { msg, err ->
+            if (msg == null) { say(err ?: "", BAD); return@bg }
+            clear()
+            val embeds = msg.optJSONArray("embeds")
+            if (embeds != null && embeds.length() > 0) {
+                val e = embeds.getJSONObject(0)
+                embedChk.isChecked = true
+                titleIn.setText(e.optString("title"))
+                messageIn.setText(e.optString("description").let { if (it == "-") "" else it })
+                val colour = Core.COLORS.entries.firstOrNull { it.value == e.optInt("color", -1) }?.key ?: "Orange"
+                colorSpin.setSelection(Core.COLORS.keys.indexOf(colour))
+                val f = e.optJSONArray("fields")
+                loadstringChk.isChecked = f != null && (0 until f.length()).any { f.getJSONObject(it).optString("name") == "Loadstring" }
+            } else {
+                embedChk.isChecked = false
+                var lines = msg.optString("content").split("\n")
+                if (lines.isNotEmpty() && (lines[0].startsWith("@") || lines[0].startsWith("<@&"))) lines = lines.drop(1)
+                if (lines.isNotEmpty() && lines[0].startsWith("**") && lines[0].endsWith("**")) { titleIn.setText(lines[0].trim('*')); lines = lines.drop(1) }
+                var text = lines.joinToString("\n")
+                if (text.contains("```lua")) { text = text.substringBefore("\n```lua"); loadstringChk.isChecked = true }
+                messageIn.setText(text)
+            }
+            pingSpin.setSelection(0)
+            editing = org.json.JSONObject().put("channel", p.optString("channel")).put("message", p.optString("message")).put("channel_name", p.optString("channel_name"))
+            show("compose")
+            say("Editing the post: change it, then Save changes. (Its picture stays; edits do not ping.)")
+        }
+    }
+
+    private fun stopEditing() {
+        editing = null
+        clear()
+        whereLabel()
+        say("Stopped editing.")
+    }
+
+    private fun deletePost(p: org.json.JSONObject) {
+        AlertDialog.Builder(this).setMessage("Delete this post from Discord?\n\n${p.optString("title").ifEmpty { "(no title)" }}")
+            .setPositiveButton("Delete") { _, _ ->
+                val c = botClient()
+                bg({ c.delete(p.optString("channel"), p.optString("message")) }) { _, err ->
+                    if (err != null && !err.contains("no longer exists")) { say(err, BAD); return@bg }
+                    val keep = org.json.JSONArray()
+                    val posts = recentPosts()
+                    for (i in 0 until posts.length()) if (posts.getJSONObject(i).optString("message") != p.optString("message")) keep.put(posts.getJSONObject(i))
+                    store.set("recent_posts", keep.toString())
+                    fillPosts()
+                    say("Post deleted.", GOOD)
+                }
+            }.setNegativeButton("Cancel", null).show()
+    }
+
+    private fun renameBot() {
+        val name = botNameIn.text.toString().trim()
+        if (name.length !in 2..32) { say("A bot's name is 2 to 32 characters.", BAD); return }
+        val c = botClient()
+        bg({ c.setProfile(username = name) }) { me, err ->
+            if (me == null) { say(err ?: "", BAD); return@bg }
+            botLabel(me)
+            say("The bot is now ${me.optString("username", name)}.", GOOD)
+        }
+    }
+
+    private fun setBotPictureFrom(uri: Uri) {
+        bg({
+            val data = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: throw Core.PupError("That picture could not be opened")
+            Core.picture(data, displayName(uri))
+        }) { pic, err -> if (pic == null) say(err ?: "", BAD) else setBotPicture(pic) }
+    }
+
+    private fun setBotPicture(pic: Core.Picture?) {
+        if (pic != null) try { Core.avatarDataUri(pic) } catch (e: Core.PupError) { say(e.message ?: "", BAD); return }
+        if (store.secret("bot_token").isEmpty()) { say("Save the bot's token first.", BAD); return }
+        val c = botClient()
+        say("Changing the bot's picture...")
+        bg({ c.setProfile(avatar = pic, clearAvatar = pic == null) }) { _, err ->
+            if (err != null) say(err, BAD) else say(if (pic != null) "The bot's picture was changed." else "The bot's picture was removed.", GOOD)
+        }
     }
 
     // ------------------------------------------------------------------ updates
@@ -660,15 +996,18 @@ class MainActivity : Activity() {
         updateBtn = button("Check for updates") { checkUpdate() }
         avatarIn = field("Picture for each post (https link)").apply { setText(store.get("avatar_url")) }
         updateLbl = label("Version " + (try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "?" }), dim = true, size = 13f)
+        val botRadio = RadioButton(this).apply { id = View.generateViewId(); text = "My bot"; setTextColor(INK); buttonTintList = ColorStateList.valueOf(ORANGE) }
         val hook = RadioButton(this).apply { id = View.generateViewId(); text = "My webhook"; setTextColor(INK); buttonTintList = ColorStateList.valueOf(ORANGE) }
         val relay = RadioButton(this).apply { id = View.generateViewId(); text = "The relay (whitelisted)"; setTextColor(INK); buttonTintList = ColorStateList.valueOf(ORANGE) }
         modeGroup = RadioGroup(this).apply {
             orientation = RadioGroup.VERTICAL
+            addView(botRadio)
             addView(hook)
             addView(relay)
-            check(if (store.get("mode") == "relay") relay.id else hook.id)
+            check(when (mode()) { "relay" -> relay.id; "webhook" -> hook.id; else -> botRadio.id })
             setOnCheckedChangeListener { _, id ->
-                store.set("mode", if (id == relay.id) "relay" else "webhook")
+                store.set("mode", when (id) { relay.id -> "relay"; hook.id -> "webhook"; else -> "bot" })
+                whereLabel()
                 say(modeText())
             }
         }
@@ -1314,6 +1653,7 @@ class MainActivity : Activity() {
         private const val REQ_WAD = 10
         private const val REQ_OVERLAY = 11
         private const val REQ_AVATAR = 12
+        private const val REQ_BOT_PICTURE = 13
         private val CARD = 0xFFFBFBFB.toInt()
         private val LINE = 0xFFC8CCD4.toInt()
         private val STRIP = 0xFFE6E7EA.toInt()
