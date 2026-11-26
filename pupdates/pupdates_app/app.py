@@ -574,7 +574,8 @@ class PupdatesApp:
         ttk.Button(r, text="Now", command=lambda: self.rp_vars["rp_start"].set(str(int(time.time())))).pack(side="left", padx=(6, 0))
         ttk.Label(r, text="Unix seconds; empty = no timer", style="Dim.TLabel").pack(side="left", padx=6)
         field("Button text", "rp_button_label")
-        field("Button link", "rp_button_url")
+        r = field("Button link", "rp_button_url")
+        ttk.Button(r, text="Test", command=self.rp_test_link).pack(side="left", padx=(6, 0))
         field("Picture", "rp_image")
         r = self._row(p, pady=(4, 0))
         ttk.Button(r, text="Apply", command=self.apply_rich_presence).pack(side="left")
@@ -638,8 +639,19 @@ class PupdatesApp:
         else:
             self.rp_state_lbl.configure(text="No bot token saved: copy the Application ID from the Developer Portal.", style="Bad.TLabel")
 
+    def rp_test_link(self):
+        url = richpresence.clean_url(self.rp_vars["rp_button_url"].get())
+        note = richpresence.button_note(self.rp_vars["rp_button_label"].get(), self.rp_vars["rp_button_url"].get())
+        self.rp_state_lbl.configure(text=note, style=("Dim" if url else "Bad") + ".TLabel")
+        if url:
+            webbrowser.open(url)
+
     def _rp_activity(self):
         v = {k: var.get().strip() for k, var in self.rp_vars.items()}
+        fixed = richpresence.clean_url(v["rp_button_url"])
+        if fixed and fixed != v["rp_button_url"]:            # "discord.gg/abc" -> "https://discord.gg/abc"
+            v["rp_button_url"] = fixed
+            self.rp_vars["rp_button_url"].set(fixed)
         for k, val in v.items():
             self.settings.set(k, val)
         start = v["rp_start"]
@@ -679,7 +691,8 @@ class PupdatesApp:
         app_id, act = self._rp_activity()
         if self.rich and app_id == self.rich.app_id:
             self.rich.update(act)
-            self.rp_state_lbl.configure(text="Updating...", style="Dim.TLabel")
+            self.rp_state_lbl.configure(text="Updating... " + richpresence.button_note(self.rp_vars["rp_button_label"].get(),
+                                                                                   self.rp_vars["rp_button_url"].get()), style="Dim.TLabel")
         elif self.rich:
             self.start_rich_presence()
         else:

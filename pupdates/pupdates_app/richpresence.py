@@ -9,6 +9,7 @@ import os
 import struct
 import sys
 import threading
+import urllib.parse
 import uuid
 
 TYPES = {"Playing": 0, "Listening": 2, "Watching": 3, "Competing": 5}
@@ -38,11 +39,39 @@ def build_activity(kind, details, state, start=None, button_label="", button_url
         act["state"] = state.strip()[:128]
     if start:
         act["timestamps"] = {"start": int(start)}
-    if button_label.strip() and button_url.strip().startswith(("https://", "http://")):
-        act["buttons"] = [{"label": button_label.strip()[:32], "url": button_url.strip()[:512]}]
+    url = clean_url(button_url)
+    if button_label.strip() and url:
+        act["buttons"] = [{"label": button_label.strip()[:32], "url": url}]
     if image.strip():
         act["assets"] = {"large_image": image.strip()[:256]}
     return act
+
+
+def clean_url(url):
+    """The button's link with https:// added when it was typed without it ("discord.gg/abc"); "" if it is not a link."""
+    url = (url or "").strip()
+    if not url:
+        return ""
+    if "://" not in url:
+        url = "https://" + url
+    u = urllib.parse.urlparse(url)
+    if u.scheme not in ("https", "http") or "." not in u.netloc or " " in url or len(url) > 512:
+        return ""
+    return url
+
+
+def button_note(label, url):
+    """What happens to the button, in words (shown under Apply)."""
+    label, link = (label or "").strip(), clean_url(url)
+    if not label and not (url or "").strip():
+        return "No button."
+    if not label:
+        return "No button: give it a text."
+    if not link:
+        return "No button: \"%s\" is not a link (it should look like https://discord.gg/abc)." % (url or "").strip()
+    if len(label) > 32:
+        return "Button \"%s\" (cut to Discord's 32 letters) opens %s." % (label[:32], link)
+    return "Button \"%s\" opens %s." % (label, link)
 
 
 class Pipe:
@@ -159,7 +188,14 @@ class RichPresence:
             self._set(act)
             note = " (this Discord app version only shows Playing)"
         user = (ready.get("data") or {}).get("user") or {}
-        return "Showing on %s's profile%s." % (user.get("username", "your"), note)
+        return "Showing on %s's profile%s.%s" % (user.get("username", "your"), note, self.button_text())
+
+    def button_text(self):
+        b = (self.activity or {}).get("buttons") or []
+        if not b:
+            return " No button."
+        return (" Button \"%s\" -> %s: other people see it on your profile; Discord never shows your own buttons to you."
+                % (b[0]["label"], b[0]["url"]))
 
     def run(self):
         while not self.stopped.is_set():
@@ -173,7 +209,7 @@ class RichPresence:
                         self.changed.clear()
                         with self.lock:
                             self._set(self.activity)
-                        self.on_state("Updated.", True)
+                        self.on_state("Updated." + self.button_text(), True)
                     else:
                         with self.lock:                  # a quiet check that Discord is still there
                             self._set(self.activity)

@@ -286,6 +286,22 @@ class RichPresenceTest(unittest.TestCase):
         self.assertEqual((s.get("bot_activity_type"), s.get("bot_activity_text")), ("Listening", "Jae but mainly Claude"))
         shutil.rmtree(s.folder, ignore_errors=True)
 
+    def test_button_links(self):
+        self.assertEqual(richpresence.clean_url("discord.gg/abc"), "https://discord.gg/abc")
+        self.assertEqual(richpresence.clean_url(" https://discord.gg/eDC7V9bnAX "), "https://discord.gg/eDC7V9bnAX")
+        self.assertEqual(richpresence.clean_url("my server"), "")
+        self.assertEqual(richpresence.clean_url("ftp://x.com"), "")
+        act = richpresence.build_activity("Listening", "a", "b", None, "Join", "discord.gg/abc")
+        self.assertEqual(act["buttons"], [{"label": "Join", "url": "https://discord.gg/abc"}])
+        self.assertIn("not a link", richpresence.button_note("Join", "my server"))
+        self.assertIn("give it a text", richpresence.button_note("", "discord.gg/abc"))
+        self.assertIn("opens https://discord.gg/abc", richpresence.button_note("Join", "discord.gg/abc"))
+        rp = self._rp(FakePipe())
+        text = rp.connect_once()
+        self.assertIn("Join for more Pupdates", text)
+        self.assertIn("never shows your own buttons", text)
+        self.assertEqual(rp.activity["buttons"][0]["url"], "https://discord.gg/eDC7V9bnAX")
+
     def _rp(self, pipe, app_id="1575303315123456789"):
         act = richpresence.build_activity("Listening", "May Your Heart Be", "Your Guiding Key", 1795676718,
                                           "Join for more Pupdates", "https://discord.gg/eDC7V9bnAX")
@@ -294,7 +310,7 @@ class RichPresenceTest(unittest.TestCase):
     def test_hello_then_set_activity(self):
         pipe = FakePipe()
         rp = self._rp(pipe)
-        self.assertEqual(rp.connect_once(), "Showing on jae's profile.")
+        self.assertTrue(rp.connect_once().startswith("Showing on jae's profile. Button"))
         self.assertEqual(pipe.sent[0], (0, {"v": 1, "client_id": "1575303315123456789"}))
         op, msg = pipe.sent[1]
         self.assertEqual((op, msg["cmd"], msg["args"]["pid"]), (1, "SET_ACTIVITY", os.getpid()))
@@ -337,9 +353,9 @@ class RichPresenceTest(unittest.TestCase):
                                        wait=lambda s: None)
         rp.start()
         self.assertIn("not running", states.get(timeout=5)[0])
-        self.assertEqual(states.get(timeout=5), ("Showing on jae's profile.", True))
+        self.assertEqual(states.get(timeout=5), ("Showing on jae's profile. No button.", True))
         rp.update(richpresence.build_activity("Listening", "new", "b"))
-        self.assertEqual(states.get(timeout=5), ("Updated.", True))
+        self.assertEqual(states.get(timeout=5), ("Updated. No button.", True))
         rp.stop()
 
 
