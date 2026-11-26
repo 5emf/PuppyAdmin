@@ -1,0 +1,79 @@
+# Builds the Pupdates Android app (APK) and runs its unit tests.
+# The APK is attached to each run as the artifact "Pupdates-android".
+#
+# Optional, for updates that install over the previous version: add these repository secrets
+# (Settings > Secrets and variables > Actions) and a signed release APK is built too:
+#   PUPDATES_KEYSTORE_B64       base64 of a keystore made with
+#                               keytool -genkeypair -v -keystore pupdates.jks -alias pupdates -keyalg RSA -keysize 2048 -validity 10000
+#   PUPDATES_KEYSTORE_PASSWORD  its store password
+#   PUPDATES_KEY_ALIAS          pupdates
+#   PUPDATES_KEY_PASSWORD       its key password
+# Without them only the debug APK is built; each run signs it with a new debug key, so
+# installing a newer one means uninstalling the old one first (that clears its saved settings).
+name: Pupdates (Android)
+
+on:
+  push:
+    paths:
+      - "pupdates/android/**"
+      - ".github/workflows/pupdates-android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Release keystore (when the secrets exist)
+        env:
+          KEYSTORE_B64: ${{ secrets.PUPDATES_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/pupdates.jks"
+            echo "PUPDATES_KEYSTORE_FILE=$RUNNER_TEMP/pupdates.jks" >> "$GITHUB_ENV"
+            echo "Release signing on"
+          else
+            echo "No PUPDATES_KEYSTORE_B64 secret: debug APK only"
+          fi
+
+      - name: Unit tests and debug APK
+        working-directory: pupdates/android
+        run: gradle --no-daemon testDebugUnitTest assembleDebug
+
+      - name: Signed release APK
+        if: env.PUPDATES_KEYSTORE_FILE != ''
+        working-directory: pupdates/android
+        env:
+          PUPDATES_KEYSTORE_PASSWORD: ${{ secrets.PUPDATES_KEYSTORE_PASSWORD }}
+          PUPDATES_KEY_ALIAS: ${{ secrets.PUPDATES_KEY_ALIAS }}
+          PUPDATES_KEY_PASSWORD: ${{ secrets.PUPDATES_KEY_PASSWORD }}
+        run: gradle --no-daemon assembleRelease
+
+      - name: Collect
+        run: |
+          mkdir -p out
+          cp pupdates/android/app/build/outputs/apk/debug/app-debug.apk out/Pupdates-debug.apk
+          if [ -f pupdates/android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp pupdates/android/app/build/outputs/apk/release/app-release.apk out/Pupdates.apk
+          fi
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pupdates-android
+          path: out/*.apk
+          if-no-files-found: error
