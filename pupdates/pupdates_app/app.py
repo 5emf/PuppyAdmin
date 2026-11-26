@@ -1215,10 +1215,14 @@ class PupdatesApp:
         return True
 
     def close(self):
-        try:
-            self.root.after_cancel(self._after)
-        except (tk.TclError, AttributeError):
-            pass
+        for job in (getattr(self, "_after", None), getattr(self, "_preview_job", None)):   # the tick and a pending preview redraw
+            if job is None:
+                continue
+            try:
+                self.root.after_cancel(job)
+            except tk.TclError:
+                pass
+        self._preview_job = None
         self.root.destroy()
 
 
