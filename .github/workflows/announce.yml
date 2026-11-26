@@ -1,0 +1,57 @@
+name: Discord announcements
+
+# Posts to your Discord channel when a push changes Puppy Admin's SCRIPT_BUILD or the
+# companion's PAYLOAD_VERSION, or when you press "Run workflow" with your own message.
+# Needs the repository secret DISCORD_WEBHOOK_URL (Discord: channel settings > Integrations >
+# Webhooks > New Webhook > Copy Webhook URL). Without it the workflow posts nothing.
+
+on:
+  push:
+    branches: [ccr-3b4dfcff-nyfy0w]
+    paths:
+      - PuppyAdmin.lua
+      - companion/puppy_companion/_payload.py
+  workflow_dispatch:
+    inputs:
+      title:
+        description: Title of the announcement
+        required: true
+        default: Puppy Admin news
+      message:
+        description: "Text (use \\n for new lines)"
+        required: true
+      ping:
+        description: "none, here, everyone or role:<role id>"
+        required: false
+        default: none
+
+permissions:
+  contents: read
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 100
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test the announcer
+        run: python -m unittest tools/test_announce.py
+      - name: Announce the update
+        if: github.event_name == 'push'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: python tools/announce.py --push "$BEFORE" "$AFTER"
+      - name: Post your message
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TITLE: ${{ inputs.title }}
+          MESSAGE: ${{ inputs.message }}
+          PING: ${{ inputs.ping }}
+        run: python tools/announce.py --title "$TITLE" --message "$MESSAGE" --ping "$PING"

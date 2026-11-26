@@ -31,6 +31,9 @@
 - The main chunk sits at Lua's 200-local limit. Put new code in functions or `do` blocks, or on tables such as `UIAPI.*`, instead of adding top-level locals.
 - Check that it parses with `luac5.4 -p` (on a copy with the engine stubbed when needed), and compare free names and global writes against the previous version.
 
+## Discord announcements
+- `.github/workflows/announce.yml` + `tools/announce.py` (stdlib; tests `python -m unittest tools/test_announce.py`): on a push to the branch that changes `PuppyAdmin.lua` / `_payload.py`, posts an embed per product whose `SCRIPT_BUILD` / `PAYLOAD_VERSION` changed (commit subjects in the range as the list, Co-Authored-By / Claude-Session lines dropped, the loadstring, a compare link) to the Discord webhook in the repository secret `DISCORD_WEBHOOK_URL`; "Run workflow" posts a custom title / message with an optional ping (none / here / everyone / role:<id>; mentions are opt-in via allowed_mentions). No secret = nothing posted, no failure. Run locally with `--dry-run`. The webhook URL is never stored in the repo.
+
 ## Puppy Companion (desktop app, `companion/`)
 - Windows app in Python 3 with only the standard library (Tkinter, ctypes); built into `PuppyCompanion.exe` with PyInstaller by `.github/workflows/companion.yml` (tests, build, then the built program's `--selftest`). Keep the tests passing: `python -m unittest discover -s tests` from `companion/` (window tests need Tk and a display; under Linux use `xvfb-run`).
 - Login cookies: encrypted with DPAPI (`secure.py`), never logged (`redact.py`), never written to the executor workspace, and sent only to roblox.com. Do not add any other destination for them.
