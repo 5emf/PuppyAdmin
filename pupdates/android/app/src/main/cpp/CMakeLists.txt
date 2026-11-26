@@ -45,7 +45,7 @@ target_include_directories(doomcore PUBLIC "${DG}" "${CMAKE_CURRENT_LIST_DIR}")
 target_compile_definitions(doomcore PRIVATE PUPPY_ADMIN NORMALUNIX LINUX _DEFAULT_SOURCE)
 target_compile_options(doomcore PRIVATE -w -fno-strict-aliasing)
 
-add_library(emucore STATIC emu_lua.cpp)
+add_library(emucore STATIC emu_lua.cpp emu_games.cpp)
 target_include_directories(emucore PUBLIC "${CMAKE_CURRENT_LIST_DIR}")
 target_link_libraries(emucore PUBLIC Luau.VM Luau.Compiler Luau.CodeGen)
 

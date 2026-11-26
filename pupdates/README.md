@@ -17,10 +17,16 @@ just a column of round icons beside a white card.
   person). Anyone can load them; **Save to GitHub** needs a fine-grained GitHub token for
   5emf/PuppyAdmin with Contents: read and write (stored encrypted). Puppy Admin picks changes up
   within a minute or two.
-- **Games** (Android): Puppy Admin's own Game Boy and Game Boy Advance emulators (the same Luau
+- **Games** (Android): Puppy Admin's mini games (Snake, Stack Drop, Treat Chase, Star Pup and
+  Puppy Fighter: the same rules from `PuppyAdmin.lua`, the same sprite sheets, stage pictures and
+  fighter sounds, best scores kept), and Puppy Admin's own Game Boy and Game Boy Advance emulators (the same Luau
   modules as in Roblox, run in an embedded Luau VM) and the Doom engine (doomgeneric, compiled
   natively). Add your own ROMs / WADs (the app ships none); Freedoom is a free download. On-screen
   pad, GBA sound, Doom sound effects (no music), battery saves kept in the app.
+- **Pet** (Android): a Tamagotchi-style pet cat drawn from the owner's original character sheet
+  (`assets/pet/cat_source.jpg`, cut by `tools/make_pet_sheet.py`): it wanders, idles, eats,
+  cheers, sleeps and cries. Feed, Play, Sleep / Wake up, tap to pat, rename. Food, fun and energy
+  go down over time, also while the app is closed.
 - **Settings**: post straight to your webhook, or through the relay with an access key; the
   overlay (Windows: stay on top of other windows; Android: a bubble over every app that opens
   Pupdates on top of what you are doing); **Check for updates** (like the companion: downloads

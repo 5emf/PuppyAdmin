@@ -28,7 +28,7 @@ DESK = os.path.join(ROOT, "pupdates", "pupdates_app", "art_data.py")
 RES = os.path.join(ROOT, "pupdates", "android", "app", "src", "main", "res")
 ICO = os.path.join(ROOT, "pupdates", "Pupdates.ico")
 S = 4
-ICONS = ("compose", "updates", "tags", "games", "whitelist", "settings", "picture", "send", "close")
+ICONS = ("compose", "updates", "tags", "games", "pet", "whitelist", "settings", "picture", "send", "close")
 STATES = ("normal", "hover", "chosen")
 ORANGE = (245, 155, 40)
 GREY_GLYPH = (112, 116, 126)
@@ -67,6 +67,12 @@ def glyph(name, size):
         d.line([(c - r * 0.8, c + r * 0.5), (c - r * 0.25, c - r * 0.1), (c + r * 0.15, c + r * 0.3),
                 (c + r * 0.42, c + r * 0.05), (c + r * 0.8, c + r * 0.5)], fill=255, width=w, joint="curve")
         d.ellipse([c + r * 0.25, c - r * 0.5, c + r * 0.55, c - r * 0.2], fill=255)
+    elif name == "pet":  # a cat's head: round face, two ears, eyes
+        d.ellipse([c - r * 0.85, c - r * 0.55, c + r * 0.85, c + r * 0.95], outline=255, width=w)
+        d.line([(c - r * 0.78, c - r * 0.2), (c - r * 0.7, c - r * 0.95), (c - r * 0.25, c - r * 0.55)], fill=255, width=w, joint="curve")
+        d.line([(c + r * 0.78, c - r * 0.2), (c + r * 0.7, c - r * 0.95), (c + r * 0.25, c - r * 0.55)], fill=255, width=w, joint="curve")
+        for dx in (-0.35, 0.35):
+            d.ellipse([c + r * dx - w * 0.8, c + r * 0.15 - w * 0.8, c + r * dx + w * 0.8, c + r * 0.15 + w * 0.8], fill=255)
     elif name == "send":  # a paper plane
         pts = [(c - r, c - r * 0.1), (c + r, c - r * 0.75), (c + r * 0.2, c + r * 0.85), (c - r * 0.1, c + r * 0.2)]
         d.line(pts + [pts[0]], fill=255, width=w, joint="curve")

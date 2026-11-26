@@ -48,14 +48,15 @@ class MainActivity : Activity() {
     private val pool = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
 
-    private val sections = listOf("compose", "updates", "tags", "games", "whitelist", "settings")
-    private val titles = mapOf("compose" to "Compose", "updates" to "Updates", "tags" to "Tags", "games" to "Games", "whitelist" to "Whitelist", "settings" to "Settings")
+    private val sections = listOf("compose", "updates", "tags", "games", "pet", "whitelist", "settings")
+    private val titles = mapOf("compose" to "Compose", "updates" to "Updates", "tags" to "Tags", "games" to "Games", "pet" to "Pet", "whitelist" to "Whitelist", "settings" to "Settings")
     private val descriptions = mapOf(
         "compose" to "Write any message, add a picture, and post it to your Discord channel.",
         "updates" to "Fill in a Puppy Admin or Puppy Companion update from GitHub.",
         "whitelist" to "Choose who may post through your relay (owner only: needs the admin key).",
         "tags" to "Edit Puppy Admin's shared tags: text, colour, picture and who wears them.",
-        "games" to "Game Boy, Game Boy Advance and Doom, with Puppy Admin's own emulators.",
+        "games" to "Puppy Admin's mini games, and Game Boy, Game Boy Advance and Doom with its emulators.",
+        "pet" to "Your pet cat: feed it, play with it, put it to bed. It lives on while the app is closed.",
         "settings" to "Webhook or relay, the bubble over other apps, and updates.")
     private val pages = HashMap<String, View>()
     private val icons = HashMap<String, ImageView>()
@@ -144,6 +145,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        main.removeCallbacksAndMessages(null)
         pool.shutdownNow()
         super.onDestroy()
     }
@@ -252,6 +254,7 @@ class MainActivity : Activity() {
             "settings_normal" -> R.drawable.ic_settings_normal; "settings_hover" -> R.drawable.ic_settings_hover; "settings_chosen" -> R.drawable.ic_settings_chosen
             "tags_normal" -> R.drawable.ic_tags_normal; "tags_hover" -> R.drawable.ic_tags_hover; "tags_chosen" -> R.drawable.ic_tags_chosen
             "games_normal" -> R.drawable.ic_games_normal; "games_hover" -> R.drawable.ic_games_hover; "games_chosen" -> R.drawable.ic_games_chosen
+            "pet_normal" -> R.drawable.ic_pet_normal; "pet_hover" -> R.drawable.ic_pet_hover; "pet_chosen" -> R.drawable.ic_pet_chosen
             "picture_normal" -> R.drawable.ic_picture_normal; "picture_hover" -> R.drawable.ic_picture_hover
             "send_normal" -> R.drawable.ic_send_normal; "send_hover" -> R.drawable.ic_send_hover
             "close_normal" -> R.drawable.ic_close_normal; "close_hover" -> R.drawable.ic_close_hover
@@ -312,6 +315,7 @@ class MainActivity : Activity() {
         pages["whitelist"] = buildWhitelist()
         pages["tags"] = buildTags()
         pages["games"] = buildGames()
+        pages["pet"] = buildPet()
         pages["settings"] = buildSettings()
         return root
     }
@@ -739,6 +743,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        refreshPet()
         if (::bubbleChk.isInitialized) {
             val on = store.getBool("overlay", false) && android.provider.Settings.canDrawOverlays(this)
             if (bubbleChk.isChecked && !on && android.provider.Settings.canDrawOverlays(this)) startBubble(quiet = true)
@@ -814,6 +819,9 @@ class MainActivity : Activity() {
 
     private fun refreshGames() {
         gamesBox.removeAllViews()
+        gamesBox.addView(row(label("Mini games", bold = true, size = 16f), grow(View(this)),
+            button("Play", accent = true) { startActivity(Intent(this, MiniGamesActivity::class.java)) }, top = 10))
+        gamesBox.addView(label("Snake, Stack Drop, Treat Chase, Star Pup and Puppy Fighter: the same games as Puppy Admin's Games window.", dim = true, size = 13f))
         fun section(title: String, kind: String, req: Int, extra: View? = null) {
             gamesBox.addView(row(label(title, bold = true, size = 16f), grow(View(this)), button(if (kind == "doom") "Add WAD" else "Add ROM") { pick(req) }, top = 14))
             if (extra != null) gamesBox.addView(extra)
@@ -878,6 +886,87 @@ class MainActivity : Activity() {
         }) { _, err ->
             if (err != null) say(err, BAD) else { say("Freedoom is ready.", GOOD); refreshGames(); play("doom", freedoom) }
         }
+    }
+
+    // ------------------------------------------------------------------ pet
+    private lateinit var pet: Pet
+    private lateinit var petView: PetView
+    private lateinit var petName: TextView
+    private lateinit var petMood: TextView
+    private lateinit var petBars: List<Pair<String, View>>
+    private lateinit var sleepBtn: TextView
+    private val petTick = object : Runnable {
+        override fun run() { refreshPet(); main.postDelayed(this, 30_000) }
+    }
+
+    private fun bar(): View = View(this).apply { background = plate(GOOD, GOOD) }
+
+    private fun buildPet(): View {
+        val now = System.currentTimeMillis()
+        pet = Pet.fromJson(store.get("pet"), now)
+        pet.advance(now)
+        petView = PetView(this) { petDo("pat") }.also { it.pet = pet }
+        petName = label(pet.name, bold = true, size = 18f)
+        petMood = label("", dim = true, size = 13f)
+        petBars = listOf("Food", "Fun", "Energy").map { it to bar() }
+        sleepBtn = button("Sleep") { petDo("sleep") }
+        val bars = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        for ((name, b) in petBars) {
+            val track = FrameLayout(this).apply { background = plate(0xFFE6E7EA.toInt(), LINE) }
+            track.addView(b, FrameLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT))
+            bars.addView(row(label(name, size = 13f).apply { minWidth = dp(56) }, gap(grow(track), 6), top = 4))
+            track.layoutParams = LinearLayout.LayoutParams(0, dp(12), 1f).also { it.leftMargin = dp(6) }
+        }
+        main.postDelayed(petTick, 30_000)
+        val box = page(
+            row(petName, gap(petMood, 8), grow(View(this)), button("Rename") { renamePet() }, top = 0),
+            petView.also { it.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(200)).also { lp -> lp.topMargin = dp(6) } },
+            bars,
+            row(button("Feed", accent = true) { petDo("feed") }, gap(button("Play", accent = true) { petDo("play") }), gap(sleepBtn), top = 12),
+            label("Tap the cat to pat it. Food, fun and energy go down over time, also while the app is closed; sleep refills energy.", dim = true, size = 13f))
+        refreshPet()
+        return box
+    }
+
+    private fun refreshPet() {
+        if (!::pet.isInitialized) return
+        val now = System.currentTimeMillis()
+        pet.advance(now)
+        petName.text = pet.name
+        petMood.text = "${pet.mood()}  \u00b7  Lv ${pet.level}  \u00b7  ${pet.ageDays(now)} days"
+        val values = listOf(pet.hunger, pet.joy, pet.energy)
+        for ((i, pb) in petBars.withIndex()) {
+            val v = values[i]
+            val track = pb.second.parent as? View ?: continue
+            val w = ((track.width.takeIf { it > 0 } ?: dp(200)) * v / 100.0).toInt()
+            pb.second.layoutParams = (pb.second.layoutParams as FrameLayout.LayoutParams).also { it.width = w }
+            pb.second.background = plate(if (v < Pet.LOW) BAD else if (v < 50) 0xFFF0CD3C.toInt() else GOOD, 0x00000000)
+            pb.second.requestLayout()
+        }
+        sleepBtn.text = if (pet.asleep) "Wake up" else "Sleep"
+        store.set("pet", pet.toJson())
+    }
+
+    private fun petDo(what: String) {
+        val now = System.currentTimeMillis()
+        val answer = when (what) {
+            "feed" -> pet.feed(now).also { if (it.isEmpty()) petView.play(Pet.Frames.EAT, 2600) }
+            "play" -> pet.play(now).also { if (it.isEmpty()) petView.play(Pet.Frames.HAPPY + Pet.Frames.CAPE + Pet.Frames.HAPPY, 2400) }
+            "pat" -> pet.pat(now).also { if (it.isEmpty()) petView.play(Pet.Frames.HAPPY, 900) }
+            else -> pet.toggleSleep(now)
+        }
+        if (answer.isNotEmpty()) { say(answer); if (!pet.asleep) petView.play(Pet.Frames.SAD, 1200) }
+        else if (what != "pat") say(when (what) { "feed" -> "Yum!"; "play" -> "${pet.name} had fun!"; else -> if (pet.asleep) "Good night." else "Good morning!" }, GOOD)
+        refreshPet()
+    }
+
+    private fun renamePet() {
+        val input = field("Name").apply { setText(pet.name) }
+        AlertDialog.Builder(this).setTitle("Your pet's name").setView(input)
+            .setPositiveButton("OK") { _, _ ->
+                val n = input.text.toString().trim().take(20)
+                if (n.isNotEmpty()) { pet.name = n; refreshPet() }
+            }.setNegativeButton("Cancel", null).show()
     }
 
     // ------------------------------------------------------------------ tags

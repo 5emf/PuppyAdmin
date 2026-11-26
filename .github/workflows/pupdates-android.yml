@@ -17,6 +17,9 @@ on:
       - "emu/gba-*.lua"
       - "emu/doom-src/**"
       - "assets/gba/**"
+      - "assets/games/**"
+      - "assets/sfx/fighter/**"
+      - "PuppyAdmin.lua"
       - ".github/workflows/pupdates-android.yml"
   workflow_dispatch:
 

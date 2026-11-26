@@ -90,6 +90,42 @@ JNIEXPORT jint JNICALL Java_com_pupdates_app_Native_doomAudio(JNIEnv *env, jclas
     return r;
 }
 
+JNIEXPORT jstring JNICALL Java_com_pupdates_app_Native_gamesOpen(JNIEnv *env, jclass, jbyteArray src) {
+    Bytes s(env, src);
+    char err[512] = {0};
+    return errOrNull(env, gm_open(s.c(), size_t(s.len), err, sizeof(err)), err);
+}
+
+// returns the results, or null with the error in results of gamesError()
+static std::string gmErr;
+JNIEXPORT jobjectArray JNICALL Java_com_pupdates_app_Native_gamesCall(JNIEnv *env, jclass, jstring fn, jobjectArray args) {
+    const char *f = env->GetStringUTFChars(fn, nullptr);
+    jsize n = args ? env->GetArrayLength(args) : 0;
+    std::vector<std::string> in;
+    for (jsize i = 0; i < n; i++) {
+        auto js = static_cast<jstring>(env->GetObjectArrayElement(args, i));
+        const char *c = env->GetStringUTFChars(js, nullptr);
+        in.emplace_back(c);
+        env->ReleaseStringUTFChars(js, c);
+        env->DeleteLocalRef(js);
+    }
+    std::vector<const char *> ptrs;
+    for (auto &x : in) ptrs.push_back(x.c_str());
+    std::vector<std::string> out;
+    int ok = gm_call(f, ptrs.data(), int(ptrs.size()), out, gmErr);
+    env->ReleaseStringUTFChars(fn, f);
+    if (!ok) return nullptr;
+    jobjectArray arr = env->NewObjectArray(jsize(out.size()), env->FindClass("java/lang/String"), nullptr);
+    for (size_t i = 0; i < out.size(); i++) {
+        jstring js = env->NewStringUTF(out[i].c_str());
+        env->SetObjectArrayElement(arr, jsize(i), js);
+        env->DeleteLocalRef(js);
+    }
+    return arr;
+}
+
+JNIEXPORT jstring JNICALL Java_com_pupdates_app_Native_gamesError(JNIEnv *env, jclass) { return env->NewStringUTF(gmErr.c_str()); }
+
 JNIEXPORT jstring JNICALL Java_com_pupdates_app_Native_doomError(JNIEnv *env, jclass) { return env->NewStringUTF(doom_error()); }
 
 }  // extern "C"

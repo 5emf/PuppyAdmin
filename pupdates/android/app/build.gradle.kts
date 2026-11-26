@@ -79,4 +79,25 @@ val copyEmuAssets = tasks.register<Copy>("copyEmuAssets") {
         }
     }
 }
-tasks.named("preBuild") { dependsOn(copyEmuAssets) }
+// Puppy Admin's mini games: the MiniGames block of PuppyAdmin.lua (plain Lua rules), their sprite
+// sheets / stage pictures and Puppy Fighter's sounds
+val copyGameAssets = tasks.register("copyGameAssets") {
+    val script = repoRoot.resolve("PuppyAdmin.lua")
+    val out = layout.buildDirectory.dir("generated/emuAssets").get().asFile
+    inputs.file(script)
+    inputs.dir(repoRoot.resolve("assets/games"))
+    outputs.dir(out.resolve("games"))
+    doLast {
+        val s = script.readText()
+        val start = s.indexOf("local MiniGames = (function()")
+        val endMark = "return MiniGames\nend)()"
+        val end = s.indexOf(endMark, start)
+        check(start >= 0 && end > start) { "the MiniGames block was not found in PuppyAdmin.lua" }
+        val dir = out.resolve("games").apply { mkdirs() }
+        dir.resolve("minigames.lua").writeText(s.substring(start, end + endMark.length) + "\nreturn MiniGames\n")
+        repoRoot.resolve("assets/games").listFiles()?.filter { it.name.endsWith(".png") }?.forEach { it.copyTo(dir.resolve(it.name), true) }
+        val sfx = out.resolve("sfx/fighter").apply { mkdirs() }
+        repoRoot.resolve("assets/sfx/fighter").listFiles()?.filter { it.name.endsWith(".ogg") }?.forEach { it.copyTo(sfx.resolve(it.name), true) }
+    }
+}
+tasks.named("preBuild") { dependsOn(copyEmuAssets, copyGameAssets) }

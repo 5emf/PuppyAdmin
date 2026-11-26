@@ -38,4 +38,9 @@ const char *doom_error(void);
 
 #ifdef __cplusplus
 }
+#include <string>
+#include <vector>
+// Puppy Admin's mini games (own Luau VM). gm_call runs driver function fn with string arguments.
+int gm_open(const char *src, size_t len, char *err, size_t errlen);
+int gm_call(const char *fn, const char *const *args, int nargs, std::vector<std::string> &out, std::string &err);
 #endif

@@ -31,4 +31,10 @@ object Native {
     /** stereo 16-bit at 22050 Hz into out (pairs) */
     @JvmStatic external fun doomAudio(out: ShortArray): Int
     @JvmStatic external fun doomError(): String
+
+    /** Puppy Admin's mini games (the MiniGames block of PuppyAdmin.lua) in their own Luau VM. null = loaded, else the error. */
+    @JvmStatic external fun gamesOpen(module: ByteArray): String?
+    /** runs a driver function (list, select, new, input, update, release, frame) -> its results, or null (see gamesError) */
+    @JvmStatic external fun gamesCall(fn: String, args: Array<String>): Array<String>?
+    @JvmStatic external fun gamesError(): String
 }

@@ -7,6 +7,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 #include "emu_core.h"
 
@@ -28,6 +29,46 @@ static void savePpm(const char *path, const uint8_t *rgba, int w, int h) {
 int main(int argc, char **argv) {
     if (argc < 4) { fprintf(stderr, "usage: emu_test gb|gba MODULE ROM FRAMES [BIOS] | doom WAD FRAMES\n"); return 2; }
     std::string kind = argv[1];
+    if (kind == "games") {   // emu_test games minigames.lua FRAMES: every game, random input, no errors allowed
+        std::string src = slurp(argv[2]);
+        char e[512] = {0};
+        if (!gm_open(src.data(), src.size(), e, sizeof(e))) { printf("OPEN FAILED: %s\n", e); return 1; }
+        std::vector<std::string> out;
+        std::string err;
+        gm_call("list", nullptr, 0, out, err);
+        std::vector<std::string> ids;
+        std::stringstream ls(out[0]);
+        for (std::string line; std::getline(ls, line);) ids.push_back(line.substr(0, line.find('\t')));
+        const char *acts[] = {"left", "right", "up", "down", "rotate", "drop"};
+        int frames = atoi(argv[3]);
+        srand(7);
+        for (auto &id : ids) {
+            const char *a1[] = {id.c_str()};
+            gm_call("select", a1, 1, out, err);
+            const char *seed[] = {"42"};
+            if (!gm_call("new", seed, 1, out, err)) { printf("%s new: %s\n", id.c_str(), err.c_str()); return 1; }
+            size_t kindsSeen = 0, actorsMax = 0;
+            std::string hud, score, over;
+            int games = 1;
+            for (int i = 0; i < frames; i++) {
+                if (rand() % 6 == 0) {
+                    const char *in[] = {acts[rand() % 6], (rand() % 2) ? "1" : "0"};
+                    if (!gm_call("input", in, 2, out, err)) { printf("%s input: %s\n", id.c_str(), err.c_str()); return 1; }
+                }
+                const char *dt[] = {"0.0166"};
+                if (!gm_call("update", dt, 1, out, err)) { printf("%s update: %s\n", id.c_str(), err.c_str()); return 1; }
+                const char *sp[] = {"1"};
+                if (!gm_call("frame", sp, 1, out, err)) { printf("%s frame: %s\n", id.c_str(), err.c_str()); return 1; }
+                if (out.size() != 11) { printf("%s frame returned %zu values\n", id.c_str(), out.size()); return 1; }
+                if (!out[1].empty()) kindsSeen += std::count(out[1].begin(), out[1].end(), ';') + 1;
+                actorsMax = std::max(actorsMax, out[2].empty() ? 0 : (size_t)std::count(out[2].begin(), out[2].end(), ';') + 1);
+                hud = out[3]; over = out[5]; score = out[6];
+                if (over == "1") { gm_call("new", seed, 1, out, err); games++; }
+            }
+            printf("%-8s ok: %d frames, %d games, %zu cell kinds, up to %zu sprites, last hud \"%s\"\n", id.c_str(), frames, games, kindsSeen, actorsMax, hud.c_str());
+        }
+        return 0;
+    }
     std::vector<uint8_t> px(320 * 200 * 4);
     char err[512] = {0};
     auto t0 = std::chrono::steady_clock::now();
