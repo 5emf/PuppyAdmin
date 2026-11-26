@@ -58,5 +58,13 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="A floating button over other apps that opens Pupdates" />
         </service>
+        <service
+            android:name=".BotPresenceService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the user's own Discord bot connected so it shows as online with a status" />
+        </service>
     </application>
 </manifest>

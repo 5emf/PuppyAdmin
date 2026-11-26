@@ -45,7 +45,22 @@ just a column of round icons beside a white card.
    published to every server that follows it. **Recent posts** can be edited (the picture stays,
    edits never ping), deleted or opened in Discord. The bot's name and picture are changed there too.
 4. Settings > **Post through: My bot** (the default for new installs).
-The bot shows as offline: posting does not need it to be online.
+Posting does not need the bot to be online.
+
+## Status: the bot online, and rich presence on your profile
+- **The bot's status** (both apps, Status section, headphones icon): tick **Keep the bot online** and the
+  bot connects to Discord's gateway and shows **Listening to Jae but mainly Claude** (type, text and the
+  online / idle / dnd dot can be changed; **Apply** changes it live). Windows: while Pupdates is open.
+  Android: a background service with a small notification, also while the app is closed ("Go offline"
+  in the notification stops it). Bots show one line only: no second line, timer or buttons.
+- **Rich presence on your own profile** (Windows app only, the Discord desktop app must be running on the
+  same PC): Status > **Show it while Pupdates is open**. It talks to the Discord app's local pipe
+  (`discord-ipc-N`) and sets: Listening, "May Your Heart Be" / "Your Guiding Key", a timer from
+  1795676718 and the button **Join for more Pupdates** (https://discord.gg/eDC7V9bnAX); every field
+  can be changed. **Application ID** = your app's id (**From my bot** fills it from the bot token).
+  Discord shows "Listening to <application name>": rename the application to change that word.
+  If Discord refuses the Listening type (older Discord apps), Pupdates retries as Playing and says so.
+  The phone's Discord app cannot be set by other apps, so Android has the bot status only.
 
 ## Owner: your webhook (still works)
 In Discord: your channel > Edit Channel > Integrations > Webhooks > New Webhook > **Copy Webhook URL**.

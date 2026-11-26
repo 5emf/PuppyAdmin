@@ -447,7 +447,11 @@ class Settings:
                 "username": APP, "color": "Orange", "ping": "none", "role_id": "", "embed": True,
                 "last_script_sha": "", "last_companion_sha": "", "tags_token": "", "topmost": False, "avatar_url": "",
                 "bot_token": "", "bot_guild": "", "bot_guild_name": "", "bot_channel": "", "bot_channel_name": "",
-                "bot_channel_type": 0, "bot_publish": True, "recent_posts": []}
+                "bot_channel_type": 0, "bot_publish": True, "recent_posts": [],
+                "bot_online": False, "bot_activity_type": "Listening", "bot_activity_text": "Jae but mainly Claude", "bot_status": "online",
+                "rp_on": False, "rp_app_id": "", "rp_type": "Listening", "rp_details": "May Your Heart Be", "rp_state": "Your Guiding Key",
+                "rp_start": "1795676718", "rp_button_label": "Join for more Pupdates", "rp_button_url": "https://discord.gg/eDC7V9bnAX",
+                "rp_image": ""}
 
     def __init__(self, folder=None, protector=None):
         self.folder = folder or data_dir()

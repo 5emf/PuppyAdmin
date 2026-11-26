@@ -14,6 +14,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -48,8 +49,8 @@ class MainActivity : Activity() {
     private val pool = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
 
-    private val sections = listOf("compose", "bot", "updates", "tags", "games", "pet", "whitelist", "settings")
-    private val titles = mapOf("compose" to "Compose", "bot" to "Bot", "updates" to "Updates", "tags" to "Tags", "games" to "Games", "pet" to "Pet", "whitelist" to "Whitelist", "settings" to "Settings")
+    private val sections = listOf("compose", "bot", "status", "updates", "tags", "games", "pet", "whitelist", "settings")
+    private val titles = mapOf("compose" to "Compose", "bot" to "Bot", "status" to "Status", "updates" to "Updates", "tags" to "Tags", "games" to "Games", "pet" to "Pet", "whitelist" to "Whitelist", "settings" to "Settings")
     private val descriptions = mapOf(
         "compose" to "Write any message, add a picture, and post it to your Discord channel.",
         "updates" to "Fill in a Puppy Admin or Puppy Companion update from GitHub.",
@@ -58,6 +59,7 @@ class MainActivity : Activity() {
         "games" to "Puppy Admin's mini games, and Game Boy, Game Boy Advance and Doom with its emulators.",
         "pet" to "Your pet cat: feed it, play with it, put it to bed. It lives on while the app is closed.",
         "bot" to "Your Discord bot: sign in, pick where it posts, edit or delete its posts, change its name and picture.",
+        "status" to "Keep your bot online with a status, like \"Listening to Jae but mainly Claude\".",
         "settings" to "Bot, webhook or relay, the bubble over other apps, and updates.")
     private val pages = HashMap<String, View>()
     private val icons = HashMap<String, ImageView>()
@@ -156,6 +158,13 @@ class MainActivity : Activity() {
     // games
     private lateinit var gamesBox: LinearLayout
 
+    // status
+    private lateinit var onlineChk: CheckBox
+    private lateinit var activitySpin: Spinner
+    private lateinit var activityIn: EditText
+    private lateinit var dotSpin: Spinner
+    private lateinit var presenceLbl: TextView
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = Store(this)
@@ -164,6 +173,7 @@ class MainActivity : Activity() {
         say(modeText())
         handleShare(intent)
         if (store.getBool("overlay", false)) startBubble(quiet = true)
+        if (store.getBool("bot_online", false) && store.secret("bot_token").isNotEmpty()) BotPresenceService.start(this)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -173,6 +183,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        BotPresenceService.listener = null
         main.removeCallbacksAndMessages(null)
         pool.shutdownNow()
         tagImages?.shutdown()
@@ -285,6 +296,7 @@ class MainActivity : Activity() {
             "updates_normal" -> R.drawable.ic_updates_normal; "updates_hover" -> R.drawable.ic_updates_hover; "updates_chosen" -> R.drawable.ic_updates_chosen
             "whitelist_normal" -> R.drawable.ic_whitelist_normal; "whitelist_hover" -> R.drawable.ic_whitelist_hover; "whitelist_chosen" -> R.drawable.ic_whitelist_chosen
             "settings_normal" -> R.drawable.ic_settings_normal; "settings_hover" -> R.drawable.ic_settings_hover; "settings_chosen" -> R.drawable.ic_settings_chosen
+            "status_normal" -> R.drawable.ic_status_normal; "status_hover" -> R.drawable.ic_status_hover; "status_chosen" -> R.drawable.ic_status_chosen
             "bot_normal" -> R.drawable.ic_bot_normal; "bot_hover" -> R.drawable.ic_bot_hover; "bot_chosen" -> R.drawable.ic_bot_chosen
             "tags_normal" -> R.drawable.ic_tags_normal; "tags_hover" -> R.drawable.ic_tags_hover; "tags_chosen" -> R.drawable.ic_tags_chosen
             "games_normal" -> R.drawable.ic_games_normal; "games_hover" -> R.drawable.ic_games_hover; "games_chosen" -> R.drawable.ic_games_chosen
@@ -322,7 +334,8 @@ class MainActivity : Activity() {
             icons[name] = icon
             col.addView(icon)
         }
-        line.addView(col)
+        line.addView(ScrollView(this).apply { isVerticalScrollBarEnabled = false; addView(col) },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         val right = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         line.addView(right, LinearLayout.LayoutParams(cardW, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -348,6 +361,7 @@ class MainActivity : Activity() {
         pages["updates"] = buildUpdates()
         pages["whitelist"] = buildWhitelist()
         pages["bot"] = buildBot()
+        pages["status"] = buildStatus()
         pages["tags"] = buildTags()
         pages["games"] = buildGames()
         pages["pet"] = buildPet()
@@ -615,6 +629,55 @@ class MainActivity : Activity() {
                 startActivityForResult(Intent.createChooser(i, "The bot's picture"), REQ_BOT_PICTURE)
             }, gap(button("Remove picture") { setBotPicture(null) })),
             label("A bot always posts with its own name and picture. Discord lets a bot change its name about twice an hour.", dim = true, size = 13f))
+    }
+
+    // ------------------------------------------------------------------ status (the bot online with an activity)
+    private fun buildStatus(): View {
+        onlineChk = check("Keep the bot online (also while Pupdates is closed; shows a notification)", store.getBool("bot_online", false))
+        activitySpin = spinner(Gateway.TYPES.keys.toList(), store.get("bot_activity_type", "Listening"))
+        activityIn = field("What it shows").apply { inputType = InputType.TYPE_CLASS_TEXT; setText(store.get("bot_activity_text", BotPresenceService.DEFAULT_TEXT)) }
+        dotSpin = spinner(Gateway.STATUSES, store.get("bot_status", "online"))
+        presenceLbl = label(BotPresenceService.state.first, dim = true, size = 13f)
+        onlineChk.setOnCheckedChangeListener { _, on -> setBotOnline(on) }
+        BotPresenceService.listener = { text, ok -> presenceLbl.text = text; presenceLbl.setTextColor(if (ok) GOOD else DIM) }
+        return page(
+            label("The bot's status", bold = true, size = 16f),
+            onlineChk,
+            row(activitySpin, grow(activityIn, 6)),
+            row(label("Dot", size = 13f), gap(grow(dotSpin), 6), gap(button("Apply") { applyBotStatus() })),
+            presenceLbl,
+            label("Everyone sees it on the bot: \"Listening to Jae but mainly Claude\". Bots show one line only (no second line, timer or buttons).", dim = true, size = 13f),
+            label("Rich presence on your own profile", bold = true, size = 16f).apply { setPadding(0, dp(10), 0, 0) },
+            label("\"Listening to ... / May Your Heart Be / Your Guiding Key\" with a timer and the Join button is set from the Windows Pupdates app " +
+                "(Status section): it talks to the Discord desktop app on the PC. Discord's phone app has no way for other apps to set it.", dim = true, size = 13f))
+    }
+
+    private fun saveBotStatus() {
+        store.set("bot_activity_type", activitySpin.selectedItem?.toString() ?: "Listening")
+        store.set("bot_activity_text", activityIn.text.toString().trim())
+        store.set("bot_status", dotSpin.selectedItem?.toString() ?: "online")
+    }
+
+    private fun setBotOnline(on: Boolean) {
+        if (on && store.secret("bot_token").isEmpty()) {
+            say("Save your bot's token in Bot first.", BAD)
+            onlineChk.isChecked = false
+            return
+        }
+        saveBotStatus()
+        store.setBool("bot_online", on)
+        if (on) {
+            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIFY)
+            presenceLbl.text = "Connecting..."
+            BotPresenceService.start(this)
+        } else BotPresenceService.stop(this)
+    }
+
+    private fun applyBotStatus() {
+        saveBotStatus()
+        if (store.getBool("bot_online", false)) BotPresenceService.start(this, update = true)
+        else say("Saved. Tick \"Keep the bot online\" to show it.", GOOD)
     }
 
     private fun botLabel(me: org.json.JSONObject?) {
@@ -1655,6 +1718,7 @@ class MainActivity : Activity() {
         private const val REQ_OVERLAY = 11
         private const val REQ_AVATAR = 12
         private const val REQ_BOT_PICTURE = 13
+        private const val REQ_NOTIFY = 14
         private val CARD = 0xFFFBFBFB.toInt()
         private val LINE = 0xFFC8CCD4.toInt()
         private val STRIP = 0xFFE6E7EA.toInt()

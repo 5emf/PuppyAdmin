@@ -14,19 +14,20 @@ import tkinter as tk
 import webbrowser
 from tkinter import colorchooser, filedialog, messagebox, ttk
 
-from . import art_data, bot, core, tagpreview, tags, update
+from . import art_data, bot, core, gateway, richpresence, tagpreview, tags, update
 
 KEY = "#0d0e13"                       # see-through colour (only used for the backdrop)
 CARD, FIELD, LINE, STRIP = "#fbfbfb", "#ffffff", "#c8ccd4", "#e6e7ea"
 INK, DIM, ORANGE, GOOD, BAD = "#464646", "#8a8d96", "#f59b28", "#3f9b56", "#d0453a"
-SECTIONS = ("compose", "bot", "updates", "tags", "whitelist", "settings")
-TITLES = {"compose": "Compose", "bot": "Bot", "updates": "Updates", "tags": "Tags", "whitelist": "Whitelist", "settings": "Settings"}
+SECTIONS = ("compose", "bot", "status", "updates", "tags", "whitelist", "settings")
+TITLES = {"compose": "Compose", "bot": "Bot", "status": "Status", "updates": "Updates", "tags": "Tags", "whitelist": "Whitelist", "settings": "Settings"}
 DESCRIPTIONS = {
     "compose": "Write any message, add a picture, and post it to your Discord channel.",
     "updates": "Fill in a Puppy Admin or Puppy Companion update from GitHub.",
     "whitelist": "Choose who may post through your relay (owner only: needs the admin key).",
     "tags": "Edit Puppy Admin's shared tags (tags.json): text, colour, picture and who wears them.",
     "bot": "Your Discord bot: sign in, pick where it posts, edit or delete its posts, change its name and picture.",
+    "status": "The bot's status (\"Listening to ...\") and rich presence on your own Discord profile.",
     "settings": "Bot, webhook or relay, stay on top of other windows, and updates.",
     "minimise": "Minimise Pupdates.",
     "close": "Close Pupdates.",
@@ -131,10 +132,17 @@ class PupdatesApp:
         self._build_updates()
         self._build_tags()
         self._build_bot()
+        self._build_status()
         self._build_whitelist()
         self._build_settings()
         self.set_topmost(bool(self.settings.get("topmost")))
         self.show("compose")
+        self.presence = None        # gateway.BotPresence while the bot is kept online
+        self.rich = None            # richpresence.RichPresence while your profile shows it
+        if self.settings.get("bot_online"):
+            self.start_bot_presence()
+        if self.settings.get("rp_on"):
+            self.start_rich_presence()
         self.say(self._mode_text())
         if self.floating:
             root.update_idletasks()
@@ -515,6 +523,167 @@ class PupdatesApp:
                   style="Dim.TLabel", wraplength=470).pack(anchor="w", pady=(4, 0))
         self._bot_label()
         self._fill_posts()
+
+    # ------------------------------------------------------------------ status (bot presence + rich presence)
+    def _build_status(self):
+        p = self._page("status")
+        ttk.Label(p, text="The bot's status", style="Head.TLabel").pack(anchor="w", pady=(0, 2))
+        self.bot_online_var = tk.BooleanVar(value=bool(self.settings.get("bot_online")))
+        ttk.Checkbutton(p, text="Keep the bot online while Pupdates is open", variable=self.bot_online_var,
+                        command=self.toggle_bot_presence).pack(anchor="w")
+        r = self._row(p)
+        self.bot_type_var = tk.StringVar(value=self.settings.get("bot_activity_type"))
+        ttk.Combobox(r, textvariable=self.bot_type_var, values=list(gateway.TYPES), state="readonly", width=10).pack(side="left")
+        self.bot_text_var = tk.StringVar(value=self.settings.get("bot_activity_text"))
+        ttk.Entry(r, textvariable=self.bot_text_var).pack(side="left", fill="x", expand=True, padx=(4, 0))
+        r = self._row(p)
+        ttk.Label(r, text="Dot", width=10).pack(side="left")
+        self.bot_status_var = tk.StringVar(value=self.settings.get("bot_status"))
+        ttk.Combobox(r, textvariable=self.bot_status_var, values=list(gateway.STATUSES), state="readonly", width=8).pack(side="left")
+        ttk.Button(r, text="Apply", command=self.apply_bot_presence).pack(side="left", padx=(6, 0))
+        self.bot_state_lbl = ttk.Label(p, style="Dim.TLabel", wraplength=470, justify="left",
+                                       text="Off. Shows as \"%s %s\" on the bot for everyone." % (self.settings.get("bot_activity_type"),
+                                                                                              self.settings.get("bot_activity_text")))
+        self.bot_state_lbl.pack(anchor="w")
+        ttk.Label(p, text="Bots show one line only: no second line, timer or buttons (that is what rich presence below is for).",
+                  style="Dim.TLabel", wraplength=470).pack(anchor="w")
+
+        ttk.Label(p, text="Rich presence on your profile", style="Head.TLabel").pack(anchor="w", pady=(10, 2))
+        self.rp_on_var = tk.BooleanVar(value=bool(self.settings.get("rp_on")))
+        ttk.Checkbutton(p, text="Show it while Pupdates is open (Discord desktop app on this PC)", variable=self.rp_on_var,
+                        command=self.toggle_rich_presence).pack(anchor="w")
+        self.rp_vars = {}
+
+        def field(label, key, width=None):
+            row = self._row(p, pady=2)
+            ttk.Label(row, text=label, width=13).pack(side="left")
+            var = tk.StringVar(value=self.settings.get(key))
+            ttk.Entry(row, textvariable=var, **({"width": width} if width else {})).pack(side="left", fill="x", expand=width is None)
+            self.rp_vars[key] = var
+            return row
+
+        r = field("Application ID", "rp_app_id", 22)
+        ttk.Button(r, text="From my bot", command=self.rp_app_from_bot).pack(side="left", padx=(6, 0))
+        r = self._row(p, pady=2)
+        ttk.Label(r, text="Type", width=13).pack(side="left")
+        self.rp_vars["rp_type"] = tk.StringVar(value=self.settings.get("rp_type"))
+        ttk.Combobox(r, textvariable=self.rp_vars["rp_type"], values=list(richpresence.TYPES), state="readonly", width=10).pack(side="left")
+        field("First line", "rp_details")
+        field("Second line", "rp_state")
+        r = field("Timer from", "rp_start", 14)
+        ttk.Button(r, text="Now", command=lambda: self.rp_vars["rp_start"].set(str(int(time.time())))).pack(side="left", padx=(6, 0))
+        ttk.Label(r, text="Unix seconds; empty = no timer", style="Dim.TLabel").pack(side="left", padx=6)
+        field("Button text", "rp_button_label")
+        field("Button link", "rp_button_url")
+        field("Picture", "rp_image")
+        r = self._row(p, pady=(4, 0))
+        ttk.Button(r, text="Apply", command=self.apply_rich_presence).pack(side="left")
+        self.rp_state_lbl = ttk.Label(p, style="Dim.TLabel", wraplength=470, justify="left", text="Off.")
+        self.rp_state_lbl.pack(anchor="w")
+        ttk.Label(p, text="Discord shows \"Listening to <your application's name>\": rename the application in the Developer Portal "
+                          "to change that word. Picture = an image link or an Art Asset key of the application. "
+                          "Others see the button; you do not see it on your own profile.",
+                  style="Dim.TLabel", wraplength=470).pack(anchor="w", pady=(2, 0))
+
+    def _state_to(self, label, good_style="Good"):
+        def report(text, ok):
+            self.ui.put((lambda res, err: label.configure(text=text, style=(good_style if ok else "Dim") + ".TLabel"), None, None))
+        return report
+
+    def _bot_presence_args(self):
+        return self.bot_type_var.get(), self.bot_text_var.get().strip(), self.bot_status_var.get()
+
+    def start_bot_presence(self):
+        token = self.settings.secret("bot_token")
+        if not token:
+            self.bot_state_lbl.configure(text="Save your bot's token in Bot first.", style="Bad.TLabel")
+            return False
+        self.stop_bot_presence()
+        kind, text, status = self._bot_presence_args()
+        self.bot_state_lbl.configure(text="Connecting...", style="Dim.TLabel")
+        self.presence = gateway.BotPresence(token, kind, text, status, on_state=self._state_to(self.bot_state_lbl)).start()
+        return True
+
+    def stop_bot_presence(self):
+        if self.presence:
+            self.presence.stop()
+            self.presence = None
+
+    def toggle_bot_presence(self):
+        on = self.bot_online_var.get()
+        if on and not self.start_bot_presence():
+            self.bot_online_var.set(False)
+            self.settings.set("bot_online", False)
+            return
+        if not on:
+            self.stop_bot_presence()
+            self.bot_state_lbl.configure(text="Off: the bot shows as offline within a minute.", style="Dim.TLabel")
+        self.settings.set("bot_online", on)
+
+    def apply_bot_presence(self):
+        kind, text, status = self._bot_presence_args()
+        self.settings.set("bot_activity_type", kind)
+        self.settings.set("bot_activity_text", text)
+        self.settings.set("bot_status", status)
+        if self.presence:
+            self.presence.set_presence(kind, text, status)
+            self.bot_state_lbl.configure(text="Now %s %s." % (kind, text) if text else "Now online with no status line.", style="Good.TLabel")
+        else:
+            self.bot_state_lbl.configure(text="Saved. Tick \"Keep the bot online\" to show it.", style="Dim.TLabel")
+
+    def rp_app_from_bot(self):
+        app_id = bot.app_id_from_token(self.settings.secret("bot_token"))
+        if app_id:
+            self.rp_vars["rp_app_id"].set(app_id)
+        else:
+            self.rp_state_lbl.configure(text="No bot token saved: copy the Application ID from the Developer Portal.", style="Bad.TLabel")
+
+    def _rp_activity(self):
+        v = {k: var.get().strip() for k, var in self.rp_vars.items()}
+        for k, val in v.items():
+            self.settings.set(k, val)
+        start = v["rp_start"]
+        return v["rp_app_id"], richpresence.build_activity(v["rp_type"], v["rp_details"], v["rp_state"],
+                                                          int(start) if start.isdigit() else None,
+                                                          v["rp_button_label"], v["rp_button_url"], v["rp_image"])
+
+    def start_rich_presence(self):
+        if not self.rp_vars["rp_app_id"].get().strip():
+            self.rp_app_from_bot()
+        app_id, act = self._rp_activity()
+        if not app_id.isdigit():
+            self.rp_state_lbl.configure(text="Enter your application's id (Developer Portal > your app > General Information).", style="Bad.TLabel")
+            return False
+        self.stop_rich_presence()
+        self.rp_state_lbl.configure(text="Connecting to the Discord app...", style="Dim.TLabel")
+        self.rich = richpresence.RichPresence(app_id, act, on_state=self._state_to(self.rp_state_lbl)).start()
+        return True
+
+    def stop_rich_presence(self):
+        if self.rich:
+            rich, self.rich = self.rich, None
+            threading.Thread(target=rich.stop, daemon=True).start()   # clears the activity without blocking the window
+
+    def toggle_rich_presence(self):
+        on = self.rp_on_var.get()
+        if on and not self.start_rich_presence():
+            self.rp_on_var.set(False)
+            self.settings.set("rp_on", False)
+            return
+        if not on:
+            self.stop_rich_presence()
+            self.rp_state_lbl.configure(text="Off.", style="Dim.TLabel")
+        self.settings.set("rp_on", on)
+
+    def apply_rich_presence(self):
+        app_id, act = self._rp_activity()
+        if self.rich and app_id == self.rich.app_id:
+            self.rich.update(act)
+            self.rp_state_lbl.configure(text="Updating...", style="Dim.TLabel")
+        elif self.rich:
+            self.start_rich_presence()
+        else:
+            self.rp_state_lbl.configure(text="Saved. Tick \"Show it\" to show it.", style="Dim.TLabel")
 
     def _bot(self):
         return bot.Bot(self.settings.secret("bot_token"), self.opener)
@@ -1662,6 +1831,10 @@ class PupdatesApp:
             except tk.TclError:
                 pass
         self._preview_job = None
+        self.stop_bot_presence()
+        if self.rich:
+            self.rich.stop()       # clears your profile's activity before the pipe closes
+            self.rich = None
         self.root.destroy()
 
 
