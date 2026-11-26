@@ -28,15 +28,15 @@ DESK = os.path.join(ROOT, "pupdates", "pupdates_app", "art_data.py")
 RES = os.path.join(ROOT, "pupdates", "android", "app", "src", "main", "res")
 ICO = os.path.join(ROOT, "pupdates", "Pupdates.ico")
 S = 4
-ICONS = ("compose", "updates", "whitelist", "settings", "picture", "send", "close")
+ICONS = ("compose", "updates", "tags", "games", "whitelist", "settings", "picture", "send", "close")
 STATES = ("normal", "hover", "chosen")
 ORANGE = (245, 155, 40)
 GREY_GLYPH = (112, 116, 126)
 
 
 def glyph(name, size):
-    if name in ("whitelist", "settings", "close"):
-        return make_sao_art.icon({"whitelist": "alts", "settings": "config", "close": "close"}[name], size)
+    if name in ("whitelist", "settings", "close", "tags", "games"):
+        return make_sao_art.icon({"whitelist": "alts", "settings": "config", "close": "close", "tags": "look", "games": "games"}[name], size)
     big = size * S
     img = Image.new("L", (big, big), 0)
     d = ImageDraw.Draw(img)

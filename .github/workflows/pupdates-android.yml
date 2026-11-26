@@ -1,31 +1,32 @@
-# Builds the Pupdates Android app (APK) and runs its unit tests.
-# The APK is attached to each run as the artifact "Pupdates-android".
+# Builds the Pupdates Android app (APK, with the emulator library) and runs its unit tests.
+# Every run attaches the APKs as the artifact "Pupdates-android". When the signing secrets exist,
+# a push also publishes the signed APK to the GitHub release "pupdates-android-latest", which the
+# app's Update button reads.
 #
-# Optional, for updates that install over the previous version: add these repository secrets
-# (Settings > Secrets and variables > Actions) and a signed release APK is built too:
-#   PUPDATES_KEYSTORE_B64       base64 of a keystore made with
-#                               keytool -genkeypair -v -keystore pupdates.jks -alias pupdates -keyalg RSA -keysize 2048 -validity 10000
-#   PUPDATES_KEYSTORE_PASSWORD  its store password
-#   PUPDATES_KEY_ALIAS          pupdates
-#   PUPDATES_KEY_PASSWORD       its key password
-# Without them only the debug APK is built; each run signs it with a new debug key, so
-# installing a newer one means uninstalling the old one first (that clears its saved settings).
+# Signing secrets (Settings > Secrets and variables > Actions), needed for updates that install
+# over the previous version:
+#   PUPDATES_KEYSTORE_B64, PUPDATES_KEYSTORE_PASSWORD, PUPDATES_KEY_ALIAS, PUPDATES_KEY_PASSWORD
+# Without them only a debug APK is built (a new debug key every run: uninstall before installing).
 name: Pupdates (Android)
 
 on:
   push:
     paths:
       - "pupdates/android/**"
+      - "emu/gameboy-*.lua"
+      - "emu/gba-*.lua"
+      - "emu/doom-src/**"
+      - "assets/gba/**"
       - ".github/workflows/pupdates-android.yml"
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -47,8 +48,13 @@ jobs:
             echo "PUPDATES_KEYSTORE_FILE=$RUNNER_TEMP/pupdates.jks" >> "$GITHUB_ENV"
             echo "Release signing on"
           else
-            echo "No PUPDATES_KEYSTORE_B64 secret: debug APK only"
+            echo "No PUPDATES_KEYSTORE_B64 secret: debug APK only, nothing published"
           fi
+
+      - name: Native core on Linux (the same emulator code, host test build)
+        run: |
+          cmake -S pupdates/android/native-test -B build-native -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-native -j 4
 
       - name: Unit tests and debug APK
         working-directory: pupdates/android
@@ -69,6 +75,13 @@ jobs:
           cp pupdates/android/app/build/outputs/apk/debug/app-debug.apk out/Pupdates-debug.apk
           if [ -f pupdates/android/app/build/outputs/apk/release/app-release.apk ]; then
             cp pupdates/android/app/build/outputs/apk/release/app-release.apk out/Pupdates.apk
+            python3 - <<'PY'
+          import hashlib, json, os
+          data = open("out/Pupdates.apk", "rb").read()
+          n = int(os.environ["GITHUB_RUN_NUMBER"])
+          json.dump({"versionCode": n, "versionName": "2.0.%d" % n, "sha256": hashlib.sha256(data).hexdigest(),
+                     "size": len(data), "commit": os.environ["GITHUB_SHA"]}, open("out/pupdates-android.json", "w"))
+          PY
           fi
           ls -la out
 
@@ -77,3 +90,13 @@ jobs:
           name: Pupdates-android
           path: out/*.apk
           if-no-files-found: error
+
+      - name: Publish for the Update button
+        if: github.event_name == 'push' && env.PUPDATES_KEYSTORE_FILE != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=pupdates-android-latest
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --prerelease \
+            --title "Pupdates for Android" --notes "The newest Pupdates APK (the app's Update button reads this release)."
+          gh release upload "$TAG" out/Pupdates.apk out/pupdates-android.json --clobber

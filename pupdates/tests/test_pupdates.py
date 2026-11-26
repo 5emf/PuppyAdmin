@@ -1,5 +1,7 @@
 """Pupdates tests (no network): python -m unittest discover -s tests (from pupdates/)."""
+import base64
 import email.parser
+import hashlib
 import email.policy
 import io
 import json
@@ -13,7 +15,7 @@ import urllib.error
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-from pupdates_app import core  # noqa: E402
+from pupdates_app import core, tags, update  # noqa: E402
 import run_pupdates  # noqa: E402
 
 HOOK = "https://discord.com/api/webhooks/1575303315/abc-DEF_9"
@@ -32,8 +34,8 @@ class Resp:
     def __init__(self, data, status=200):
         self.data, self.status = data, status
 
-    def read(self):
-        return self.data
+    def read(self, n=-1):
+        return self.data if n < 0 else self.data[:n]
 
     def __enter__(self):
         return self
@@ -93,6 +95,42 @@ class FakeRelay:
         fields = json.loads(parts[0][3])
         self.posts.append((user["name"], fields, parts[1:]))
         return Resp(json.dumps({"ok": True, "id": "7", "pingDropped": fields["ping"] != "none" and not user["canPing"]}).encode())
+
+
+class FakeTagRepo:
+    """GitHub's contents API for tags.json + Roblox's user lookups."""
+    def __init__(self, tag_list):
+        self.text = json.dumps(tag_list)
+        self.sha = "s1"
+        self.writes = []
+
+    def __call__(self, req, timeout):
+        url = req.full_url
+        if url.startswith(tags.ROBLOX_BY_NAME):
+            name = json.loads(req.data.decode())["usernames"][0]
+            data = [{"id": 777, "name": "PupFriend", "requestedUsername": name}] if name.lower() == "pupfriend" else []
+            return Resp(json.dumps({"data": data}).encode())
+        if url.startswith(tags.ROBLOX_BY_ID):
+            return Resp(json.dumps({"data": [{"id": i, "name": "user%d" % i} for i in json.loads(req.data.decode())["userIds"]]}).encode())
+        assert url.startswith(tags.API), url
+        if req.get_method() == "GET":
+            return Resp(json.dumps({"sha": self.sha, "content": base64.b64encode(self.text.encode()).decode()}).encode())
+        if req.headers.get("Authorization") != "Bearer ghp_good":
+            raise http_error(req, 401, {"message": "Bad credentials"})
+        body = json.loads(req.data.decode())
+        if body.get("sha") != self.sha:
+            raise http_error(req, 409, {"message": "conflict"})
+        self.text = base64.b64decode(body["content"]).decode()
+        self.sha = "s%d" % (int(self.sha[1:]) + 1)
+        self.writes.append(json.loads(self.text))
+        return Resp(json.dumps({"content": {"sha": self.sha}}).encode())
+
+
+TAGS = [{"name": "Owner Tag", "text": "Puppy Admin", "sub": "Script Owner", "color": [255, 255, 255], "rainbow": True,
+         "size": 22, "offset": 3, "font": "Code", "members": ["1", "2"],
+         "backdrop": {"on": True, "color": [18, 18, 22], "transparency": 0.35, "image": "", "imageTransparency": 0.15, "round": True},
+         "pfp": {"mode": "avatar", "image": "", "round": True}},
+        {"name": "Default", "isDefault": True, "text": "Pup", "members": []}]
 
 
 class FakeGitHub:
@@ -238,6 +276,64 @@ class CoreTest(unittest.TestCase):
         self.assertEqual(title, "Puppy Companion updated - 1.7.1")
         self.assertTrue(text.startswith("- Mobile mode\n\nRestart"), "only changes after the last announced one")
 
+    def test_tag_cleaning_matches_puppy_admin(self):
+        out = tags.sanitize([{"name": "x" * 50, "text": "t", "color": [300, -5, 7.9], "size": 99, "members": ["12", "ab", 5, "12"],
+                              "pfp": {"mode": "weird"}, "rainbow": "yes"},
+                             {"name": "D1", "isDefault": True}, {"name": "D2", "isDefault": True}, {"text": "no name"}, 7])
+        self.assertEqual(len(out), 2, "a second default tag and entries without a name are dropped (as TagSync.sanitize)")
+        t = out[0]
+        self.assertEqual((len(t["name"]), t["color"], t["size"], t["members"], t["pfp"]["mode"], t["rainbow"]),
+                         (30, [255, 0, 7], 48, ["12", "5"], "none", False))
+        self.assertTrue(out[1]["isDefault"])
+        self.assertEqual(out[1]["name"], "D1")
+        self.assertEqual(tags.parse_hex("#F59B28"), [245, 155, 40])
+        with self.assertRaises(ValueError):
+            tags.parse_hex("orange")
+
+    def test_tags_load_and_save(self):
+        repo = FakeTagRepo(TAGS)
+        lst, sha = tags.load(None, repo)
+        self.assertEqual([t["name"] for t in lst], ["Owner Tag", "Default"])
+        lst[0]["members"].append("3")
+        with self.assertRaises(RuntimeError):
+            tags.save(lst, sha, None, opener=repo)
+        with self.assertRaises(RuntimeError) as e:
+            tags.save(lst, sha, "ghp_bad", opener=repo)
+        self.assertIn("refused the token", str(e.exception))
+        new_sha = tags.save(lst, sha, "ghp_good", opener=repo)
+        self.assertEqual(repo.writes[0][0]["members"], ["1", "2", "3"])
+        with self.assertRaises(RuntimeError) as e:
+            tags.save(lst, sha, "ghp_good", opener=repo)
+        self.assertIn("changed somewhere else", str(e.exception))
+        self.assertEqual(new_sha, "s2")
+        self.assertEqual(tags.user_id("PupFriend", repo), ("777", "PupFriend"))
+        self.assertEqual(tags.user_id(" 123 ", repo), ("123", None))
+        with self.assertRaises(RuntimeError):
+            tags.user_id("nobody_here", repo)
+        self.assertEqual(tags.user_names(["1", "2"], repo), {"1": "user1", "2": "user2"})
+        self.assertIs(tags.owner_of(lst, "2"), lst[0])
+
+    def test_update_check_and_download(self):
+        exe = b"MZ new pupdates"
+        info = {"build": 50, "sha256": hashlib.sha256(exe).hexdigest(), "size": len(exe)}
+
+        def gh(req, timeout):
+            if req.full_url.endswith(update.INFO):
+                return Resp(json.dumps(info).encode())
+            if req.full_url.endswith(update.EXE):
+                return Resp(exe)
+            raise AssertionError(req.full_url)
+        got = update.check(gh)
+        self.assertTrue(got["newer"])
+        path = update.download(got, self.folder, gh)
+        with open(path, "rb") as f:
+            self.assertEqual(f.read(), exe)
+        with self.assertRaises(RuntimeError):
+            update.download(dict(got, sha256="0" * 64), self.folder, gh)
+        bat = update.swap_script(r"C:\t\Pupdates.exe", r"C:\Apps\Pupdates.exe")
+        self.assertIn('move /y "C:\\t\\Pupdates.exe" "C:\\Apps\\Pupdates.exe"', bat)
+        self.assertIn("goto wait", bat)
+
     def test_settings_keep_secrets_encrypted(self):
         s = core.Settings(self.folder, FakeProtector())
         s.set_webhook(HOOK)
@@ -301,13 +397,45 @@ class WindowTest(unittest.TestCase):
             time.sleep(0.02)
         return False
 
+    def test_tags_section(self):
+        repo = FakeTagRepo(TAGS)
+        self.app.opener = repo
+        self.app.show("tags")
+        self.assertTrue(self.app.load_tags())
+        self.assertTrue(self.pump(lambda: self.app.tags_box.size() == 2))
+        self.assertTrue(self.pump(lambda: "user1" in " ".join(self.app.members_box.get(0, "end")) or self.app.tag_names))
+        self.app.tags_box.selection_set(0)
+        self.app.pick_tag()
+        self.assertEqual(self.app.tv["text"].get(), "Puppy Admin")
+        self.app.tv["text"].set("Puppy Boss")
+        self.app.member_var.set("PupFriend")
+        self.assertTrue(self.app.add_member())
+        self.assertTrue(self.pump(lambda: "777" in self.app.tag_list[0]["members"]))
+        self.assertFalse(self.app.save_tags(), "no token yet")
+        self.app.tag_token_var.set("ghp_good")
+        self.assertTrue(self.app.save_tag_token())
+        self.assertTrue(self.app.save_tags())
+        self.assertTrue(self.pump(lambda: repo.writes))
+        saved = repo.writes[0][0]
+        self.assertEqual((saved["text"], saved["members"]), ("Puppy Boss", ["1", "2", "777"]))
+        self.app.new_tag()
+        self.assertEqual(self.app.tags_box.size(), 3)
+        self.app.tv["color"].set("nope")
+        self.assertFalse(self.app._store_tag())
+        self.assertIn("hex", self.app.status.cget("text"))
+
+    def test_topmost_setting(self):
+        self.app.topmost_var.set(True)
+        self.app.set_topmost(True, save=True)
+        self.assertTrue(self.settings.get("topmost"))  # (X11 reports -topmost 0 for a withdrawn test window)
+
     def test_sections_and_icons(self):
-        for name in ("updates", "whitelist", "settings", "compose"):
+        for name in ("updates", "tags", "whitelist", "settings", "compose"):
             self.app.show(name)
             self.assertEqual(self.app.section, name)
             self.assertEqual(str(self.app.icons[name].cget("image")), str(self.app.img[name + "_chosen"]))
         self.app._hover("settings", True)
-        self.assertIn("webhook", self.app.strip.cget("text"))
+        self.assertIn("Webhook", self.app.strip.cget("text"))
         self.app._hover("settings", False)
         self.assertIn("picture", self.app.strip.cget("text"), "back to the open section's description")
 

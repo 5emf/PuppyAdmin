@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   relay:
@@ -49,6 +49,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "pyinstaller>=6.10,<7"
 
+      - name: Stamp the build number (the Update button compares it)
+        shell: pwsh
+        run: Set-Content -Path pupdates_app/_build.py -Value "BUILD = $env:GITHUB_RUN_NUMBER"
+
       - name: Build
         run: pyinstaller --noconfirm --clean --onefile --windowed --name Pupdates --icon Pupdates.ico --paths . run_pupdates.py
 
@@ -65,6 +69,24 @@ jobs:
         run: |
           Copy-Item README.md dist\README.md
           Compress-Archive -Path dist\Pupdates.exe, dist\README.md -DestinationPath Pupdates-win64.zip
+
+      - name: Update info
+        shell: pwsh
+        run: |
+          $h = (Get-FileHash dist\Pupdates.exe -Algorithm SHA256).Hash.ToLower()
+          $n = (Get-Item dist\Pupdates.exe).Length
+          @{ build = [int]$env:GITHUB_RUN_NUMBER; sha256 = $h; size = $n; commit = $env:GITHUB_SHA } | ConvertTo-Json | Set-Content dist\pupdates-windows.json
+
+      - name: Publish for the Update button
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=pupdates-windows-latest
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --prerelease \
+            --title "Pupdates for Windows" --notes "The newest Pupdates.exe (the app's Update button reads this release)."
+          gh release upload "$TAG" dist/Pupdates.exe dist/pupdates-windows.json --clobber
 
       - uses: actions/upload-artifact@v4
         with:

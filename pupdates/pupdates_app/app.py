@@ -9,20 +9,21 @@ import queue
 import sys
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import colorchooser, filedialog, messagebox, ttk
 
-from . import art_data, core
+from . import art_data, core, tags, update
 
 KEY = "#0d0e13"                       # see-through colour (only used for the backdrop)
 CARD, FIELD, LINE, STRIP = "#fbfbfb", "#ffffff", "#c8ccd4", "#e6e7ea"
 INK, DIM, ORANGE, GOOD, BAD = "#464646", "#8a8d96", "#f59b28", "#3f9b56", "#d0453a"
-SECTIONS = ("compose", "updates", "whitelist", "settings")
-TITLES = {"compose": "Compose", "updates": "Updates", "whitelist": "Whitelist", "settings": "Settings"}
+SECTIONS = ("compose", "updates", "tags", "whitelist", "settings")
+TITLES = {"compose": "Compose", "updates": "Updates", "tags": "Tags", "whitelist": "Whitelist", "settings": "Settings"}
 DESCRIPTIONS = {
     "compose": "Write any message, add a picture, and post it to your Discord channel.",
     "updates": "Fill in a Puppy Admin or Puppy Companion update from GitHub.",
     "whitelist": "Choose who may post through your relay (owner only: needs the admin key).",
-    "settings": "Post straight to a webhook, or through the relay with your access key.",
+    "tags": "Edit Puppy Admin's shared tags (tags.json): text, colour, picture and who wears them.",
+    "settings": "Webhook or relay, stay on top of other windows, and updates.",
     "minimise": "Minimise Pupdates.",
     "close": "Close Pupdates.",
 }
@@ -124,8 +125,10 @@ class PupdatesApp:
         self.pages = {}
         self._build_compose()
         self._build_updates()
+        self._build_tags()
         self._build_whitelist()
         self._build_settings()
+        self.set_topmost(bool(self.settings.get("topmost")))
         self.show("compose")
         self.say(self._mode_text())
         if self.floating:
@@ -635,7 +638,16 @@ class PupdatesApp:
         self.relay_lbl = ttk.Label(p, style="Dim.TLabel", text="", wraplength=460)
         self.relay_lbl.pack(anchor="w")
         self._relay_label()
-        ttk.Label(p, text="Webhook, keys and the admin key are stored encrypted for this Windows user and never shown again.",
+        ttk.Label(p, text="Window", style="Head.TLabel").pack(anchor="w", pady=(12, 2))
+        self.topmost_var = tk.BooleanVar(value=bool(self.settings.get("topmost")))
+        ttk.Checkbutton(p, text="Stay on top of other windows (an overlay over games and apps)", variable=self.topmost_var,
+                        command=lambda: self.set_topmost(self.topmost_var.get(), save=True)).pack(anchor="w")
+        r = self._row(p, pady=(8, 0))
+        self.update_btn = ttk.Button(r, text="Check for updates", command=self.check_update)
+        self.update_btn.pack(side="left")
+        self.update_lbl = ttk.Label(r, style="Dim.TLabel", text="Build %d" % update.current() if update.current() else "Running from source")
+        self.update_lbl.pack(side="left", padx=8)
+        ttk.Label(p, text="Webhook, keys, the admin key and the tag token are stored encrypted for this Windows user and never shown again.",
                   style="Dim.TLabel", wraplength=460).pack(anchor="w", pady=(14, 0))
 
     def _webhook_label(self):
@@ -700,6 +712,321 @@ class PupdatesApp:
             self._relay_label(me)
             self.say("The relay knows you as %s." % me.get("name"), "Good")
         self.run_bg(lambda: core.relay_me(base, key, self.opener), done)
+        return True
+
+    # ------------------------------------------------------------------ window options + update
+    def set_topmost(self, on, save=False):
+        try:
+            self.root.wm_attributes("-topmost", bool(on))
+        except tk.TclError:
+            pass
+        if save:
+            self.settings.set("topmost", bool(on))
+
+    def check_update(self):
+        self.update_btn.state(["disabled"])
+        self.say("Checking for a Pupdates update...")
+
+        def checked(info, err):
+            if err:
+                self.update_btn.state(["!disabled"])
+                self.say(err, "Bad")
+                return
+            if not info["newer"]:
+                self.update_btn.state(["!disabled"])
+                self.say("Pupdates is up to date (build %d)." % max(update.current(), info["build"]), "Good")
+                return
+            if not update.can_self_update():
+                self.update_btn.state(["!disabled"])
+                self.say("Build %d is out. Only the built Pupdates.exe updates itself (from source: git pull)." % info["build"])
+                return
+            if not self.confirm("Pupdates build %d is out (you have %d). Download it and restart?" % (info["build"], update.current())):
+                self.update_btn.state(["!disabled"])
+                return
+            self.say("Downloading build %d..." % info["build"])
+
+            def downloaded(path, err2):
+                self.update_btn.state(["!disabled"])
+                if err2:
+                    self.say(err2, "Bad")
+                    return
+                try:
+                    update.install(path)
+                except (RuntimeError, OSError) as e:
+                    self.say(str(e), "Bad")
+                    return
+                self.close()
+            self.run_bg(lambda: update.download(info, opener=self.gh_opener), downloaded)
+        self.run_bg(lambda: update.check(self.gh_opener), checked)
+
+    # ------------------------------------------------------------------ tags
+    def _build_tags(self):
+        p = self._page("tags")
+        self.tag_list, self.tag_sha, self.tag_index, self.tag_names = [], None, None, {}
+        r = self._row(p)
+        ttk.Label(r, text="GitHub token", width=12).pack(side="left")
+        self.tag_token_var = tk.StringVar()
+        self._secret_entry(r, self.tag_token_var).pack(side="left", fill="x", expand=True)
+        ttk.Button(r, text="Save", command=self.save_tag_token).pack(side="left", padx=(6, 0))
+        ttk.Button(r, text="Load", command=self.load_tags).pack(side="left", padx=(4, 0))
+        self.tag_token_lbl = ttk.Label(p, style="Dim.TLabel", wraplength=460, text="")
+        self.tag_token_lbl.pack(anchor="w")
+        self._tag_token_label()
+
+        r = self._row(p, pady=(6, 3))
+        lf = tk.Frame(r, bg=FIELD, highlightthickness=1, highlightbackground=LINE)
+        lf.pack(side="left", fill="both", expand=True)
+        self.tags_box = tk.Listbox(lf, height=5, bg=FIELD, fg=INK, relief="flat", highlightthickness=0, bd=0, exportselection=False,
+                                   selectbackground=ORANGE, selectforeground="#ffffff", font=(self.family, 10), activestyle="none")
+        self.tags_box.pack(fill="both", expand=True, padx=4, pady=4)
+        self.tags_box.bind("<<ListboxSelect>>", lambda e: self.pick_tag())
+        side = ttk.Frame(r)
+        side.pack(side="left", fill="y", padx=(6, 0))
+        ttk.Button(side, text="New", command=self.new_tag).pack(fill="x")
+        ttk.Button(side, text="Delete", command=self.delete_tag).pack(fill="x", pady=4)
+
+        g = ttk.Frame(p)
+        g.pack(fill="x", pady=(4, 0))
+        self.tv = {k: tk.StringVar() for k in ("name", "text", "sub", "color", "font", "size", "pfp_mode", "pfp_image")}
+        self.tv_rainbow, self.tv_backdrop = tk.BooleanVar(), tk.BooleanVar()
+        cells = [("Name", "name"), ("Text", "text"), ("Under it", "sub")]
+        for i, (label, key) in enumerate(cells):
+            ttk.Label(g, text=label).grid(row=i, column=0, sticky="w", pady=1)
+            ttk.Entry(g, textvariable=self.tv[key]).grid(row=i, column=1, columnspan=3, sticky="ew", pady=1)
+        ttk.Label(g, text="Colour").grid(row=3, column=0, sticky="w", pady=1)
+        ttk.Entry(g, textvariable=self.tv["color"], width=9).grid(row=3, column=1, sticky="w")
+        ttk.Button(g, text="Pick...", command=self.pick_tag_color).grid(row=3, column=2, sticky="w", padx=4)
+        ttk.Checkbutton(g, text="Rainbow", variable=self.tv_rainbow).grid(row=3, column=3, sticky="w")
+        ttk.Label(g, text="Font").grid(row=4, column=0, sticky="w", pady=1)
+        ttk.Combobox(g, textvariable=self.tv["font"], values=list(tags.FONTS), state="readonly", width=14).grid(row=4, column=1, sticky="w")
+        ttk.Label(g, text="Size").grid(row=4, column=2, sticky="e", padx=4)
+        ttk.Spinbox(g, textvariable=self.tv["size"], from_=8, to=48, width=5).grid(row=4, column=3, sticky="w")
+        ttk.Label(g, text="Picture").grid(row=5, column=0, sticky="w", pady=1)
+        ttk.Combobox(g, textvariable=self.tv["pfp_mode"], values=list(tags.PFP_MODES), state="readonly", width=8).grid(row=5, column=1, sticky="w")
+        ttk.Checkbutton(g, text="Dark box behind", variable=self.tv_backdrop).grid(row=5, column=2, columnspan=2, sticky="w", padx=4)
+        ttk.Label(g, text="Image URL").grid(row=6, column=0, sticky="w", pady=1)
+        ttk.Entry(g, textvariable=self.tv["pfp_image"]).grid(row=6, column=1, columnspan=3, sticky="ew", pady=1)
+        g.grid_columnconfigure(1, weight=1)
+
+        r = self._row(p, pady=(6, 3))
+        mf = tk.Frame(r, bg=FIELD, highlightthickness=1, highlightbackground=LINE)
+        mf.pack(side="left", fill="both", expand=True)
+        self.members_box = tk.Listbox(mf, height=4, bg=FIELD, fg=INK, relief="flat", highlightthickness=0, bd=0, exportselection=False,
+                                      selectbackground=ORANGE, selectforeground="#ffffff", font=(self.family, 10), activestyle="none")
+        self.members_box.pack(fill="both", expand=True, padx=4, pady=4)
+        side = ttk.Frame(r)
+        side.pack(side="left", fill="y", padx=(6, 0))
+        self.member_var = tk.StringVar()
+        ttk.Entry(side, textvariable=self.member_var, width=16).pack(fill="x")
+        ttk.Button(side, text="Add wearer", command=self.add_member).pack(fill="x", pady=(4, 0))
+        ttk.Button(side, text="Remove", command=self.remove_member).pack(fill="x", pady=4)
+        r = self._row(p, pady=(6, 0))
+        ttk.Label(r, text="Wearers: Roblox username or user id.", style="Dim.TLabel").pack(side="left")
+        self.save_tags_btn = ttk.Button(r, text="Save to GitHub", style="Accent.TButton", command=self.save_tags)
+        self.save_tags_btn.pack(side="right")
+
+    def _tag_token_label(self):
+        self.tag_token_lbl.configure(text="A token is saved (encrypted): you can save tag changes." if self.settings.secret("tags_token") else
+                                     "Anyone can load the tags. Saving needs a fine-grained GitHub token for 5emf/PuppyAdmin with "
+                                     "Contents: read and write (the same one Puppy Admin's tag sync uses).")
+
+    def save_tag_token(self):
+        try:
+            self.settings.set_secret("tags_token", self.tag_token_var.get())
+        except RuntimeError as e:
+            self.say(str(e), "Bad")
+            return False
+        self.tag_token_var.set("")
+        self._tag_token_label()
+        self.say("Token saved." if self.settings.secret("tags_token") else "Token removed.", "Good")
+        return True
+
+    def _tag_label(self, t):
+        return ("(default) " if t.get("isDefault") else "") + t["name"] + "   [%d]" % len(t["members"])
+
+    def _fill_tags_box(self):
+        self.tags_box.delete(0, "end")
+        for t in self.tag_list:
+            self.tags_box.insert("end", self._tag_label(t))
+        if self.tag_index is not None and self.tag_index < len(self.tag_list):
+            self.tags_box.selection_set(self.tag_index)
+
+    def load_tags(self):
+        self.say("Loading the tags...")
+        token = self.settings.secret("tags_token") or None
+
+        def done(res, err):
+            if err:
+                self.say(err, "Bad")
+                return
+            self.tag_list, self.tag_sha = res
+            self.tag_index = None
+            self._fill_tags_box()
+            self._show_tag(None)
+            self.say("%d tags loaded." % len(self.tag_list), "Good")
+            ids = sorted({m for t in self.tag_list for m in t["members"]})
+            self.run_bg(lambda: tags.user_names(ids, self.opener), self._got_names)
+        self.run_bg(lambda: tags.load(token, self.opener), done)
+        return True
+
+    def _got_names(self, names, err):
+        if names:
+            self.tag_names.update(names)
+            self._show_members()
+
+    def _store_tag(self):
+        """Writes the fields into the selected tag (returns False and says why when a field is wrong)."""
+        if self.tag_index is None:
+            return True
+        t = self.tag_list[self.tag_index]
+        try:
+            color = tags.parse_hex(self.tv["color"].get())
+            size = int(float(self.tv["size"].get() or 22))
+        except ValueError as e:
+            self.say(str(e) if "hex" in str(e) else "The size is a number from 8 to 48", "Bad")
+            return False
+        t.update({"name": self.tv["name"].get(), "text": self.tv["text"].get(), "sub": self.tv["sub"].get(), "color": color,
+                  "rainbow": self.tv_rainbow.get(), "font": self.tv["font"].get() or "GothamBold", "size": size})
+        t["backdrop"]["on"] = self.tv_backdrop.get()
+        t["pfp"]["mode"], t["pfp"]["image"] = self.tv["pfp_mode"].get() or "none", self.tv["pfp_image"].get().strip()
+        self.tag_list[self.tag_index] = tags.clean_tag(t)
+        self.tags_box.delete(self.tag_index)
+        self.tags_box.insert(self.tag_index, self._tag_label(self.tag_list[self.tag_index]))
+        return True
+
+    def _show_tag(self, i):
+        self.tag_index = i
+        t = self.tag_list[i] if i is not None else tags.new_tag("")
+        for key, val in (("name", t["name"]), ("text", t["text"]), ("sub", t["sub"]), ("color", tags.hex_color(t["color"])),
+                         ("font", t["font"]), ("size", str(int(t["size"]))), ("pfp_mode", t["pfp"]["mode"]), ("pfp_image", t["pfp"]["image"])):
+            self.tv[key].set(val if i is not None else "")
+        self.tv_rainbow.set(t["rainbow"] and i is not None)
+        self.tv_backdrop.set(t["backdrop"]["on"] and i is not None)
+        self._show_members()
+
+    def _show_members(self):
+        self.members_box.delete(0, "end")
+        if self.tag_index is None:
+            return
+        t = self.tag_list[self.tag_index]
+        if t.get("isDefault"):
+            self.members_box.insert("end", "The default tag: worn by everyone running Puppy Admin with no other tag.")
+            return
+        for m in t["members"]:
+            name = self.tag_names.get(m)
+            self.members_box.insert("end", "%s (%s)" % (name, m) if name else m)
+
+    def pick_tag(self):
+        sel = self.tags_box.curselection()
+        if not sel or sel[0] == self.tag_index:
+            return
+        if not self._store_tag():
+            self.tags_box.selection_clear(0, "end")
+            self.tags_box.selection_set(self.tag_index)
+            return
+        self._show_tag(sel[0])
+
+    def new_tag(self):
+        if not self._store_tag():
+            return
+        if len(self.tag_list) >= tags.MAX_TAGS:
+            self.say("Puppy Admin keeps at most %d tags." % tags.MAX_TAGS, "Bad")
+            return
+        self.tag_list.append(tags.new_tag())
+        self.tag_index = len(self.tag_list) - 1
+        self._fill_tags_box()
+        self._show_tag(self.tag_index)
+        self.say("New tag added: fill it in, add wearers, then Save to GitHub.")
+
+    def delete_tag(self):
+        if self.tag_index is None:
+            self.say("Pick a tag first.", "Bad")
+            return
+        name = self.tag_list[self.tag_index]["name"]
+        if not self.confirm("Delete the tag %s?" % name):
+            return
+        del self.tag_list[self.tag_index]
+        self.tag_index = None
+        self._fill_tags_box()
+        self._show_tag(None)
+        self.say("%s deleted (not saved yet)." % name)
+
+    def pick_tag_color(self):
+        try:
+            start = tags.hex_color(tags.parse_hex(self.tv["color"].get()))
+        except ValueError:
+            start = "#ffffff"
+        got = colorchooser.askcolor(color=start, parent=self.root, title="Tag colour")
+        if got and got[1]:
+            self.tv["color"].set(got[1])
+
+    def add_member(self):
+        if self.tag_index is None or self.tag_list[self.tag_index].get("isDefault"):
+            self.say("Pick a tag (not the default one) first.", "Bad")
+            return False
+        text = self.member_var.get().strip()
+        if not text:
+            self.say("Type a Roblox username or user id.", "Bad")
+            return False
+        index = self.tag_index
+
+        def done(res, err):
+            if err:
+                self.say(err, "Bad")
+                return
+            uid, name = res
+            other = tags.owner_of(self.tag_list, uid)
+            if other is self.tag_list[index]:
+                self.say("They already wear this tag.")
+                return
+            if other is not None:
+                if not self.confirm("%s already wears %s. Move them to this tag?" % (name or uid, other["name"])):
+                    return
+                other["members"].remove(uid)
+            self.tag_list[index]["members"].append(uid)
+            if name:
+                self.tag_names[uid] = name
+            self.member_var.set("")
+            self._fill_tags_box()
+            self._show_members()
+            self.say("%s added (not saved yet)." % (name or uid), "Good")
+        self.run_bg(lambda: tags.user_id(text, self.opener), done)
+        return True
+
+    def remove_member(self):
+        sel = self.members_box.curselection()
+        if self.tag_index is None or not sel or self.tag_list[self.tag_index].get("isDefault"):
+            self.say("Pick a wearer first.", "Bad")
+            return False
+        t = self.tag_list[self.tag_index]
+        del t["members"][sel[0]]
+        self._fill_tags_box()
+        self._show_members()
+        self.say("Removed (not saved yet).")
+        return True
+
+    def save_tags(self):
+        if not self._store_tag():
+            return False
+        token = self.settings.secret("tags_token")
+        if not token:
+            self.say("Save your GitHub token first (it needs Contents: read and write).", "Bad")
+            return False
+        if self.tag_sha is None and not self.tag_list:
+            self.say("Load the tags first.", "Bad")
+            return False
+        self.save_tags_btn.state(["disabled"])
+        self.say("Saving the tags to GitHub...")
+        snapshot = [dict(t) for t in self.tag_list]
+
+        def done(sha, err):
+            self.save_tags_btn.state(["!disabled"])
+            if err:
+                self.say(err, "Bad")
+                return
+            self.tag_sha = sha
+            self.say("Saved: Puppy Admin picks the new tags up within a minute or two.", "Good")
+        self.run_bg(lambda: tags.save(snapshot, self.tag_sha, token, opener=self.opener), done)
         return True
 
     def close(self):

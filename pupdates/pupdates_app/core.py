@@ -392,10 +392,10 @@ class Dpapi:
 
 class Settings:
     FILE = "settings.json"
-    SECRETS = ("webhook", "relay_key", "admin_key")
+    SECRETS = ("webhook", "relay_key", "admin_key", "tags_token")
     DEFAULTS = {"mode": "webhook", "webhook": "", "relay_url": "", "relay_key": "", "admin_key": "",
                 "username": APP, "color": "Orange", "ping": "none", "role_id": "", "embed": True,
-                "last_script_sha": "", "last_companion_sha": ""}
+                "last_script_sha": "", "last_companion_sha": "", "tags_token": "", "topmost": False}
 
     def __init__(self, folder=None, protector=None):
         self.folder = folder or data_dir()

@@ -5,8 +5,13 @@
 #include "doomgeneric.h"
 #include "d_event.h"
 
+#ifdef __wasm__
 #define IMPORT(name) __attribute__((import_module("env"), import_name(#name)))
 #define EXPORT(name) __attribute__((export_name(#name)))
+#else  // native builds (Pupdates for Android): the host functions are plain C (pupdates/android/app/src/main/cpp/emu_doom.c)
+#define IMPORT(name)
+#define EXPORT(name)
+#endif
 
 IMPORT(host_ticks) uint32_t host_ticks(void);
 IMPORT(host_sleep) void host_sleep(uint32_t ms);
@@ -74,8 +79,10 @@ int DG_GetKey(int *pressed, unsigned char *key)
     return 1;
 }
 
+#ifdef __wasm__
 // WebAssembly cannot start programs; Doom only uses this for an optional error dialog
 int system(const char *command) { (void)command; return -1; }
+#endif
 
 // ---------------------------------------------------------------------------
 // Sound: Doom tells the host which sound effect to start on which channel and

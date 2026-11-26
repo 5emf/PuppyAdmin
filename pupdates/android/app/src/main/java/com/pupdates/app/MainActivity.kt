@@ -48,13 +48,15 @@ class MainActivity : Activity() {
     private val pool = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
 
-    private val sections = listOf("compose", "updates", "whitelist", "settings")
-    private val titles = mapOf("compose" to "Compose", "updates" to "Updates", "whitelist" to "Whitelist", "settings" to "Settings")
+    private val sections = listOf("compose", "updates", "tags", "games", "whitelist", "settings")
+    private val titles = mapOf("compose" to "Compose", "updates" to "Updates", "tags" to "Tags", "games" to "Games", "whitelist" to "Whitelist", "settings" to "Settings")
     private val descriptions = mapOf(
         "compose" to "Write any message, add a picture, and post it to your Discord channel.",
         "updates" to "Fill in a Puppy Admin or Puppy Companion update from GitHub.",
         "whitelist" to "Choose who may post through your relay (owner only: needs the admin key).",
-        "settings" to "Post straight to a webhook, or through the relay with your access key.")
+        "tags" to "Edit Puppy Admin's shared tags: text, colour, picture and who wears them.",
+        "games" to "Game Boy, Game Boy Advance and Doom, with Puppy Admin's own emulators.",
+        "settings" to "Webhook or relay, the bubble over other apps, and updates.")
     private val pages = HashMap<String, View>()
     private val icons = HashMap<String, ImageView>()
     private var section = ""
@@ -96,6 +98,34 @@ class MainActivity : Activity() {
     private lateinit var relayIn: EditText
     private lateinit var keyIn: EditText
     private lateinit var relayLbl: TextView
+    private lateinit var bubbleChk: CheckBox
+    private lateinit var updateBtn: TextView
+    private lateinit var updateLbl: TextView
+
+    // tags
+    private lateinit var tagTokenIn: EditText
+    private lateinit var tagTokenLbl: TextView
+    private lateinit var tagsBox: LinearLayout
+    private lateinit var tagEditor: LinearLayout
+    private lateinit var tName: EditText
+    private lateinit var tText: EditText
+    private lateinit var tSub: EditText
+    private lateinit var tColor: EditText
+    private lateinit var tRainbow: CheckBox
+    private lateinit var tFont: Spinner
+    private lateinit var tSize: EditText
+    private lateinit var tBackdrop: CheckBox
+    private lateinit var tPfp: Spinner
+    private lateinit var tImage: EditText
+    private lateinit var membersBox: LinearLayout
+    private lateinit var memberIn: EditText
+    private var tagList = mutableListOf<org.json.JSONObject>()
+    private var tagSha: String? = null
+    private var tagIndex = -1
+    private val tagNames = HashMap<String, String>()
+
+    // games
+    private lateinit var gamesBox: LinearLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -104,10 +134,12 @@ class MainActivity : Activity() {
         show("compose")
         say(modeText())
         handleShare(intent)
+        if (store.getBool("overlay", false)) startBubble(quiet = true)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (intent.action == Updater.ACTION_STATUS) { installStatus(intent); return }
         handleShare(intent)
     }
 
@@ -218,6 +250,8 @@ class MainActivity : Activity() {
             "updates_normal" -> R.drawable.ic_updates_normal; "updates_hover" -> R.drawable.ic_updates_hover; "updates_chosen" -> R.drawable.ic_updates_chosen
             "whitelist_normal" -> R.drawable.ic_whitelist_normal; "whitelist_hover" -> R.drawable.ic_whitelist_hover; "whitelist_chosen" -> R.drawable.ic_whitelist_chosen
             "settings_normal" -> R.drawable.ic_settings_normal; "settings_hover" -> R.drawable.ic_settings_hover; "settings_chosen" -> R.drawable.ic_settings_chosen
+            "tags_normal" -> R.drawable.ic_tags_normal; "tags_hover" -> R.drawable.ic_tags_hover; "tags_chosen" -> R.drawable.ic_tags_chosen
+            "games_normal" -> R.drawable.ic_games_normal; "games_hover" -> R.drawable.ic_games_hover; "games_chosen" -> R.drawable.ic_games_chosen
             "picture_normal" -> R.drawable.ic_picture_normal; "picture_hover" -> R.drawable.ic_picture_hover
             "send_normal" -> R.drawable.ic_send_normal; "send_hover" -> R.drawable.ic_send_hover
             "close_normal" -> R.drawable.ic_close_normal; "close_hover" -> R.drawable.ic_close_hover
@@ -276,6 +310,8 @@ class MainActivity : Activity() {
         pages["compose"] = buildCompose()
         pages["updates"] = buildUpdates()
         pages["whitelist"] = buildWhitelist()
+        pages["tags"] = buildTags()
+        pages["games"] = buildGames()
         pages["settings"] = buildSettings()
         return root
     }
@@ -365,7 +401,13 @@ class MainActivity : Activity() {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
         val uri = data?.data
-        if (requestCode == REQ_PICTURE && resultCode == RESULT_OK && uri != null) loadPicture(uri)
+        if (resultCode != RESULT_OK || uri == null) return
+        when (requestCode) {
+            REQ_PICTURE -> loadPicture(uri)
+            REQ_ROM_GB -> importGame(uri, "gb")
+            REQ_ROM_GBA -> importGame(uri, "gba")
+            REQ_WAD -> importGame(uri, "doom")
+        }
     }
 
     private fun displayName(uri: Uri): String = try {
@@ -589,6 +631,11 @@ class MainActivity : Activity() {
 
     // ------------------------------------------------------------------ settings
     private fun buildSettings(): View {
+        bubbleChk = check("Show the Pupdates bubble over other apps", store.getBool("overlay", false)).apply {
+            setOnCheckedChangeListener { _, on -> if (on) startBubble(quiet = false) else stopBubble() }
+        }
+        updateBtn = button("Check for updates") { checkUpdate() }
+        updateLbl = label("Version " + (try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "?" }), dim = true, size = 13f)
         val hook = RadioButton(this).apply { id = View.generateViewId(); text = "My webhook"; setTextColor(INK); buttonTintList = ColorStateList.valueOf(ORANGE) }
         val relay = RadioButton(this).apply { id = View.generateViewId(); text = "The relay (whitelisted)"; setTextColor(INK); buttonTintList = ColorStateList.valueOf(ORANGE) }
         modeGroup = RadioGroup(this).apply {
@@ -617,7 +664,12 @@ class MainActivity : Activity() {
             relayIn,
             row(grow(keyIn), gap(button("Save") { saveRelay() }), gap(button("Check") { checkRelay() }, 4)),
             relayLbl,
-            label("The webhook, keys and admin key are encrypted with this phone's key store and never shown again.", dim = true, size = 13f))
+            label("Overlay", bold = true, size = 16f).apply { setPadding(0, dp(10), 0, 0) },
+            bubbleChk,
+            label("A round Pupdates bubble stays over every app: tap it to open Pupdates on top of what you are doing, drag it anywhere, long-press to remove it.", dim = true, size = 13f),
+            label("Updates", bold = true, size = 16f).apply { setPadding(0, dp(10), 0, 0) },
+            row(updateBtn, gap(grow(updateLbl), 8)),
+            label("The webhook, keys, admin key and tag token are encrypted with this phone's key store and never shown again.", dim = true, size = 13f))
     }
 
     private fun webhookLabel() {
@@ -665,8 +717,357 @@ class MainActivity : Activity() {
         }
     }
 
+    // ------------------------------------------------------------------ overlay bubble
+    private fun startBubble(quiet: Boolean) {
+        if (!android.provider.Settings.canDrawOverlays(this)) {
+            if (quiet) return
+            say("Allow \"Display over other apps\" for Pupdates, then come back.", DIM)
+            @Suppress("DEPRECATION")
+            startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")), REQ_OVERLAY)
+            return
+        }
+        store.setBool("overlay", true)
+        startForegroundService(Intent(this, OverlayService::class.java))
+        if (!quiet) say("The bubble is on: it stays over other apps.", GOOD)
+    }
+
+    private fun stopBubble() {
+        store.setBool("overlay", false)
+        stopService(Intent(this, OverlayService::class.java))
+        say("The bubble is off.")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::bubbleChk.isInitialized) {
+            val on = store.getBool("overlay", false) && android.provider.Settings.canDrawOverlays(this)
+            if (bubbleChk.isChecked && !on && android.provider.Settings.canDrawOverlays(this)) startBubble(quiet = true)
+            else if (bubbleChk.isChecked && !android.provider.Settings.canDrawOverlays(this)) bubbleChk.isChecked = false
+        }
+    }
+
+    // ------------------------------------------------------------------ update
+    private fun checkUpdate() {
+        updateBtn.isEnabled = false
+        say("Checking for a Pupdates update...")
+        bg({ Updater.check(http) }) { info, err ->
+            if (info == null) { updateBtn.isEnabled = true; say(err ?: "", BAD); return@bg }
+            val have = Updater.installed(this)
+            if (info.versionCode <= have) { updateBtn.isEnabled = true; say("Pupdates is up to date (version ${info.versionName}).", GOOD); return@bg }
+            if (!packageManager.canRequestPackageInstalls()) {
+                updateBtn.isEnabled = true
+                say("Allow Pupdates to install apps (Install unknown apps), then press Check for updates again.", DIM)
+                startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                return@bg
+            }
+            AlertDialog.Builder(this).setMessage("Pupdates ${info.versionName} is out. Download and install it?")
+                .setPositiveButton("Update") { _, _ -> downloadUpdate(info) }
+                .setNegativeButton("Later") { _, _ -> updateBtn.isEnabled = true }.show()
+        }
+    }
+
+    private fun downloadUpdate(info: Updater.Info) {
+        say("Downloading Pupdates ${info.versionName}...")
+        bg({
+            val f = Updater.download(this, info) { done, total ->
+                if (total > 0) main.post { updateLbl.text = "${done * 100 / total}%" }
+            }
+            Updater.install(this, f)
+        }) { _, err ->
+            updateBtn.isEnabled = true
+            if (err != null) say(err, BAD) else say("Confirm the install in Android's window.")
+        }
+    }
+
+    private fun installStatus(i: Intent) {
+        when (i.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, -999)) {
+            android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                @Suppress("DEPRECATION")
+                (i.getParcelableExtra<Intent>(Intent.EXTRA_INTENT))?.let { startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            }
+            android.content.pm.PackageInstaller.STATUS_SUCCESS -> say("Updated.", GOOD)
+            else -> {
+                val msg = i.getStringExtra(android.content.pm.PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "unknown reason"
+                say("The update was not installed: $msg" + if (msg.contains("signature", true) || msg.contains("conflict", true))
+                    " (the new APK is signed with a different key: uninstall Pupdates once, then install the new one)" else "", BAD)
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ games
+    private fun gameDir(kind: String) = java.io.File(filesDir, when (kind) { "gb" -> "roms/gb"; "gba" -> "roms/gba"; else -> "doom/wads" }).apply { mkdirs() }
+    private val freedoom get() = java.io.File(filesDir, "doom/freedoom1.wad")
+
+    private fun buildGames(): View {
+        gamesBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        refreshGames()
+        return page(
+            label("Puppy Admin's own Game Boy and Game Boy Advance emulators, and the Doom engine. Add your own ROMs and WADs: the app ships none, except free Freedoom.", size = 13f),
+            gamesBox)
+    }
+
+    private fun pick(req: Int) {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE)
+        @Suppress("DEPRECATION")
+        startActivityForResult(i, req)
+    }
+
+    private fun refreshGames() {
+        gamesBox.removeAllViews()
+        fun section(title: String, kind: String, req: Int, extra: View? = null) {
+            gamesBox.addView(row(label(title, bold = true, size = 16f), grow(View(this)), button(if (kind == "doom") "Add WAD" else "Add ROM") { pick(req) }, top = 14))
+            if (extra != null) gamesBox.addView(extra)
+            val files = gameDir(kind).listFiles()?.filter { it.isFile }?.sortedBy { it.name.lowercase() } ?: emptyList()
+            if (files.isEmpty() && extra == null) gamesBox.addView(label(if (kind == "gba") "No games yet (.gba or .zip)." else "No games yet (.gb or .zip).", dim = true, size = 13f))
+            for (f in files) gamesBox.addView(row(grow(label(f.name, size = 14f)), button("Play", accent = true) { play(kind, f) },
+                gap(button("×") { deleteGame(f) }, 4), top = 4))
+        }
+        section("Game Boy", "gb", REQ_ROM_GB)
+        section("Game Boy Advance", "gba", REQ_ROM_GBA)
+        val free = row(grow(label("Freedoom: Phase 1 (free)" + if (freedoom.isFile) "" else "  - 28 MB download", size = 14f)),
+            button("Play", accent = true) { playFreedoom() }, top = 4)
+        section("Doom", "doom", REQ_WAD, free)
+        gamesBox.addView(label("Doom has sound effects but no music. Game saves are kept in the app.", dim = true, size = 13f).apply { setPadding(0, dp(10), 0, 0) })
+    }
+
+    private fun importGame(uri: Uri, kind: String) {
+        val name = displayName(uri).replace(Regex("[^\\w .()\\[\\]-]"), "_").take(80).ifEmpty { "game" }
+        say("Adding $name...")
+        bg({
+            val out = java.io.File(gameDir(kind), name)
+            contentResolver.openInputStream(uri)?.use { input -> out.outputStream().use { input.copyTo(it) } }
+                ?: throw Core.PupError("That file could not be opened")
+            if (out.length() > 64L * 1024 * 1024) { out.delete(); throw Core.PupError("That file is bigger than 64 MB") }
+            name
+        }) { n, err ->
+            if (n == null) say(err ?: "", BAD) else { say("$n added.", GOOD); refreshGames() }
+        }
+    }
+
+    private fun deleteGame(f: java.io.File) {
+        AlertDialog.Builder(this).setMessage("Remove ${f.name}? (Its save stays.)")
+            .setPositiveButton("Remove") { _, _ -> f.delete(); refreshGames() }.setNegativeButton("Cancel", null).show()
+    }
+
+    private fun play(kind: String, f: java.io.File) {
+        startActivity(Intent(this, EmuActivity::class.java).putExtra(EmuActivity.EXTRA_KIND, kind).putExtra(EmuActivity.EXTRA_PATH, f.absolutePath))
+    }
+
+    private fun playFreedoom() {
+        if (freedoom.isFile) { play("doom", freedoom); return }
+        say("Downloading Freedoom (28 MB)...")
+        bg({
+            val part = java.io.File(freedoom.path + ".part").apply { parentFile?.mkdirs() }
+            val c = java.net.URL("https://raw.githubusercontent.com/${Core.REPO}/${Core.BRANCH}/assets/doom/freedoom1.wad").openConnection() as java.net.HttpURLConnection
+            try {
+                if (c.responseCode != 200) throw Core.PupError("GitHub answered HTTP ${c.responseCode}")
+                val total = c.contentLengthLong
+                var done = 0L
+                c.inputStream.use { input -> part.outputStream().use { o ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        val n = input.read(buf); if (n < 0) break
+                        o.write(buf, 0, n); done += n
+                        if (total > 0) main.post { say("Downloading Freedoom: ${done * 100 / total}%") }
+                    }
+                } }
+            } catch (e: java.io.IOException) { throw Core.PupError("Could not download Freedoom: ${e.message}") } finally { c.disconnect() }
+            val head = part.inputStream().use { val b = ByteArray(4); it.read(b); String(b, Charsets.US_ASCII) }
+            if (head != "IWAD" || part.length() < 1_000_000) { part.delete(); throw Core.PupError("The Freedoom download is not a WAD") }
+            part.renameTo(freedoom)
+        }) { _, err ->
+            if (err != null) say(err, BAD) else { say("Freedoom is ready.", GOOD); refreshGames(); play("doom", freedoom) }
+        }
+    }
+
+    // ------------------------------------------------------------------ tags
+    private fun buildTags(): View {
+        tagTokenIn = field("GitHub token", secret = true)
+        tagTokenLbl = label("", dim = true, size = 13f)
+        tagsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = plate(Color.WHITE, LINE); setPadding(dp(8), dp(4), dp(8), dp(4)) }
+        tName = field("Name (only shown here)")
+        tText = field("Text")
+        tSub = field("Under it")
+        tColor = field("#ffffff").apply { inputType = InputType.TYPE_CLASS_TEXT }
+        tRainbow = check("Rainbow", false)
+        tFont = spinner(Tags.FONTS, "GothamBold")
+        tSize = field("22").apply { inputType = InputType.TYPE_CLASS_NUMBER }
+        tBackdrop = check("Dark box behind", false)
+        tPfp = spinner(Tags.PFP_MODES, "none")
+        tImage = field("Picture URL (for custom)")
+        membersBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = plate(Color.WHITE, LINE); setPadding(dp(8), dp(4), dp(8), dp(4)) }
+        memberIn = field("Roblox username or user id").apply { inputType = InputType.TYPE_CLASS_TEXT }
+        tagEditor = page(
+            row(label("Text", size = 13f), gap(grow(tText), 6)), row(label("Under it", size = 13f), gap(grow(tSub), 6)),
+            row(label("Name", size = 13f), gap(grow(tName), 6)),
+            row(label("Colour", size = 13f), gap(grow(tColor), 6), gap(tRainbow)),
+            row(label("Font", size = 13f), gap(tFont), gap(label("Size", size = 13f), 10), gap(grow(tSize), 6)),
+            row(label("Picture", size = 13f), gap(tPfp), gap(tBackdrop)),
+            tImage,
+            label("Who wears it", bold = true).apply { setPadding(0, dp(8), 0, 0) },
+            membersBox,
+            row(grow(memberIn), gap(button("Add") { addMember() })),
+            row(button("Delete tag") { deleteTag() }, grow(View(this)), button("Save to GitHub", accent = true) { saveTags() }, top = 12)
+        ).apply { setPadding(0, 0, 0, 0); visibility = View.GONE }
+        tagTokenLabel()
+        return page(
+            row(grow(tagTokenIn), gap(button("Save") { saveTagToken() }), gap(button("Load") { loadTags() }, 4)),
+            tagTokenLbl,
+            row(label("Tags", bold = true), grow(View(this)), button("New tag") { newTag() }, top = 10),
+            tagsBox,
+            tagEditor)
+    }
+
+    private fun tagTokenLabel() {
+        tagTokenLbl.text = if (store.secret("tags_token").isNotEmpty()) "A token is saved (encrypted): you can save tag changes."
+            else "Anyone can load the tags. Saving needs a fine-grained GitHub token for 5emf/PuppyAdmin with Contents: read and write."
+    }
+
+    private fun saveTagToken() {
+        store.setSecret("tags_token", tagTokenIn.text.toString())
+        tagTokenIn.setText("")
+        tagTokenLabel()
+        say(if (store.secret("tags_token").isEmpty()) "Token removed." else "Token saved.", GOOD)
+    }
+
+    private fun tagTitle(t: org.json.JSONObject) =
+        (if (t.opt("isDefault") == true) "(default) " else "") + t.optString("name") + "   [" + Tags.members(t).size + "]"
+
+    private fun fillTags() {
+        tagsBox.removeAllViews()
+        if (tagList.isEmpty()) tagsBox.addView(label("Press Load.", dim = true))
+        for ((i, t) in tagList.withIndex()) {
+            tagsBox.addView(label(tagTitle(t)).apply {
+                setPadding(dp(6), dp(8), dp(6), dp(8))
+                if (i == tagIndex) { setBackgroundColor(ORANGE); setTextColor(Color.WHITE) }
+                setOnClickListener { if (storeTag()) showTag(i) }
+            })
+        }
+    }
+
+    private fun loadTags() {
+        say("Loading the tags...")
+        val token = store.secret("tags_token").ifEmpty { null }
+        bg({ Tags.load(http, token) }) { res, err ->
+            if (res == null) { say(err ?: "", BAD); return@bg }
+            tagList = res.first
+            tagSha = res.second
+            tagIndex = -1
+            fillTags()
+            tagEditor.visibility = View.GONE
+            say("${tagList.size} tags loaded.", GOOD)
+            val ids = tagList.flatMap { Tags.members(it) }.toSet()
+            bg({ Tags.userNames(http, ids) }) { names, _ -> if (names != null) { tagNames.putAll(names); showMembers() } }
+        }
+    }
+
+    private fun storeTag(): Boolean {
+        if (tagIndex < 0) return true
+        val t = tagList[tagIndex]
+        try {
+            t.put("color", Tags.parseHex(tColor.text.toString()))
+        } catch (e: Core.PupError) { say(e.message ?: "", BAD); return false }
+        val size = tSize.text.toString().toIntOrNull() ?: 22
+        t.put("name", tName.text.toString()).put("text", tText.text.toString()).put("sub", tSub.text.toString())
+            .put("rainbow", tRainbow.isChecked).put("font", tFont.selectedItem as String).put("size", size)
+        t.getJSONObject("backdrop").put("on", tBackdrop.isChecked)
+        t.getJSONObject("pfp").put("mode", tPfp.selectedItem as String).put("image", tImage.text.toString().trim())
+        tagList[tagIndex] = Tags.clean(t)
+        return true
+    }
+
+    private fun showTag(i: Int) {
+        tagIndex = i
+        val t = tagList[i]
+        tName.setText(t.optString("name")); tText.setText(t.optString("text")); tSub.setText(t.optString("sub"))
+        tColor.setText(Tags.hex(t.getJSONArray("color"))); tRainbow.isChecked = t.optBoolean("rainbow")
+        tFont.setSelection(Tags.FONTS.indexOf(t.optString("font")).coerceAtLeast(0))
+        tSize.setText(t.optDouble("size", 22.0).toInt().toString())
+        tBackdrop.isChecked = t.getJSONObject("backdrop").optBoolean("on")
+        tPfp.setSelection(Tags.PFP_MODES.indexOf(t.getJSONObject("pfp").optString("mode")).coerceAtLeast(0))
+        tImage.setText(t.getJSONObject("pfp").optString("image"))
+        tagEditor.visibility = View.VISIBLE
+        fillTags()
+        showMembers()
+    }
+
+    private fun showMembers() {
+        membersBox.removeAllViews()
+        if (tagIndex < 0) return
+        val t = tagList[tagIndex]
+        if (t.opt("isDefault") == true) {
+            membersBox.addView(label("The default tag: worn by everyone running Puppy Admin with no other tag.", dim = true, size = 13f))
+            return
+        }
+        val ids = Tags.members(t)
+        if (ids.isEmpty()) membersBox.addView(label("No one yet.", dim = true))
+        for (id in ids) membersBox.addView(row(grow(label(tagNames[id]?.let { "$it ($id)" } ?: id)), button("×") {
+            Tags.setMembers(t, Tags.members(t) - id); fillTags(); showMembers(); say("Removed (not saved yet).")
+        }, top = 4))
+    }
+
+    private fun newTag() {
+        if (!storeTag()) return
+        if (tagSha == null && tagList.isEmpty()) { say("Load the tags first.", BAD); return }
+        if (tagList.size >= Tags.MAX_TAGS) { say("Puppy Admin keeps at most ${Tags.MAX_TAGS} tags.", BAD); return }
+        tagList.add(Tags.newTag())
+        showTag(tagList.size - 1)
+        say("New tag added: fill it in, add who wears it, then Save to GitHub.")
+    }
+
+    private fun deleteTag() {
+        if (tagIndex < 0) return
+        val name = tagList[tagIndex].optString("name")
+        AlertDialog.Builder(this).setMessage("Delete the tag $name?").setPositiveButton("Delete") { _, _ ->
+            tagList.removeAt(tagIndex); tagIndex = -1; tagEditor.visibility = View.GONE; fillTags(); say("$name deleted (not saved yet).")
+        }.setNegativeButton("Cancel", null).show()
+    }
+
+    private fun addMember() {
+        if (tagIndex < 0 || tagList[tagIndex].opt("isDefault") == true) { say("Pick a tag (not the default one) first.", BAD); return }
+        val text = memberIn.text.toString()
+        val index = tagIndex
+        bg({ Tags.userId(http, text) }) { res, err ->
+            if (res == null) { say(err ?: "", BAD); return@bg }
+            val (id, name) = res
+            val target = tagList[index]
+            val other = Tags.ownerOf(tagList, id)
+            val add = {
+                other?.let { Tags.setMembers(it, Tags.members(it) - id) }
+                Tags.setMembers(target, Tags.members(target) + id)
+                if (name != null) tagNames[id] = name
+                memberIn.setText("")
+                fillTags(); showMembers()
+                say("${name ?: id} added (not saved yet).", GOOD)
+            }
+            when {
+                other === target -> say("They already wear this tag.")
+                other != null -> AlertDialog.Builder(this).setMessage("${name ?: id} already wears ${other.optString("name")}. Move them to this tag?")
+                    .setPositiveButton("Move") { _, _ -> add() }.setNegativeButton("Cancel", null).show()
+                else -> add()
+            }
+        }
+    }
+
+    private fun saveTags() {
+        if (!storeTag()) return
+        val token = store.secret("tags_token")
+        if (token.isEmpty()) { say("Save your GitHub token first (it needs Contents: read and write).", BAD); return }
+        val snapshot = tagList.map { org.json.JSONObject(it.toString()) }
+        say("Saving the tags to GitHub...")
+        bg({ Tags.save(http, snapshot, tagSha, token) }) { sha, err ->
+            if (err != null) { say(err, BAD); return@bg }
+            tagSha = sha
+            say("Saved: Puppy Admin picks the new tags up within a minute or two.", GOOD)
+        }
+    }
+
     companion object {
         private const val REQ_PICTURE = 7
+        private const val REQ_ROM_GB = 8
+        private const val REQ_ROM_GBA = 9
+        private const val REQ_WAD = 10
+        private const val REQ_OVERLAY = 11
         private val CARD = 0xFFFBFBFB.toInt()
         private val LINE = 0xFFC8CCD4.toInt()
         private val STRIP = 0xFFE6E7EA.toInt()
