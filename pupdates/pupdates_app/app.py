@@ -837,7 +837,7 @@ class PupdatesApp:
         r = self._row(p, pady=(6, 3))
         lf = tk.Frame(r, bg=FIELD, highlightthickness=1, highlightbackground=LINE)
         lf.pack(side="left", fill="both", expand=True)
-        self.tags_box = tk.Listbox(lf, height=5, bg=FIELD, fg=INK, relief="flat", highlightthickness=0, bd=0, exportselection=False,
+        self.tags_box = tk.Listbox(lf, height=4, bg=FIELD, fg=INK, relief="flat", highlightthickness=0, bd=0, exportselection=False,
                                    selectbackground=ORANGE, selectforeground="#ffffff", font=(self.family, 10), activestyle="none")
         self.tags_box.pack(fill="both", expand=True, padx=4, pady=4)
         self.tags_box.bind("<<ListboxSelect>>", lambda e: self.pick_tag())
@@ -848,31 +848,49 @@ class PupdatesApp:
 
         g = ttk.Frame(p)
         g.pack(fill="x", pady=(4, 0))
-        self.tv = {k: tk.StringVar() for k in ("name", "text", "sub", "color", "font", "size", "pfp_mode", "pfp_image")}
+        self.tv = {k: tk.StringVar() for k in ("name", "text", "sub", "color", "font", "size", "offset", "pfp_mode", "pfp_image",
+                                                "bd_color", "bd_alpha", "bd_image", "bd_img_alpha")}
         self.tv_rainbow, self.tv_backdrop = tk.BooleanVar(), tk.BooleanVar()
+        self.tv_bd_round, self.tv_pfp_round = tk.BooleanVar(value=True), tk.BooleanVar(value=True)
         cells = [("Name", "name"), ("Text", "text"), ("Under it", "sub")]
         for i, (label, key) in enumerate(cells):
             ttk.Label(g, text=label).grid(row=i, column=0, sticky="w", pady=1)
-            ttk.Entry(g, textvariable=self.tv[key]).grid(row=i, column=1, columnspan=3, sticky="ew", pady=1)
+            ttk.Entry(g, textvariable=self.tv[key]).grid(row=i, column=1, columnspan=5, sticky="ew", pady=1)
         ttk.Label(g, text="Colour").grid(row=3, column=0, sticky="w", pady=1)
         ttk.Entry(g, textvariable=self.tv["color"], width=9).grid(row=3, column=1, sticky="w")
-        ttk.Button(g, text="Pick...", command=self.pick_tag_color).grid(row=3, column=2, sticky="w", padx=4)
-        ttk.Checkbutton(g, text="Rainbow", variable=self.tv_rainbow).grid(row=3, column=3, sticky="w")
+        ttk.Button(g, text="Pick...", command=lambda: self.pick_tag_color("color")).grid(row=3, column=2, sticky="w", padx=4)
+        ttk.Checkbutton(g, text="Rainbow", variable=self.tv_rainbow).grid(row=3, column=3, columnspan=3, sticky="w")
         ttk.Label(g, text="Font").grid(row=4, column=0, sticky="w", pady=1)
         ttk.Combobox(g, textvariable=self.tv["font"], values=list(tags.FONTS), state="readonly", width=14).grid(row=4, column=1, sticky="w")
         ttk.Label(g, text="Size").grid(row=4, column=2, sticky="e", padx=4)
-        ttk.Spinbox(g, textvariable=self.tv["size"], from_=8, to=48, width=5).grid(row=4, column=3, sticky="w")
+        ttk.Spinbox(g, textvariable=self.tv["size"], from_=8, to=48, width=4).grid(row=4, column=3, sticky="w")
+        ttk.Label(g, text="Height").grid(row=4, column=4, sticky="e", padx=4)
+        ttk.Spinbox(g, textvariable=self.tv["offset"], from_=0, to=12, increment=0.5, width=4).grid(row=4, column=5, sticky="w")
         ttk.Label(g, text="Picture").grid(row=5, column=0, sticky="w", pady=1)
         ttk.Combobox(g, textvariable=self.tv["pfp_mode"], values=list(tags.PFP_MODES), state="readonly", width=8).grid(row=5, column=1, sticky="w")
-        ttk.Checkbutton(g, text="Dark box behind", variable=self.tv_backdrop).grid(row=5, column=2, columnspan=2, sticky="w", padx=4)
-        ttk.Label(g, text="Image URL").grid(row=6, column=0, sticky="w", pady=1)
-        ttk.Entry(g, textvariable=self.tv["pfp_image"]).grid(row=6, column=1, columnspan=3, sticky="ew", pady=1)
+        ttk.Checkbutton(g, text="Round picture", variable=self.tv_pfp_round).grid(row=5, column=2, columnspan=4, sticky="w", padx=4)
+        ttk.Label(g, text="Image").grid(row=6, column=0, sticky="w", pady=1)
+        ttk.Entry(g, textvariable=self.tv["pfp_image"]).grid(row=6, column=1, columnspan=5, sticky="ew", pady=1)
+        ttk.Checkbutton(g, text="Backdrop", variable=self.tv_backdrop).grid(row=7, column=0, sticky="w", pady=(4, 1))
+        ttk.Entry(g, textvariable=self.tv["bd_color"], width=9).grid(row=7, column=1, sticky="w", pady=(4, 1))
+        ttk.Button(g, text="Pick...", command=lambda: self.pick_tag_color("bd_color")).grid(row=7, column=2, sticky="w", padx=4, pady=(4, 1))
+        ttk.Checkbutton(g, text="Rounded corners", variable=self.tv_bd_round).grid(row=7, column=3, columnspan=3, sticky="w", pady=(4, 1))
+        ttk.Label(g, text="See-through").grid(row=8, column=0, sticky="w", pady=1)
+        ttk.Spinbox(g, textvariable=self.tv["bd_alpha"], from_=0, to=1, increment=0.05, width=5).grid(row=8, column=1, sticky="w")
+        ttk.Label(g, text="Image see-through").grid(row=8, column=2, columnspan=3, sticky="e", padx=4)
+        ttk.Spinbox(g, textvariable=self.tv["bd_img_alpha"], from_=0, to=1, increment=0.05, width=5).grid(row=8, column=5, sticky="w")
+        ttk.Label(g, text="Box image").grid(row=9, column=0, sticky="w", pady=1)
+        ttk.Entry(g, textvariable=self.tv["bd_image"]).grid(row=9, column=1, columnspan=5, sticky="ew", pady=1)
         g.grid_columnconfigure(1, weight=1)
+        self.tag_preview = tk.Canvas(p, height=58, bg="#7f8794", highlightthickness=1, highlightbackground=LINE)
+        self.tag_preview.pack(fill="x", pady=(4, 0))
+        for v in list(self.tv.values()) + [self.tv_rainbow, self.tv_backdrop, self.tv_bd_round, self.tv_pfp_round]:
+            v.trace_add("write", lambda *a: self._draw_tag_preview())
 
         r = self._row(p, pady=(6, 3))
         mf = tk.Frame(r, bg=FIELD, highlightthickness=1, highlightbackground=LINE)
         mf.pack(side="left", fill="both", expand=True)
-        self.members_box = tk.Listbox(mf, height=4, bg=FIELD, fg=INK, relief="flat", highlightthickness=0, bd=0, exportselection=False,
+        self.members_box = tk.Listbox(mf, height=3, bg=FIELD, fg=INK, relief="flat", highlightthickness=0, bd=0, exportselection=False,
                                       selectbackground=ORANGE, selectforeground="#ffffff", font=(self.family, 10), activestyle="none")
         self.members_box.pack(fill="both", expand=True, padx=4, pady=4)
         side = ttk.Frame(r)
@@ -942,14 +960,23 @@ class PupdatesApp:
         t = self.tag_list[self.tag_index]
         try:
             color = tags.parse_hex(self.tv["color"].get())
-            size = int(float(self.tv["size"].get() or 22))
+            bd_color = tags.parse_hex(self.tv["bd_color"].get())
         except ValueError as e:
-            self.say(str(e) if "hex" in str(e) else "The size is a number from 8 to 48", "Bad")
+            self.say(str(e), "Bad")
+            return False
+        try:
+            size = float(self.tv["size"].get() or 22)
+            offset = float(self.tv["offset"].get() or 3)
+            alpha = float(self.tv["bd_alpha"].get() or 0.35)
+            img_alpha = float(self.tv["bd_img_alpha"].get() or 0.15)
+        except ValueError:
+            self.say("Size, height and see-through are numbers (size 8-48, height 0-12, see-through 0-1)", "Bad")
             return False
         t.update({"name": self.tv["name"].get(), "text": self.tv["text"].get(), "sub": self.tv["sub"].get(), "color": color,
-                  "rainbow": self.tv_rainbow.get(), "font": self.tv["font"].get() or "GothamBold", "size": size})
-        t["backdrop"]["on"] = self.tv_backdrop.get()
-        t["pfp"]["mode"], t["pfp"]["image"] = self.tv["pfp_mode"].get() or "none", self.tv["pfp_image"].get().strip()
+                  "rainbow": self.tv_rainbow.get(), "font": self.tv["font"].get() or "GothamBold", "size": size, "offset": offset})
+        t["backdrop"].update({"on": self.tv_backdrop.get(), "color": bd_color, "transparency": alpha, "image": self.tv["bd_image"].get().strip(),
+                              "imageTransparency": img_alpha, "round": self.tv_bd_round.get()})
+        t["pfp"].update({"mode": self.tv["pfp_mode"].get() or "none", "image": self.tv["pfp_image"].get().strip(), "round": self.tv_pfp_round.get()})
         self.tag_list[self.tag_index] = tags.clean_tag(t)
         self.tags_box.delete(self.tag_index)
         self.tags_box.insert(self.tag_index, self._tag_label(self.tag_list[self.tag_index]))
@@ -958,11 +985,18 @@ class PupdatesApp:
     def _show_tag(self, i):
         self.tag_index = i
         t = self.tag_list[i] if i is not None else tags.new_tag("")
+        bd, pf = t["backdrop"], t["pfp"]
+        num = lambda v: ("%g" % v)
         for key, val in (("name", t["name"]), ("text", t["text"]), ("sub", t["sub"]), ("color", tags.hex_color(t["color"])),
-                         ("font", t["font"]), ("size", str(int(t["size"]))), ("pfp_mode", t["pfp"]["mode"]), ("pfp_image", t["pfp"]["image"])):
+                         ("font", t["font"]), ("size", num(t["size"])), ("offset", num(t["offset"])), ("pfp_mode", pf["mode"]),
+                         ("pfp_image", pf["image"]), ("bd_color", tags.hex_color(bd["color"])), ("bd_alpha", num(bd["transparency"])),
+                         ("bd_image", bd["image"]), ("bd_img_alpha", num(bd["imageTransparency"]))):
             self.tv[key].set(val if i is not None else "")
         self.tv_rainbow.set(t["rainbow"] and i is not None)
-        self.tv_backdrop.set(t["backdrop"]["on"] and i is not None)
+        self.tv_backdrop.set(bd["on"] and i is not None)
+        self.tv_bd_round.set(bd["round"])
+        self.tv_pfp_round.set(pf["round"])
+        self._draw_tag_preview()
         self._show_members()
 
     def _show_members(self):
@@ -1012,14 +1046,56 @@ class PupdatesApp:
         self._show_tag(None)
         self.say("%s deleted (not saved yet)." % name)
 
-    def pick_tag_color(self):
+    def pick_tag_color(self, key="color"):
         try:
-            start = tags.hex_color(tags.parse_hex(self.tv["color"].get()))
+            start = tags.hex_color(tags.parse_hex(self.tv[key].get()))
         except ValueError:
             start = "#ffffff"
-        got = colorchooser.askcolor(color=start, parent=self.root, title="Tag colour")
+        got = colorchooser.askcolor(color=start, parent=self.root, title="Backdrop colour" if key == "bd_color" else "Tag colour")
         if got and got[1]:
-            self.tv["color"].set(got[1])
+            self.tv[key].set(got[1])
+
+    def _draw_tag_preview(self):
+        """A rough look at the tag (Roblox draws the real one): backdrop, picture spot, text and the line under it."""
+        c = getattr(self, "tag_preview", None)
+        if c is None:
+            return
+        c.delete("all")
+        if self.tag_index is None:
+            c.create_text(10, 29, anchor="w", text="Pick or add a tag to see it here", fill="#ffffff", font=(self.family, 10))
+            return
+        w = max(c.winfo_width(), 300)
+        spec = tags.preview_spec(self._preview_values())
+        x0, x1, y0, y1 = w / 2 - 130, w / 2 + 130, 6, 52
+        if spec["backdrop"]:
+            c.create_rectangle(x0, y0, x1, y1, fill=spec["backdrop"], outline="", stipple=spec["stipple"])
+        if spec["pfp"]:
+            if spec["pfp_round"]:
+                c.create_oval(x0 + 6, y0 + 6, x0 + 40, y0 + 40, fill="#d8dbe2", outline="#ffffff")
+            else:
+                c.create_rectangle(x0 + 6, y0 + 6, x0 + 40, y0 + 40, fill="#d8dbe2", outline="#ffffff")
+            c.create_text(x0 + 23, y0 + 23, text=spec["pfp"], fill="#464646", font=(self.family, 7))
+        size = max(9, min(18, int(spec["size"] * 0.7)))
+        tx = w / 2 + (14 if spec["pfp"] else 0)
+        if spec["rainbow"]:
+            text, cols = spec["text"], tags.RAINBOW
+            total = len(text) * size * 0.62
+            for k, ch in enumerate(text):
+                c.create_text(tx - total / 2 + k * size * 0.62, 22, text=ch, fill=cols[k % len(cols)], font=(self.family, size, "bold"))
+        else:
+            c.create_text(tx, 22, text=spec["text"], fill=spec["color"], font=(self.family, size, "bold"))
+        if spec["sub"]:
+            c.create_text(tx, 42, text=spec["sub"], fill="#dddddd", font=(self.family, 9))
+
+    def _preview_values(self):
+        def num(key, default):
+            try:
+                return float(self.tv[key].get())
+            except ValueError:
+                return default
+        return {"text": self.tv["text"].get(), "sub": self.tv["sub"].get(), "color": self.tv["color"].get(), "rainbow": self.tv_rainbow.get(),
+                "size": num("size", 22), "backdrop": self.tv_backdrop.get(), "bd_color": self.tv["bd_color"].get(),
+                "bd_alpha": num("bd_alpha", 0.35), "pfp": self.tv["pfp_mode"].get(), "pfp_round": self.tv_pfp_round.get()}
 
     def add_member(self):
         if self.tag_index is None or self.tag_list[self.tag_index].get("isDefault"):

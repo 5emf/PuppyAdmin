@@ -459,6 +459,32 @@ class WindowTest(unittest.TestCase):
         self.assertTrue(self.discord.sent[1][1]["avatar"].startswith("data:image/png"))
         self.assertTrue(self.pump(lambda: "picture was changed" in self.app.status.cget("text")))
 
+    def test_every_tag_setting_round_trips(self):
+        repo = FakeTagRepo(TAGS)
+        self.app.opener = repo
+        self.settings.set_secret("tags_token", "ghp_good")
+        self.app.load_tags()
+        self.assertTrue(self.pump(lambda: self.app.tags_box.size() == 2))
+        self.app.tags_box.selection_set(0)
+        self.app.pick_tag()
+        self.assertEqual((self.app.tv["bd_color"].get(), self.app.tv["bd_alpha"].get(), self.app.tv["offset"].get()), ("#121216", "0.35", "3"))
+        for k, v in (("offset", "7.5"), ("bd_color", "#203040"), ("bd_alpha", "0.6"), ("bd_image", "rbxassetid://123"),
+                     ("bd_img_alpha", "0.3"), ("pfp_mode", "custom"), ("pfp_image", "https://example.com/p.png"), ("size", "30")):
+            self.app.tv[k].set(v)
+        self.app.tv_bd_round.set(False)
+        self.app.tv_pfp_round.set(False)
+        self.assertTrue(self.app.save_tags())
+        self.assertTrue(self.pump(lambda: repo.writes))
+        t = repo.writes[0][0]
+        self.assertEqual((t["offset"], t["size"], t["backdrop"], t["pfp"]),
+                         (7.5, 30.0, {"on": True, "color": [32, 48, 64], "transparency": 0.6, "image": "rbxassetid://123",
+                                      "imageTransparency": 0.3, "round": False},
+                          {"mode": "custom", "image": "https://example.com/p.png", "round": False}))
+        self.app.tv["bd_alpha"].set("lots")
+        self.assertFalse(self.app._store_tag())
+        spec = tags.preview_spec({"text": "Hi", "color": "#ff0000", "backdrop": True, "bd_color": "bad", "bd_alpha": 0.5, "pfp": "avatar"})
+        self.assertEqual((spec["color"], spec["backdrop"], spec["stipple"], spec["pfp"]), ("#ff0000", "#121216", "gray50", "avatar"))
+
     def test_topmost_setting(self):
         self.app.topmost_var.set(True)
         self.app.set_topmost(True, save=True)

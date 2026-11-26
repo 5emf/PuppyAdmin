@@ -36,4 +36,26 @@ class LayoutTest {
             assertTrue("$name: the header is ${head.height} px tall", head.height in 1..400)
         }
     }
+
+    @Test fun tagEditorKeepsEverySetting() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        val list: MutableList<org.json.JSONObject> = mutableListOf(Tags.newTag("Owner"))
+        val f = MainActivity::class.java.getDeclaredField("tagList").apply { isAccessible = true }
+        f.set(activity, list)
+        MainActivity::class.java.getDeclaredMethod("showTag", Int::class.java).apply { isAccessible = true }.invoke(activity, 0)
+        fun edit(name: String, v: String) = field<android.widget.EditText>(activity, name).setText(v)
+        edit("tOffset", "7.5"); edit("tBdColor", "#203040"); edit("tBdAlpha", "0.6"); edit("tBdImage", "rbxassetid://123")
+        edit("tBdImgAlpha", "0.3"); edit("tSize", "30")
+        field<android.widget.CheckBox>(activity, "tBdRound").isChecked = false
+        field<android.widget.CheckBox>(activity, "tPfpRound").isChecked = false
+        field<android.widget.CheckBox>(activity, "tBackdrop").isChecked = true
+        val ok = MainActivity::class.java.getDeclaredMethod("storeTag").apply { isAccessible = true }.invoke(activity) as Boolean
+        assertTrue(ok)
+        val t: MutableList<org.json.JSONObject> = field(activity, "tagList")
+        val bd = t[0].getJSONObject("backdrop")
+        assertTrue(t[0].getDouble("offset") == 7.5 && t[0].getDouble("size") == 30.0)
+        assertTrue(bd.getBoolean("on") && !bd.getBoolean("round") && bd.getDouble("transparency") == 0.6 && bd.getDouble("imageTransparency") == 0.3)
+        assertTrue(bd.getString("image") == "rbxassetid://123" && bd.getJSONArray("color").toString() == "[32,48,64]")
+        assertTrue(!t[0].getJSONObject("pfp").getBoolean("round"))
+    }
 }

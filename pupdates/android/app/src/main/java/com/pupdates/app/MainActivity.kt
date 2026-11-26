@@ -119,6 +119,14 @@ class MainActivity : Activity() {
     private lateinit var tBackdrop: CheckBox
     private lateinit var tPfp: Spinner
     private lateinit var tImage: EditText
+    private lateinit var tOffset: EditText
+    private lateinit var tBdColor: EditText
+    private lateinit var tBdAlpha: EditText
+    private lateinit var tBdImage: EditText
+    private lateinit var tBdImgAlpha: EditText
+    private lateinit var tBdRound: CheckBox
+    private lateinit var tPfpRound: CheckBox
+    private lateinit var tagPreview: TagPreview
     private lateinit var membersBox: LinearLayout
     private lateinit var memberIn: EditText
     private var tagList = mutableListOf<org.json.JSONObject>()
@@ -1025,19 +1033,44 @@ class MainActivity : Activity() {
         tColor = field("#ffffff").apply { inputType = InputType.TYPE_CLASS_TEXT }
         tRainbow = check("Rainbow", false)
         tFont = spinner(Tags.FONTS, "GothamBold")
-        tSize = field("22").apply { inputType = InputType.TYPE_CLASS_NUMBER }
-        tBackdrop = check("Dark box behind", false)
+        val decimal = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        tSize = field("22").apply { inputType = decimal }
+        tOffset = field("3").apply { inputType = decimal }
+        tBackdrop = check("Backdrop", false)
         tPfp = spinner(Tags.PFP_MODES, "none")
-        tImage = field("Picture URL (for custom)")
+        tImage = field("Picture: id, rbxassetid or image URL")
+        tPfpRound = check("Round picture", true)
+        tBdColor = field("#121216").apply { inputType = InputType.TYPE_CLASS_TEXT }
+        tBdRound = check("Rounded corners", true)
+        tBdAlpha = field("0.35").apply { inputType = decimal }
+        tBdImgAlpha = field("0.15").apply { inputType = decimal }
+        tBdImage = field("Backdrop image: id, rbxassetid or URL")
+        tagPreview = TagPreview(this)
+        val watcher = object : android.text.TextWatcher {
+            override fun afterTextChanged(e: android.text.Editable?) = updateTagPreview()
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        }
+        for (e in listOf(tText, tSub, tColor, tSize, tBdColor, tBdAlpha)) e.addTextChangedListener(watcher)
+        for (c in listOf(tRainbow, tBackdrop, tBdRound, tPfpRound)) c.setOnCheckedChangeListener { _, _ -> updateTagPreview() }
+        tPfp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) = updateTagPreview()
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
         membersBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = plate(Color.WHITE, LINE); setPadding(dp(8), dp(4), dp(8), dp(4)) }
         memberIn = field("Roblox username or user id").apply { inputType = InputType.TYPE_CLASS_TEXT }
         tagEditor = page(
-            row(label("Text", size = 13f), gap(grow(tText), 6)), row(label("Under it", size = 13f), gap(grow(tSub), 6)),
-            row(label("Name", size = 13f), gap(grow(tName), 6)),
-            row(label("Colour", size = 13f), gap(grow(tColor), 6), gap(tRainbow)),
-            row(label("Font", size = 13f), gap(tFont), gap(label("Size", size = 13f), 10), gap(grow(tSize), 6)),
-            row(label("Picture", size = 13f), gap(tPfp), gap(tBackdrop)),
+            tagPreview.also { it.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(84)).also { lp -> lp.topMargin = dp(6) } },
+            row(label("Text", size = 13f), grow(tText, 6)), row(label("Under it", size = 13f), grow(tSub, 6)),
+            row(label("Name", size = 13f), grow(tName, 6)),
+            row(label("Colour", size = 13f), grow(tColor, 6), gap(tRainbow)),
+            row(label("Font", size = 13f), gap(tFont)),
+            row(label("Size", size = 13f), grow(tSize, 6), gap(label("Height", size = 13f), 10), grow(tOffset, 6)),
+            row(label("Picture", size = 13f), gap(tPfp), gap(tPfpRound)),
             tImage,
+            row(tBackdrop, grow(tBdColor, 6), gap(tBdRound), top = 10),
+            row(label("See-through", size = 13f), grow(tBdAlpha, 6), gap(label("Image", size = 13f), 10), grow(tBdImgAlpha, 6)),
+            tBdImage,
             label("Who wears it", bold = true).apply { setPadding(0, dp(8), 0, 0) },
             membersBox,
             row(grow(memberIn), gap(button("Add") { addMember() })),
@@ -1098,14 +1131,22 @@ class MainActivity : Activity() {
     private fun storeTag(): Boolean {
         if (tagIndex < 0) return true
         val t = tagList[tagIndex]
+        val color: org.json.JSONArray
+        val bdColor: org.json.JSONArray
         try {
-            t.put("color", Tags.parseHex(tColor.text.toString()))
+            color = Tags.parseHex(tColor.text.toString())
+            bdColor = Tags.parseHex(tBdColor.text.toString())
         } catch (e: Core.PupError) { say(e.message ?: "", BAD); return false }
-        val size = tSize.text.toString().toIntOrNull() ?: 22
-        t.put("name", tName.text.toString()).put("text", tText.text.toString()).put("sub", tSub.text.toString())
-            .put("rainbow", tRainbow.isChecked).put("font", tFont.selectedItem as String).put("size", size)
-        t.getJSONObject("backdrop").put("on", tBackdrop.isChecked)
-        t.getJSONObject("pfp").put("mode", tPfp.selectedItem as String).put("image", tImage.text.toString().trim())
+        fun num(e: EditText, def: Double): Double? = e.text.toString().trim().let { if (it.isEmpty()) def else it.toDoubleOrNull() }
+        val size = num(tSize, 22.0); val offset = num(tOffset, 3.0); val alpha = num(tBdAlpha, 0.35); val imgAlpha = num(tBdImgAlpha, 0.15)
+        if (size == null || offset == null || alpha == null || imgAlpha == null) {
+            say("Size, height and see-through are numbers (size 8-48, height 0-12, see-through 0-1).", BAD); return false
+        }
+        t.put("name", tName.text.toString()).put("text", tText.text.toString()).put("sub", tSub.text.toString()).put("color", color)
+            .put("rainbow", tRainbow.isChecked).put("font", tFont.selectedItem as String).put("size", size).put("offset", offset)
+        t.getJSONObject("backdrop").put("on", tBackdrop.isChecked).put("color", bdColor).put("transparency", alpha)
+            .put("image", tBdImage.text.toString().trim()).put("imageTransparency", imgAlpha).put("round", tBdRound.isChecked)
+        t.getJSONObject("pfp").put("mode", tPfp.selectedItem as String).put("image", tImage.text.toString().trim()).put("round", tPfpRound.isChecked)
         tagList[tagIndex] = Tags.clean(t)
         return true
     }
@@ -1116,13 +1157,32 @@ class MainActivity : Activity() {
         tName.setText(t.optString("name")); tText.setText(t.optString("text")); tSub.setText(t.optString("sub"))
         tColor.setText(Tags.hex(t.getJSONArray("color"))); tRainbow.isChecked = t.optBoolean("rainbow")
         tFont.setSelection(Tags.FONTS.indexOf(t.optString("font")).coerceAtLeast(0))
-        tSize.setText(t.optDouble("size", 22.0).toInt().toString())
-        tBackdrop.isChecked = t.getJSONObject("backdrop").optBoolean("on")
-        tPfp.setSelection(Tags.PFP_MODES.indexOf(t.getJSONObject("pfp").optString("mode")).coerceAtLeast(0))
-        tImage.setText(t.getJSONObject("pfp").optString("image"))
+        fun n(d: Double) = if (d == Math.floor(d)) d.toInt().toString() else d.toString()
+        val bd = t.getJSONObject("backdrop")
+        val pf = t.getJSONObject("pfp")
+        tSize.setText(n(t.optDouble("size", 22.0)))
+        tOffset.setText(n(t.optDouble("offset", 3.0)))
+        tBackdrop.isChecked = bd.optBoolean("on")
+        tBdColor.setText(Tags.hex(bd.getJSONArray("color")))
+        tBdAlpha.setText(n(bd.optDouble("transparency", 0.35)))
+        tBdImage.setText(bd.optString("image"))
+        tBdImgAlpha.setText(n(bd.optDouble("imageTransparency", 0.15)))
+        tBdRound.isChecked = bd.optBoolean("round", true)
+        tPfp.setSelection(Tags.PFP_MODES.indexOf(pf.optString("mode")).coerceAtLeast(0))
+        tImage.setText(pf.optString("image"))
+        tPfpRound.isChecked = pf.optBoolean("round", true)
+        updateTagPreview()
         tagEditor.visibility = View.VISIBLE
         fillTags()
         showMembers()
+    }
+
+    private fun updateTagPreview() {
+        if (!::tagPreview.isInitialized) return
+        fun colour(e: EditText, def: Int) = try { val a = Tags.parseHex(e.text.toString()); Color.rgb(a.getInt(0), a.getInt(1), a.getInt(2)) } catch (x: Exception) { def }
+        tagPreview.set(tText.text.toString().ifEmpty { "Tag" }, tSub.text.toString(), colour(tColor, Color.WHITE), tRainbow.isChecked,
+            tBackdrop.isChecked, colour(tBdColor, Color.rgb(18, 18, 22)), (tBdAlpha.text.toString().toFloatOrNull() ?: 0.35f).coerceIn(0f, 1f),
+            tBdRound.isChecked, tPfp.selectedItem as String, tPfpRound.isChecked)
     }
 
     private fun showMembers() {
