@@ -94,25 +94,6 @@ def owner_of(tags, user_id):
     return None
 
 
-RAINBOW = ("#ff5a5a", "#ffa43a", "#ffe14d", "#5fdc6a", "#4fb4ff", "#9b6bff")
-
-
-def preview_spec(v):
-    """What the app's rough preview draws from the editor's values (bad colours fall back, numbers are clamped)."""
-    def colour(text, default):
-        try:
-            return hex_color(parse_hex(text))
-        except ValueError:
-            return default
-    alpha = max(0.0, min(1.0, float(v.get("bd_alpha", 0.35))))
-    # Tk has no real transparency: a stipple pattern stands in for see-through
-    stipple = "" if alpha < 0.2 else "gray75" if alpha < 0.45 else "gray50" if alpha < 0.7 else "gray25" if alpha < 0.95 else "gray12"
-    return {"text": (v.get("text") or "Tag")[:40], "sub": (v.get("sub") or "")[:40], "color": colour(v.get("color"), "#ffffff"),
-            "rainbow": bool(v.get("rainbow")), "size": max(8.0, min(48.0, float(v.get("size", 22)))),
-            "backdrop": colour(v.get("bd_color"), "#121216") if v.get("backdrop") and alpha < 1 else "", "stipple": stipple,
-            "pfp": {"avatar": "avatar", "custom": "picture"}.get(v.get("pfp"), ""), "pfp_round": bool(v.get("pfp_round", True))}
-
-
 def hex_color(rgb):
     return "#%02x%02x%02x" % tuple(rgb)
 

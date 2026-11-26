@@ -1,0 +1,62 @@
+{
+  "GothamBold": {
+    "file": "Montserrat-Bold.ttf",
+    "roblox": "Gotham SSm Bold",
+    "standin": true,
+    "license": "LICENSES/montserrat.txt"
+  },
+  "Gotham": {
+    "file": "Montserrat-Regular.ttf",
+    "roblox": "Gotham SSm",
+    "standin": true,
+    "license": "LICENSES/montserrat.txt"
+  },
+  "GothamSemibold": {
+    "file": "Montserrat-SemiBold.ttf",
+    "roblox": "Gotham SSm Semibold",
+    "standin": true,
+    "license": "LICENSES/montserrat.txt"
+  },
+  "Code": {
+    "file": "Inconsolata-Regular.ttf",
+    "roblox": "Inconsolata",
+    "standin": false,
+    "license": "LICENSES/inconsolata.txt"
+  },
+  "Arcade": {
+    "file": "PressStart2P-Regular.ttf",
+    "roblox": "Press Start 2P",
+    "standin": false,
+    "license": "LICENSES/pressstart2p.txt"
+  },
+  "SourceSansBold": {
+    "file": "SourceSans3-Bold.ttf",
+    "roblox": "Source Sans Pro Bold",
+    "standin": false,
+    "license": "LICENSES/sourcesans3.txt"
+  },
+  "FredokaOne": {
+    "file": "Fredoka-SemiBold.ttf",
+    "roblox": "Fredoka One",
+    "standin": false,
+    "license": "LICENSES/fredoka.txt"
+  },
+  "Bangers": {
+    "file": "Bangers-Regular.ttf",
+    "roblox": "Bangers",
+    "standin": false,
+    "license": "LICENSES/bangers.txt"
+  },
+  "SciFi": {
+    "file": "Orbitron-Regular.ttf",
+    "roblox": "Zekton",
+    "standin": true,
+    "license": "LICENSES/orbitron.txt"
+  },
+  "Fantasy": {
+    "file": "Balthazar-Regular.ttf",
+    "roblox": "Balthazar",
+    "standin": false,
+    "license": "LICENSES/balthazar.txt"
+  }
+}

@@ -13,6 +13,7 @@ on:
   push:
     paths:
       - "pupdates/android/**"
+      - "pupdates/tagfonts/**"
       - "emu/gameboy-*.lua"
       - "emu/gba-*.lua"
       - "emu/doom-src/**"

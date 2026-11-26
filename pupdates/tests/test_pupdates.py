@@ -5,6 +5,9 @@ import hashlib
 import email.policy
 import io
 import json
+import math
+import re
+import threading
 import os
 import shutil
 import sys
@@ -15,7 +18,7 @@ import urllib.error
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-from pupdates_app import core, tags, update  # noqa: E402
+from pupdates_app import core, tagpreview, tags, update  # noqa: E402
 import run_pupdates  # noqa: E402
 
 HOOK = "https://discord.com/api/webhooks/1575303315/abc-DEF_9"
@@ -161,6 +164,163 @@ def png_file(folder, name="cat.png"):
     with open(path, "wb") as f:
         f.write(run_pupdates.PNG)
     return path
+
+
+def solid_png(rgb, w=40, h=30):
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (w, h), rgb).save(buf, "PNG")
+    return buf.getvalue()
+
+
+class FakeRoblox:
+    """Roblox's thumbnail service + an image host, as the preview's loader sees them."""
+    def __init__(self, thumb_states=None, asset_type=1):
+        self.thumb_states = list(thumb_states or ["Completed"])
+        self.asset_type = asset_type
+        self.asked = []
+
+    def __call__(self, req, timeout):
+        url = req.full_url
+        self.asked.append(url)
+        if url.startswith("https://thumbnails.roblox.com/"):
+            state = self.thumb_states.pop(0) if len(self.thumb_states) > 1 else self.thumb_states[0]
+            ident = re.search(r"(?:assetIds|userIds)=(\d+)", url).group(1)
+            return Resp(json.dumps({"data": [{"targetId": int(ident), "state": state,
+                                              "imageUrl": "https://tr.rbxcdn.com/pic/%s.png" % ident if state == "Completed" else ""}]}).encode())
+        if url.startswith("https://economy.roblox.com/"):
+            return Resp(json.dumps({"AssetTypeId": self.asset_type}).encode())
+        if url.startswith("https://tr.rbxcdn.com/"):
+            return Resp(solid_png((40, 200, 90)))
+        if url.endswith("/page.html"):
+            return Resp(b"<!doctype html><html><body>hi</body></html>")
+        if url.endswith(".png"):
+            return Resp(solid_png((230, 30, 30)))
+        raise urllib.error.URLError("no route to " + url)
+
+
+@unittest.skipUnless(tagpreview.available(), "needs Pillow")
+class TagPreviewTest(unittest.TestCase):
+    def tag(self, **kw):
+        d = tags.clean_tag({"name": "T", "text": "Puppy Admin", "sub": "Script Owner", "members": ["1"]})
+        for k, v in kw.items():
+            if k in ("backdrop", "pfp"):
+                d[k].update(v)
+            else:
+                d[k] = v
+        return tags.clean_tag(d)
+
+    def test_sources_follow_puppy_admins_rules(self):
+        r = tagpreview.resolve
+        self.assertIsNone(r("  "))
+        self.assertEqual(r("12345"), ("asset", "12345"))
+        self.assertEqual(r("rbxassetid://777"), ("asset", "777"))
+        self.assertEqual(r("https://www.roblox.com/library/4242/Cool-Decal"), ("asset", "4242"))
+        self.assertEqual(r("rbxthumb://type=AvatarHeadShot&id=99&w=150&h=150"), ("headshot", "99"))
+        self.assertEqual(r("rbxthumb://type=Asset&id=55&w=420&h=420"), ("asset", "55"))
+        self.assertEqual(r("https://github.com/u/r/blob/main/a/b.png"), ("url", "https://raw.githubusercontent.com/u/r/main/a/b.png"))
+        self.assertEqual(r("https://example.com/x.jpg"), ("url", "https://example.com/x.jpg"))
+        self.assertEqual(r("rbxasset://textures/face.png")[0], "unsupported")
+        self.assertEqual(r("what")[0], "bad")
+
+    def test_layout_matches_tags_build(self):
+        measure = lambda text, font, px: len(text) * px * 0.5
+        d = self.tag(size=22, backdrop={"on": True, "round": True})
+        lay = tagpreview.layout(d, measure, True)
+        # Tags.build: lineMain ceil(22*1.35)=30, sub 14 -> ceil(18.9)=19, textH 49; textW = ceil(11*11)+10 = 131
+        # pic = floor(max(49, 33)) = 49, gap 8, padX 12 / padY 6 (backdrop on)
+        self.assertEqual(lay["card"], (math.ceil(24 + 49 + 8 + 131), math.ceil(12 + 49)))
+        self.assertEqual(lay["pic_box"], (12, 6, 49, 49))
+        self.assertEqual(lay["align"], "left")
+        self.assertEqual(lay["corner"], 14)
+        self.assertAlmostEqual(lay["main_box"][3], 49 * 30 / 49)
+        self.assertEqual(lay["far"], (57, 57))
+        bare = tagpreview.layout(self.tag(sub="", backdrop={"on": False}), measure, False)
+        self.assertEqual(bare["card"], (math.ceil(8 + 131), 8 + 30))
+        self.assertEqual((bare["align"], bare["corner"], bare["far"]), ("center", 0, None))
+
+    def test_colours_and_rainbow(self):
+        main, sub = tagpreview.text_colours(self.tag(color=[100, 0, 200]), 0)
+        self.assertEqual((main, sub), ((100, 0, 200), (162, 102, 222)))
+        r0, _ = tagpreview.text_colours(self.tag(rainbow=True), 0)
+        r1, _ = tagpreview.text_colours(self.tag(rainbow=True), 2.0)
+        self.assertEqual(r0, (255, 25, 25))   # HSV(0, 0.9, 1)
+        self.assertNotEqual(r0, r1, "the rainbow moves round in 4 seconds")
+        self.assertEqual(tagpreview.text_colours(self.tag(rainbow=True), 4.0)[0], r0)
+
+    def test_every_tag_font_has_a_file(self):
+        for name in tags.FONTS:
+            path, info = tagpreview.font_entry(name)
+            self.assertTrue(path and os.path.isfile(path), name)
+        self.assertTrue(tagpreview.font_entry("GothamBold")[1]["standin"])
+        self.assertFalse(tagpreview.font_entry("Arcade")[1]["standin"])
+        self.assertEqual(tagpreview.font_entry("NoSuchFont")[1]["file"], tagpreview.font_entry("GothamBold")[1]["file"])
+
+    def load(self, images, source):
+        done = threading.Event()
+        pic = images.get(source, done.set)
+        self.assertTrue(done.wait(5), "loader finished")
+        return pic
+
+    def test_loading_pictures(self):
+        fake = FakeRoblox(thumb_states=["Pending", "Completed"], asset_type=13)
+        images = tagpreview.Images(lambda fn: fn(), fake, sleep=lambda s: None)
+        url = self.load(images, ("url", "https://example.com/p.png"))
+        self.assertEqual((url.state, url.image.getpixel((5, 5))[:3]), ("ok", (230, 30, 30)))
+        page = self.load(images, ("url", "https://example.com/page.html"))
+        self.assertEqual(page.state, "failed")
+        self.assertIn("web page", page.error)
+        asset = self.load(images, ("asset", "4242"))
+        self.assertEqual((asset.state, asset.image.getpixel((1, 1))[:3]), ("ok", (40, 200, 90)))
+        self.assertIn("Decal", asset.note)
+        head = self.load(images, ("headshot", "99"))
+        self.assertEqual(head.state, "ok")
+        self.assertTrue(any("avatar-headshot?userIds=99" in u for u in fake.asked))
+        blocked = self.load(tagpreview.Images(lambda fn: fn(), FakeRoblox(["Blocked"])), ("asset", "1"))
+        self.assertIn("blocked", blocked.error)
+        down = self.load(tagpreview.Images(lambda fn: fn(), FakeRoblox()), ("url", "https://nowhere.example/x"))
+        self.assertIn("could not connect", down.error)
+        self.assertEqual(images.get(("bad", "nope"), None).state, "failed")
+
+    def test_drawing(self):
+        from PIL import Image
+        red = Image.new("RGBA", (50, 50), (230, 30, 30, 255))
+        d = self.tag(backdrop={"on": True, "color": [32, 48, 64], "transparency": 0.6, "round": True}, pfp={"mode": "custom", "round": True})
+        lay = tagpreview.layout(d, tagpreview.measure_with_pillow, True)
+        card = tagpreview.draw_tag(d, lay, red, None, 0, 1.0)
+        self.assertEqual(card.size, lay["card"])
+        cw, ch = lay["card"]
+        self.assertEqual(card.getpixel((cw // 2, 2)), (32, 48, 64, 102), "backdrop colour at 40 % (transparency 0.6)")
+        self.assertEqual(card.getpixel((0, 0))[3], 0, "rounded corner")
+        x, y, w, h = lay["pic_box"]
+        self.assertEqual(card.getpixel((x + w // 2, y + h // 2))[:3], (230, 30, 30), "the loaded picture")
+        self.assertNotEqual(card.getpixel((x + 1, y + 1))[:3], (230, 30, 30), "the picture is round")
+        square = tagpreview.draw_tag(self.tag(backdrop={"on": False}, pfp={"mode": "custom", "round": False}),
+                                     tagpreview.layout(self.tag(backdrop={"on": False}), tagpreview.measure_with_pillow, True), red, None, 0, 1.0)
+        self.assertEqual(square.getpixel((4 + 8, 4 + 8))[:3], (230, 30, 30), "6 px corners only")
+        back = Image.new("RGBA", (300, 80), (0, 0, 255, 255))
+        withimg = tagpreview.draw_tag(d, lay, red, back, 0, 1.0)
+        bx = withimg.getpixel((cw // 2, 2))
+        self.assertGreater(bx[2], 150, "the backdrop image shows through at 85 %")
+        far = tagpreview.draw_far(d, lay, red, 1.0)
+        self.assertEqual(far.size, (lay["pic"] + 8, lay["pic"] + 8))
+        img, shown = tagpreview.scene(d, red, back, True, 0, 520)
+        self.assertEqual((img.width, shown), (520, 1.0))
+        long = self.tag(text="W" * 40, size=48)
+        img2, shown2 = tagpreview.scene(long, None, None, True, 0, 400)
+        self.assertLess(shown2, 1.0, "a tag wider than the preview is shown smaller")
+
+    def test_plan_and_notes(self):
+        need, notes = tagpreview.plan(self.tag(pfp={"mode": "avatar"}), "1", "pupone")
+        self.assertEqual(need["picture"], ("headshot", "1"))
+        self.assertTrue(any("pupone" in n for n in notes))
+        self.assertTrue(any("stand-in" in n for n in notes), "GothamBold is a stand-in font")
+        need, notes = tagpreview.plan(self.tag(pfp={"mode": "custom", "image": ""}, backdrop={"on": False, "image": "123"}, font="Arcade"))
+        self.assertIsNone(need["picture"])
+        self.assertIsNone(need["backdrop"])
+        self.assertTrue(any("no image is set" in n for n in notes))
+        self.assertTrue(any("backdrop is off" in n for n in notes))
+        self.assertFalse(any("stand-in" in n for n in notes))
 
 
 class CoreTest(unittest.TestCase):
@@ -482,8 +642,26 @@ class WindowTest(unittest.TestCase):
                           {"mode": "custom", "image": "https://example.com/p.png", "round": False}))
         self.app.tv["bd_alpha"].set("lots")
         self.assertFalse(self.app._store_tag())
-        spec = tags.preview_spec({"text": "Hi", "color": "#ff0000", "backdrop": True, "bd_color": "bad", "bd_alpha": 0.5, "pfp": "avatar"})
-        self.assertEqual((spec["color"], spec["backdrop"], spec["stipple"], spec["pfp"]), ("#ff0000", "#121216", "gray50", "avatar"))
+
+    @unittest.skipUnless(tagpreview.available(), "needs Pillow")
+    def test_tag_preview_loads_the_pictures(self):
+        repo = FakeTagRepo(TAGS)
+        self.app.opener = repo
+        self.app.tag_images.opener = FakeRoblox()
+        self.app.show("tags")
+        self.app.load_tags()
+        self.assertTrue(self.pump(lambda: self.app.tags_box.size() == 2))
+        self.app.tags_box.selection_set(0)
+        self.app.pick_tag()
+        self.app.tv["pfp_mode"].set("custom")
+        self.app.tv["pfp_image"].set("https://example.com/me.png")
+        self.app.tv["bd_image"].set("4242")
+        self.assertTrue(self.pump(lambda: "loading" not in self.app.tag_preview_note.cget("text")
+                                  and self.app._preview_photo is not None, 5))
+        self.assertTrue(self.app.tag_preview.cget("image"))
+        self.app.tv["pfp_image"].set("https://example.com/page.html")
+        self.assertTrue(self.pump(lambda: "could not load" in self.app.tag_preview_note.cget("text"), 5))
+        self.assertIn("shows no picture", self.app.tag_preview_note.cget("text"))
 
     def test_topmost_setting(self):
         self.app.topmost_var.set(True)

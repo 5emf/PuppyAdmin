@@ -102,4 +102,9 @@ val copyGameAssets = tasks.register("copyGameAssets") {
         repoRoot.resolve("assets/sfx/fighter").listFiles()?.filter { it.name.endsWith(".ogg") }?.forEach { it.copyTo(sfx.resolve(it.name), true) }
     }
 }
-tasks.named("preBuild") { dependsOn(copyEmuAssets, copyGameAssets) }
+// the tag preview's fonts (free fonts, made by tools/make_tag_fonts.py)
+val copyTagFonts = tasks.register<Copy>("copyTagFonts") {
+    from(rootProject.projectDir.parentFile.resolve("tagfonts")) { include("*.ttf", "fonts.json") }
+    into(layout.buildDirectory.dir("generated/emuAssets/tagfonts"))
+}
+tasks.named("preBuild") { dependsOn(copyEmuAssets, copyGameAssets, copyTagFonts) }

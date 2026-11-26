@@ -4,14 +4,16 @@ Whitelist, Settings) beside a white card with a grey description strip under it.
 header to move it; the small - and x in the header minimise and close. On other systems it is an
 ordinary window with the same contents.
 """
+import base64
 import os
 import queue
 import sys
 import threading
+import time
 import tkinter as tk
 from tkinter import colorchooser, filedialog, messagebox, ttk
 
-from . import art_data, core, tags, update
+from . import art_data, core, tagpreview, tags, update
 
 KEY = "#0d0e13"                       # see-through colour (only used for the backdrop)
 CARD, FIELD, LINE, STRIP = "#fbfbfb", "#ffffff", "#c8ccd4", "#e6e7ea"
@@ -207,6 +209,8 @@ class PupdatesApp:
         self.pages[name].pack(fill="both", expand=True)
         self.section_lbl.configure(text="/ " + TITLES[name])
         self._describe(None)
+        if name == "tags":
+            self._draw_tag_preview()
         if name == "whitelist" and self.settings.secret("admin_key") and self.settings.get("relay_url") and not self.users_list.size():
             self.refresh_users()
 
@@ -882,8 +886,15 @@ class PupdatesApp:
         ttk.Label(g, text="Box image").grid(row=9, column=0, sticky="w", pady=1)
         ttk.Entry(g, textvariable=self.tv["bd_image"]).grid(row=9, column=1, columnspan=5, sticky="ew", pady=1)
         g.grid_columnconfigure(1, weight=1)
-        self.tag_preview = tk.Canvas(p, height=58, bg="#7f8794", highlightthickness=1, highlightbackground=LINE)
+        # the preview: the tag drawn as Puppy Admin builds it, with its pictures loaded (tagpreview.py)
+        self.tag_preview = tk.Label(p, bd=0, bg=CARD, anchor="w", text="Pick or add a tag to see it here", fg=DIM,
+                                    font=(self.family, 10), highlightthickness=1, highlightbackground=LINE)
         self.tag_preview.pack(fill="x", pady=(4, 0))
+        self.tag_preview_note = ttk.Label(p, style="Dim.TLabel", wraplength=470, justify="left", text="")
+        self.tag_preview_note.pack(anchor="w")
+        self.tag_images = tagpreview.Images(self._post)
+        self._preview_job = None
+        self._preview_photo = None
         for v in list(self.tv.values()) + [self.tv_rainbow, self.tv_backdrop, self.tv_bd_round, self.tv_pfp_round]:
             v.trace_add("write", lambda *a: self._draw_tag_preview())
 
@@ -1055,47 +1066,84 @@ class PupdatesApp:
         if got and got[1]:
             self.tv[key].set(got[1])
 
-    def _draw_tag_preview(self):
-        """A rough look at the tag (Roblox draws the real one): backdrop, picture spot, text and the line under it."""
-        c = getattr(self, "tag_preview", None)
-        if c is None:
-            return
-        c.delete("all")
-        if self.tag_index is None:
-            c.create_text(10, 29, anchor="w", text="Pick or add a tag to see it here", fill="#ffffff", font=(self.family, 10))
-            return
-        w = max(c.winfo_width(), 300)
-        spec = tags.preview_spec(self._preview_values())
-        x0, x1, y0, y1 = w / 2 - 130, w / 2 + 130, 6, 52
-        if spec["backdrop"]:
-            c.create_rectangle(x0, y0, x1, y1, fill=spec["backdrop"], outline="", stipple=spec["stipple"])
-        if spec["pfp"]:
-            if spec["pfp_round"]:
-                c.create_oval(x0 + 6, y0 + 6, x0 + 40, y0 + 40, fill="#d8dbe2", outline="#ffffff")
-            else:
-                c.create_rectangle(x0 + 6, y0 + 6, x0 + 40, y0 + 40, fill="#d8dbe2", outline="#ffffff")
-            c.create_text(x0 + 23, y0 + 23, text=spec["pfp"], fill="#464646", font=(self.family, 7))
-        size = max(9, min(18, int(spec["size"] * 0.7)))
-        tx = w / 2 + (14 if spec["pfp"] else 0)
-        if spec["rainbow"]:
-            text, cols = spec["text"], tags.RAINBOW
-            total = len(text) * size * 0.62
-            for k, ch in enumerate(text):
-                c.create_text(tx - total / 2 + k * size * 0.62, 22, text=ch, fill=cols[k % len(cols)], font=(self.family, size, "bold"))
-        else:
-            c.create_text(tx, 22, text=spec["text"], fill=spec["color"], font=(self.family, size, "bold"))
-        if spec["sub"]:
-            c.create_text(tx, 42, text=spec["sub"], fill="#dddddd", font=(self.family, 9))
+    def _post(self, fn):
+        """Runs fn on the window's thread (from a loader thread)."""
+        self.ui.put((lambda res, err: fn(), None, None))
 
-    def _preview_values(self):
+    def _draw_tag_preview(self):
+        """Redraws the preview soon (edits come in bursts while typing)."""
+        if self._preview_job is not None:
+            try:
+                self.root.after_cancel(self._preview_job)
+            except tk.TclError:
+                pass
+        self._preview_job = self.root.after(60, self._render_tag_preview)
+
+    def _tag_from_fields(self):
+        """The tag as the fields describe it right now (half-typed numbers and colours keep the saved value)."""
+        t = dict(self.tag_list[self.tag_index]) if self.tag_index is not None else tags.new_tag("")
         def num(key, default):
             try:
                 return float(self.tv[key].get())
             except ValueError:
                 return default
-        return {"text": self.tv["text"].get(), "sub": self.tv["sub"].get(), "color": self.tv["color"].get(), "rainbow": self.tv_rainbow.get(),
-                "size": num("size", 22), "backdrop": self.tv_backdrop.get(), "bd_color": self.tv["bd_color"].get(),
-                "bd_alpha": num("bd_alpha", 0.35), "pfp": self.tv["pfp_mode"].get(), "pfp_round": self.tv_pfp_round.get()}
+        def colour(key, default):
+            try:
+                return tags.parse_hex(self.tv[key].get())
+            except ValueError:
+                return default
+        bd, pf = dict(t["backdrop"]), dict(t["pfp"])
+        bd.update({"on": self.tv_backdrop.get(), "color": colour("bd_color", bd["color"]), "transparency": num("bd_alpha", bd["transparency"]),
+                   "image": self.tv["bd_image"].get(), "imageTransparency": num("bd_img_alpha", bd["imageTransparency"]),
+                   "round": self.tv_bd_round.get()})
+        pf.update({"mode": self.tv["pfp_mode"].get() or "none", "image": self.tv["pfp_image"].get(), "round": self.tv_pfp_round.get()})
+        t.update({"text": self.tv["text"].get(), "sub": self.tv["sub"].get(), "color": colour("color", t["color"]),
+                  "rainbow": self.tv_rainbow.get(), "font": self.tv["font"].get() or "GothamBold", "size": num("size", t["size"]),
+                  "offset": num("offset", t["offset"]), "backdrop": bd, "pfp": pf})
+        return tags.clean_tag(t)
+
+    def _render_tag_preview(self):
+        self._preview_job = None
+        if self.tag_index is None:
+            self._preview_photo = None
+            self.tag_preview.configure(image="", text="Pick or add a tag to see it here")
+            self.tag_preview_note.configure(text="")
+            return
+        if not tagpreview.available():
+            self.tag_preview.configure(image="", text="The full preview needs Pillow (pip install pillow); Pupdates.exe has it built in.")
+            return
+        d = self._tag_from_fields()
+        wearers = [] if d.get("isDefault") else d["members"]
+        first = wearers[0] if wearers else None
+        need, notes = tagpreview.plan(d, first, self.tag_names.get(first) if first else None)
+        pic = self.tag_images.get(need["picture"], self._draw_tag_preview)
+        back = self.tag_images.get(need["backdrop"], self._draw_tag_preview)
+        custom = d["pfp"]["mode"] == "custom"
+        for what, item, gone in (("Picture", pic, "so the game shows no picture" if custom else "the game still shows the avatar"),
+                                 ("Backdrop image", back, "so the game shows the plain backdrop")):
+            if item is None:
+                continue
+            if item.state == "loading":
+                notes.append("%s: loading..." % what)
+            elif item.state == "failed":
+                notes.append("%s: could not load (%s), %s." % (what, item.error, gone))
+            elif item.note:
+                notes.append("%s: %s" % (what, item.note))
+        has_picture = d["pfp"]["mode"] == "avatar" or (custom and pic is not None and pic.state == "ok")
+        width = max(self.tag_preview.winfo_width() - 2, 470)
+        try:
+            scale = max(1.0, float(self.root.winfo_fpixels("1i")) / 96.0)
+        except tk.TclError:
+            scale = 1.0
+        img, shown = tagpreview.scene(d, pic.image if pic is not None and pic.state == "ok" else None,
+                                      back.image if back is not None and back.state == "ok" else None,
+                                      has_picture, time.monotonic(), width, scale, scale)
+        self._preview_photo = tk.PhotoImage(master=self.root, data=base64.b64encode(tagpreview.png_bytes(img)).decode("ascii"))
+        self.tag_preview.configure(image=self._preview_photo, text="")
+        notes.append("Height: %g studs above the head (Roblox places it in the world)." % d["offset"])
+        self.tag_preview_note.configure(text="\n".join(notes))
+        if d["rainbow"] and self.section == "tags":   # the rainbow moves: keep drawing while it is on screen
+            self._preview_job = self.root.after(100, self._render_tag_preview)
 
     def add_member(self):
         if self.tag_index is None or self.tag_list[self.tag_index].get("isDefault"):

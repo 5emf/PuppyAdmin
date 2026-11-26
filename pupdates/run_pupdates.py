@@ -57,6 +57,19 @@ def selftest(report):
         assert "abc-DEF_9" not in text and "pup_secretkey123" not in text, "secrets must not be stored in plain text"
     check("encrypted settings", secrets)
 
+    def tag_preview():
+        from pupdates_app import tagpreview, tags
+        assert tagpreview.available(), "Pillow is not in the exe"
+        assert tagpreview.font_dir(), "the tag fonts are not in the exe"
+        for name in tags.FONTS:
+            assert tagpreview.font_entry(name)[0], "font file missing for " + name
+        d = tags.clean_tag({"name": "T", "text": "Puppy Admin", "sub": "Script Owner", "rainbow": True,
+                            "backdrop": {"on": True}, "pfp": {"mode": "avatar"}})
+        img, shown = tagpreview.scene(d, None, None, True, 1.0, 400)
+        assert img.width == 400 and img.height >= 60
+        return "(%d fonts)" % len(tags.FONTS)
+    check("tag preview", tag_preview)
+
     def window():
         import tkinter as tk
         from pupdates_app.app import PupdatesApp

@@ -58,4 +58,22 @@ class LayoutTest {
         assertTrue(bd.getString("image") == "rbxassetid://123" && bd.getJSONArray("color").toString() == "[32,48,64]")
         assertTrue(!t[0].getJSONObject("pfp").getBoolean("round"))
     }
+
+    @Test fun tagPreviewDrawsEverything() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        val t = Tags.newTag("Owner").put("text", "Puppy Admin").put("sub", "Script Owner").put("rainbow", true).put("font", "Arcade")
+        t.getJSONObject("backdrop").put("on", true)
+        t.getJSONObject("pfp").put("mode", "avatar")          // no wearers: the stand-in head, nothing to download
+        MainActivity::class.java.getDeclaredField("tagList").apply { isAccessible = true }.set(activity, mutableListOf(Tags.clean(t)))
+        MainActivity::class.java.getDeclaredMethod("showTag", Int::class.java).apply { isAccessible = true }.invoke(activity, 0)
+        MainActivity::class.java.getDeclaredMethod("renderTagPreview").apply { isAccessible = true }.invoke(activity)
+        val pv: TagPreview = field(activity, "tagPreview")
+        pv.measure(View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        pv.layout(0, 0, 1080, pv.measuredHeight)
+        val bmp = android.graphics.Bitmap.createBitmap(1080, maxOf(1, pv.measuredHeight), android.graphics.Bitmap.Config.ARGB_8888)
+        pv.draw(android.graphics.Canvas(bmp))
+        assertTrue("preview height ${pv.measuredHeight}", pv.measuredHeight >= 72)
+        val note: android.widget.TextView = field(activity, "tagPreviewNote")
+        assertTrue(note.text.toString(), note.text.contains("stand-in head") && note.text.contains("studs above the head"))
+    }
 }

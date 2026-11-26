@@ -13,7 +13,9 @@ just a column of round icons beside a white card.
 - **Whitelist**: choose who may post (see below).
 - **Tags** (both apps): edit Puppy Admin's shared tags (`tags.json` on `main`, the same file
   Puppy Admin's tag sync reads): text, line under it, colour or rainbow, font, size, dark box,
-  picture (avatar or an image URL) and who wears each tag (Roblox username or user id; one tag per
+  picture (avatar or an image URL) and who wears each tag. A live preview draws the tag the way
+  Puppy Admin does in the game, with its pictures loaded (image links, Roblox ids, the first
+  wearer's avatar), its font and the far-away view (Roblox username or user id; one tag per
   person). Anyone can load them; **Save to GitHub** needs a fine-grained GitHub token for
   5emf/PuppyAdmin with Contents: read and write (stored encrypted). Puppy Admin picks changes up
   within a minute or two.

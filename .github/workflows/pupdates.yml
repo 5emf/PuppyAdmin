@@ -10,6 +10,7 @@ on:
       - "pupdates/tests/**"
       - "pupdates/run_pupdates.py"
       - "pupdates/Pupdates.ico"
+      - "pupdates/tagfonts/**"
       - ".github/workflows/pupdates.yml"
   workflow_dispatch:
 
@@ -41,6 +42,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Pillow (the tag preview draws with it)
+        run: python -m pip install "pillow>=10,<12"
+
       - name: Tests
         run: python -m unittest discover -s tests -v
 
@@ -54,7 +58,7 @@ jobs:
         run: Set-Content -Path pupdates_app/_build.py -Value "BUILD = $env:GITHUB_RUN_NUMBER"
 
       - name: Build
-        run: pyinstaller --noconfirm --clean --onefile --windowed --name Pupdates --icon Pupdates.ico --paths . run_pupdates.py
+        run: pyinstaller --noconfirm --clean --onefile --windowed --name Pupdates --icon Pupdates.ico --paths . --add-data "tagfonts;tagfonts" run_pupdates.py
 
       - name: Self-test the built program
         shell: pwsh

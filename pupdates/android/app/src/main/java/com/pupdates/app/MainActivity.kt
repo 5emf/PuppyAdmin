@@ -127,6 +127,9 @@ class MainActivity : Activity() {
     private lateinit var tBdRound: CheckBox
     private lateinit var tPfpRound: CheckBox
     private lateinit var tagPreview: TagPreview
+    private lateinit var tagPreviewNote: TextView
+    private var tagImages: TagImages? = null
+    private val previewSoon = Runnable { renderTagPreview() }
     private lateinit var membersBox: LinearLayout
     private lateinit var memberIn: EditText
     private var tagList = mutableListOf<org.json.JSONObject>()
@@ -156,6 +159,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         main.removeCallbacksAndMessages(null)
         pool.shutdownNow()
+        tagImages?.shutdown()
         super.onDestroy()
     }
 
@@ -1051,7 +1055,12 @@ class MainActivity : Activity() {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         }
-        for (e in listOf(tText, tSub, tColor, tSize, tBdColor, tBdAlpha)) e.addTextChangedListener(watcher)
+        tagPreviewNote = label("", dim = true, size = 12f)
+        for (e in listOf(tText, tSub, tColor, tSize, tOffset, tBdColor, tBdAlpha, tBdImgAlpha, tImage, tBdImage)) e.addTextChangedListener(watcher)
+        tFont.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) = updateTagPreview()
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
         for (c in listOf(tRainbow, tBackdrop, tBdRound, tPfpRound)) c.setOnCheckedChangeListener { _, _ -> updateTagPreview() }
         tPfp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) = updateTagPreview()
@@ -1060,7 +1069,8 @@ class MainActivity : Activity() {
         membersBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = plate(Color.WHITE, LINE); setPadding(dp(8), dp(4), dp(8), dp(4)) }
         memberIn = field("Roblox username or user id").apply { inputType = InputType.TYPE_CLASS_TEXT }
         tagEditor = page(
-            tagPreview.also { it.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(84)).also { lp -> lp.topMargin = dp(6) } },
+            tagPreview.also { it.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).also { lp -> lp.topMargin = dp(6) } },
+            tagPreviewNote,
             row(label("Text", size = 13f), grow(tText, 6)), row(label("Under it", size = 13f), grow(tSub, 6)),
             row(label("Name", size = 13f), grow(tName, 6)),
             row(label("Colour", size = 13f), grow(tColor, 6), gap(tRainbow)),
@@ -1177,12 +1187,53 @@ class MainActivity : Activity() {
         showMembers()
     }
 
+    /** redraws the preview a moment after the last edit (a link being typed is not fetched letter by letter) */
     private fun updateTagPreview() {
         if (!::tagPreview.isInitialized) return
-        fun colour(e: EditText, def: Int) = try { val a = Tags.parseHex(e.text.toString()); Color.rgb(a.getInt(0), a.getInt(1), a.getInt(2)) } catch (x: Exception) { def }
-        tagPreview.set(tText.text.toString().ifEmpty { "Tag" }, tSub.text.toString(), colour(tColor, Color.WHITE), tRainbow.isChecked,
-            tBackdrop.isChecked, colour(tBdColor, Color.rgb(18, 18, 22)), (tBdAlpha.text.toString().toFloatOrNull() ?: 0.35f).coerceIn(0f, 1f),
-            tBdRound.isChecked, tPfp.selectedItem as String, tPfpRound.isChecked)
+        main.removeCallbacks(previewSoon)
+        main.postDelayed(previewSoon, 350)
+    }
+
+    /** the tag as the fields describe it right now (half-typed numbers and colours keep the saved value) */
+    private fun tagFromFields(): org.json.JSONObject {
+        val t = org.json.JSONObject(tagList[tagIndex].toString())
+        fun num(e: EditText, def: Double) = e.text.toString().trim().toDoubleOrNull() ?: def
+        fun col(e: EditText, def: org.json.JSONArray) = try { Tags.parseHex(e.text.toString()) } catch (x: Exception) { def }
+        t.put("text", tText.text.toString()).put("sub", tSub.text.toString()).put("color", col(tColor, t.getJSONArray("color")))
+            .put("rainbow", tRainbow.isChecked).put("font", tFont.selectedItem as String)
+            .put("size", num(tSize, t.optDouble("size", 22.0))).put("offset", num(tOffset, t.optDouble("offset", 3.0)))
+        val bd = t.getJSONObject("backdrop")
+        bd.put("on", tBackdrop.isChecked).put("color", col(tBdColor, bd.getJSONArray("color")))
+            .put("transparency", num(tBdAlpha, bd.optDouble("transparency", 0.35))).put("image", tBdImage.text.toString())
+            .put("imageTransparency", num(tBdImgAlpha, bd.optDouble("imageTransparency", 0.15))).put("round", tBdRound.isChecked)
+        t.getJSONObject("pfp").put("mode", tPfp.selectedItem as String).put("image", tImage.text.toString()).put("round", tPfpRound.isChecked)
+        return Tags.clean(t)
+    }
+
+    private fun renderTagPreview() {
+        if (!::tagPreview.isInitialized) return
+        if (tagIndex < 0 || tagIndex >= tagList.size) { tagPreview.show(null, null, null, false); tagPreviewNote.text = ""; return }
+        val t = tagFromFields()
+        val first = if (t.opt("isDefault") == true) null else Tags.members(t).firstOrNull()
+        val plan = TagLook.plan(t, first, first?.let { tagNames[it] })
+        val images = tagImages ?: TagImages().also { tagImages = it }
+        val pic = images.get(plan.picture) { renderTagPreview() }
+        val back = images.get(plan.backdrop) { renderTagPreview() }
+        val custom = t.getJSONObject("pfp").optString("mode") == "custom"
+        for ((what, item, gone) in listOf(Triple("Picture", pic, if (custom) "so the game shows no picture" else "the game still shows the avatar"),
+                                          Triple("Backdrop image", back, "so the game shows the plain backdrop"))) {
+            if (item == null) continue
+            when (item.state) {
+                "loading" -> plan.notes.add("$what: loading...")
+                "failed" -> plan.notes.add("$what: could not load (${item.error}), $gone.")
+                else -> if (item.note.isNotEmpty()) plan.notes.add("$what: ${item.note}")
+            }
+        }
+        val hasPicture = t.getJSONObject("pfp").optString("mode") == "avatar" || (custom && pic?.state == "ok")
+        tagPreview.show(t, if (pic?.state == "ok") pic.bitmap else null, if (back?.state == "ok") back.bitmap else null, hasPicture)
+        val off = t.optDouble("offset", 3.0)
+        plan.notes.add("Height: ${if (off == Math.floor(off)) off.toInt().toString() else off.toString()} studs above the head (Roblox places it in the world).")
+        tagPreviewNote.text = plan.notes.joinToString("\n")
     }
 
     private fun showMembers() {
