@@ -57,12 +57,14 @@ android {
     }
     testOptions {
         unitTests.isReturnDefaultValues = false
+        unitTests.isIncludeAndroidResources = true   // Robolectric layout test (LayoutTest)
     }
 }
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+    testImplementation("org.robolectric:robolectric:4.12.2")
 }
 
 // Puppy Admin's emulator modules and the free Cult-of-GBA BIOS go into the APK's assets/emu
