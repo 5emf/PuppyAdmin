@@ -66,8 +66,9 @@ Posting does not need the bot to be online.
 Your bot can moderate your server with slash commands (`/warn`, `/timeout`, `/kick`, `/ban`, `/purge`,
 `/lock`, `/slowmode`, `/warnings`, `/case`, `/note`, `/staff`, `/modsettings`, `/modhelp`) with staff
 levels (helper, moderator, admin, owner), case numbers, a log channel and DMs. It runs on the relay, so
-it works while your PC and phone are off. Setup: `relay/README.md` > "Moderation and staff", then
-Whitelist > **Install moderation commands**.
+it works while your PC and phone are off. An automatic timeout after a set number of warnings is one
+`/modsettings` away. The **Moderation** section (shield icon) installs the commands and lists every
+case per server (filter by member, clear a warning). Setup: `relay/README.md` > "Moderation and staff".
 
 ## Owner: your webhook (still works)
 In Discord: your channel > Edit Channel > Integrations > Webhooks > New Webhook > **Copy Webhook URL**.

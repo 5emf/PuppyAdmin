@@ -319,6 +319,52 @@ def admin_commands(base, admin, opener=None):
                  opener, tries=1, secrets=(admin,))
 
 
+def mod_servers(base, admin, opener=None):
+    """Owner: the servers the moderation commands were used in -> [{guild, name, cases, log, autoWarns, ...}]."""
+    out = _send(_relay_req(base, "/admin/mod", admin=admin), opener, tries=1, secrets=(admin,))
+    return out if isinstance(out, list) else []
+
+
+def mod_cases(base, admin, guild, user="", before=None, limit=25, opener=None):
+    """Owner: one page of a server's cases, newest first -> {cases, next} (next = pass as before for more)."""
+    q = {"limit": str(limit)}
+    if user:
+        q["user"] = user
+    if before:
+        q["before"] = str(before)
+    path = "/admin/mod/%s/cases?%s" % (urllib.parse.quote(str(guild), safe=""), urllib.parse.urlencode(q))
+    out = _send(_relay_req(base, path, admin=admin), opener, tries=1, secrets=(admin,))
+    return out if isinstance(out, dict) else {"cases": [], "next": None}
+
+
+def mod_clear(base, admin, guild, number, opener=None):
+    """Owner: clear one active warning."""
+    path = "/admin/mod/%s/cases/%d/clear" % (urllib.parse.quote(str(guild), safe=""), int(number))
+    return _send(_relay_req(base, path, "POST", admin=admin, data=b"{}", ctype="application/json"), opener, tries=1, secrets=(admin,))
+
+
+def minutes_text(m):
+    m = int(m or 0)
+    if m and m % 1440 == 0:
+        return "%d day%s" % (m // 1440, "" if m == 1440 else "s")
+    if m and m % 60 == 0:
+        return "%d hour%s" % (m // 60, "" if m == 60 else "s")
+    return "%d minute%s" % (m, "" if m == 1 else "s")
+
+
+def case_line(c):
+    """One case as a list row: '#12  2026-11-26  warn  @name  by @mod: reason'."""
+    what = ("timeout " + minutes_text(c.get("minutes"))) if c.get("type") == "timeout" else str(c.get("type", "?"))
+    if c.get("auto"):
+        what += " (automatic)"
+    if c.get("cleared"):
+        what += " (cleared)"
+    when = time.strftime("%Y-%m-%d", time.localtime((c.get("at") or 0) / 1000))
+    reason = (c.get("reason") or "").replace("\n", " ")
+    return "#%s  %s  %s  %s  by %s%s" % (c.get("n", "?"), when, what, c.get("userTag") or c.get("user", "?"),
+                                        c.get("modTag") or c.get("mod", "?"), (": " + reason[:120]) if reason else "")
+
+
 def admin_remove(base, admin, name, opener=None):
     return _send(_relay_req(base, "/admin/users/" + urllib.parse.quote(name, safe=""), "DELETE", admin=admin),
                  opener, tries=1, secrets=(admin,))

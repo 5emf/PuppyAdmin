@@ -19,14 +19,15 @@ from . import art_data, bot, core, gateway, richpresence, tagpreview, tags, upda
 KEY = "#0d0e13"                       # see-through colour (only used for the backdrop)
 CARD, FIELD, LINE, STRIP = "#fbfbfb", "#ffffff", "#c8ccd4", "#e6e7ea"
 INK, DIM, ORANGE, GOOD, BAD = "#464646", "#8a8d96", "#f59b28", "#3f9b56", "#d0453a"
-SECTIONS = ("compose", "bot", "status", "updates", "tags", "whitelist", "settings")
-TITLES = {"compose": "Compose", "bot": "Bot", "status": "Status", "updates": "Updates", "tags": "Tags", "whitelist": "Whitelist", "settings": "Settings"}
+SECTIONS = ("compose", "bot", "status", "updates", "tags", "whitelist", "moderation", "settings")
+TITLES = {"compose": "Compose", "bot": "Bot", "status": "Status", "updates": "Updates", "tags": "Tags", "whitelist": "Whitelist", "moderation": "Moderation", "settings": "Settings"}
 DESCRIPTIONS = {
     "compose": "Write any message, add a picture, and post it to your Discord channel.",
     "updates": "Fill in a Puppy Admin or Puppy Companion update from GitHub.",
     "whitelist": "Choose who may post through your relay (owner only: needs the admin key).",
     "tags": "Edit Puppy Admin's shared tags (tags.json): text, colour, picture and who wears them.",
     "bot": "Your Discord bot: sign in, pick where it posts, edit or delete its posts, change its name and picture.",
+    "moderation": "Your bot's slash-command moderation: install the commands, browse every case, clear warnings.",
     "status": "The bot's status (\"Listening to ...\") and rich presence on your own Discord profile.",
     "settings": "Bot, webhook or relay, stay on top of other windows, and updates.",
     "minimise": "Minimise Pupdates.",
@@ -134,6 +135,7 @@ class PupdatesApp:
         self._build_bot()
         self._build_status()
         self._build_whitelist()
+        self._build_moderation()
         self._build_settings()
         self.set_topmost(bool(self.settings.get("topmost")))
         self.show("compose")
@@ -226,6 +228,8 @@ class PupdatesApp:
             self._where_label()
         if name == "bot":
             self._bot_shown()
+        if name == "moderation" and not self.mod_servers and self.settings.secret("admin_key") and self.settings.get("relay_url"):
+            self.load_mod_servers()
         if name == "whitelist" and self.settings.secret("admin_key") and self.settings.get("relay_url") and not self.users_list.size():
             self.refresh_users()
 
@@ -1136,16 +1140,6 @@ class PupdatesApp:
                   style="Dim.TLabel", wraplength=460).pack(anchor="w", pady=(4, 0))
         self.user_rows = []
 
-        ttk.Label(p, text="Moderation and staff (slash commands)", style="Head.TLabel").pack(anchor="w", pady=(12, 2))
-        r = self._row(p)
-        ttk.Button(r, text="Install moderation commands", command=self.install_mod_commands).pack(side="left")
-        ttk.Button(r, text="Copy endpoint", command=self.copy_endpoint).pack(side="left", padx=6)
-        self.mod_lbl = ttk.Label(p, style="Dim.TLabel", wraplength=460, justify="left",
-                                 text="Your bot answers /warn, /timeout, /kick, /ban, /purge, /staff and more in your server, through "
-                                      "the relay (always on, your PC can be off). Needs the relay's DISCORD_BOT_TOKEN and "
-                                      "DISCORD_PUBLIC_KEY; steps in pupdates/relay/README.md.")
-        self.mod_lbl.pack(anchor="w")
-        self.mod_endpoint = ""
 
     def _admin_label(self):
         self.admin_lbl.configure(text="An admin key is saved (encrypted)." if self.settings.secret("admin_key")
@@ -1233,6 +1227,145 @@ class PupdatesApp:
             self.say("%s removed." % name, "Good")
             self.refresh_users()
         self.run_bg(lambda: core.admin_remove(a[0], a[1], name, self.opener), done)
+        return True
+
+    # ------------------------------------------------------------------ moderation (the relay's slash commands)
+    def _build_moderation(self):
+        p = self._page("moderation")
+        ttk.Label(p, text="Uses the relay address and admin key from Whitelist.", style="Dim.TLabel").pack(anchor="w")
+        ttk.Label(p, text="Slash commands", style="Head.TLabel").pack(anchor="w", pady=(6, 2))
+        r = self._row(p)
+        ttk.Button(r, text="Install moderation commands", command=self.install_mod_commands).pack(side="left")
+        ttk.Button(r, text="Copy endpoint", command=self.copy_endpoint).pack(side="left", padx=6)
+        self.mod_lbl = ttk.Label(p, style="Dim.TLabel", wraplength=470, justify="left",
+                                 text="Your bot answers /warn, /timeout, /kick, /ban, /purge, /staff and more in your server, through "
+                                      "the relay (always on, your PC can be off). Steps in pupdates/relay/README.md. Automatic "
+                                      "timeout: /modsettings auto_timeout_warns:3 auto_timeout_minutes:60.")
+        self.mod_lbl.pack(anchor="w")
+        self.mod_endpoint = ""
+
+        ttk.Label(p, text="Cases", style="Head.TLabel").pack(anchor="w", pady=(10, 2))
+        r = self._row(p)
+        ttk.Label(r, text="Server", width=10).pack(side="left")
+        self.mod_server_var = tk.StringVar()
+        self.mod_server_box = ttk.Combobox(r, textvariable=self.mod_server_var, state="readonly")
+        self.mod_server_box.pack(side="left", fill="x", expand=True)
+        self.mod_server_box.bind("<<ComboboxSelected>>", lambda e: self.load_cases())
+        ttk.Button(r, text="Refresh", command=self.load_mod_servers).pack(side="left", padx=(6, 0))
+        self.mod_info = ttk.Label(p, style="Dim.TLabel", text="", wraplength=470, justify="left")
+        self.mod_info.pack(anchor="w")
+        r = self._row(p)
+        ttk.Label(r, text="Member id", width=10).pack(side="left")
+        self.mod_user_var = tk.StringVar()
+        ttk.Entry(r, textvariable=self.mod_user_var).pack(side="left", fill="x", expand=True)
+        ttk.Button(r, text="Show", command=self.load_cases).pack(side="left", padx=(6, 0))
+        ttk.Button(r, text="All", command=lambda: (self.mod_user_var.set(""), self.load_cases())).pack(side="left", padx=(4, 0))
+        r = self._row(p)
+        lf = tk.Frame(r, bg=FIELD, highlightthickness=1, highlightbackground=LINE)
+        lf.pack(side="left", fill="both", expand=True)
+        self.cases_box = tk.Listbox(lf, height=9, bg=FIELD, fg=INK, relief="flat", highlightthickness=0, bd=0, exportselection=False,
+                                    selectbackground=ORANGE, selectforeground="#ffffff", font=(self.family, 9), activestyle="none")
+        self.cases_box.pack(fill="both", expand=True, padx=4, pady=4)
+        self.cases_box.bind("<<ListboxSelect>>", lambda e: self._show_case())
+        side = ttk.Frame(r)
+        side.pack(side="left", fill="y", padx=(6, 0))
+        ttk.Button(side, text="Clear warning", command=self.clear_case).pack(fill="x")
+        self.more_btn = ttk.Button(side, text="More", command=lambda: self.load_cases(more=True))
+        self.more_btn.pack(fill="x", pady=4)
+        self.case_lbl = ttk.Label(p, style="Dim.TLabel", text="", wraplength=470, justify="left")
+        self.case_lbl.pack(anchor="w")
+        self.mod_servers, self.case_rows, self.case_next = [], [], None
+
+    def _mod_guild(self):
+        i = self.mod_server_box.current()
+        return self.mod_servers[i] if 0 <= i < len(self.mod_servers) else None
+
+    def load_mod_servers(self):
+        a = self._admin()
+        if not a:
+            return False
+
+        def done(servers, err):
+            if err:
+                self.say(err, "Bad")
+                return
+            self.mod_servers = servers or []
+            self.mod_server_box.configure(values=[s.get("name") or s.get("guild") for s in self.mod_servers])
+            if not self.mod_servers:
+                self.mod_info.configure(text="No server has used the moderation commands yet.")
+                self.say("No moderation data yet.")
+                return
+            self.mod_server_box.current(0)
+            self.say("%d server%s." % (len(self.mod_servers), "" if len(self.mod_servers) == 1 else "s"), "Good")
+            self.load_cases()
+        self.run_bg(lambda: core.mod_servers(a[0], a[1], self.opener), done)
+        return True
+
+    def load_cases(self, more=False):
+        a = self._admin()
+        g = self._mod_guild()
+        if not a or not g:
+            return False
+        user = self.mod_user_var.get().strip()
+        if user and not user.isdigit():
+            self.say("A member id is digits only (Developer Mode on, right-click them > Copy User ID).", "Bad")
+            return False
+        before = self.case_next if more else None
+        if more and not before:
+            self.say("No more cases.")
+            return False
+        auto = ("automatic timeout %s at every %d warnings" % (core.minutes_text(g.get("autoMinutes")), g["autoWarns"])
+                if g.get("autoWarns") else "automatic timeout off")
+        staff = g.get("staff") or {}
+        self.mod_info.configure(text="%d cases · log %s · %s · staff: %d people, %d roles" % (
+            g.get("cases", 0), "on" if g.get("log") else "off", auto, staff.get("users", 0), staff.get("roles", 0)))
+
+        def done(page, err):
+            if err:
+                self.say(err, "Bad")
+                return
+            rows = page.get("cases") or []
+            if not more:
+                self.case_rows = []
+                self.cases_box.delete(0, "end")
+            self.case_rows += rows
+            for c in rows:
+                self.cases_box.insert("end", core.case_line(c))
+            self.case_next = page.get("next")
+            self.more_btn.state(["!disabled"] if self.case_next else ["disabled"])
+            self.say("%d case%s shown%s." % (len(self.case_rows), "" if len(self.case_rows) == 1 else "s",
+                                             " for that member" if user else ""), "Good")
+        self.run_bg(lambda: core.mod_cases(a[0], a[1], g["guild"], user, before, 25, self.opener), done)
+        return True
+
+    def _show_case(self):
+        sel = self.cases_box.curselection()
+        if not sel or sel[0] >= len(self.case_rows):
+            return
+        c = self.case_rows[sel[0]]
+        self.case_lbl.configure(text="%s\nMember id %s · moderator id %s" % (core.case_line(c), c.get("user", "?"), c.get("mod", "?")))
+
+    def clear_case(self):
+        a = self._admin()
+        g = self._mod_guild()
+        sel = self.cases_box.curselection()
+        if not a or not g or not sel:
+            self.say("Pick a warning first.", "Bad")
+            return False
+        c = self.case_rows[sel[0]]
+        if c.get("type") != "warn" or c.get("cleared"):
+            self.say("Only an active warning can be cleared.", "Bad")
+            return False
+
+        def done(res, err):
+            if err:
+                self.say(err, "Bad")
+                return
+            c["cleared"] = True
+            self.cases_box.delete(sel[0])
+            self.cases_box.insert(sel[0], core.case_line(c))
+            self.say("Cleared warning #%s." % c.get("n"), "Good")
+        self.run_bg(lambda: core.mod_clear(a[0], a[1], g["guild"], c["n"], self.opener), done)
         return True
 
     def install_mod_commands(self):

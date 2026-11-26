@@ -141,4 +141,32 @@ class CoreTest {
         val (_, since) = Core.companionTemplate(info, "c2c2")
         assertTrue(since.startsWith("- Mobile mode\n\nRestart"))
     }
+
+    @Test fun moderationCasesFromTheRelay() {
+        assertEquals("1 day", Core.minutesText(1440))
+        assertEquals("2 hours", Core.minutesText(120))
+        assertEquals("5 minutes", Core.minutesText(5))
+        val c = JSONObject().put("n", 4).put("type", "timeout").put("minutes", 60).put("auto", true).put("userTag", "@pup")
+            .put("modTag", "@boss").put("reason", "3 warnings").put("at", 0L)
+        assertEquals("#4  1970-01-01  timeout 1 hour (automatic)  @pup  by @boss: 3 warnings", Core.caseLine(c, java.util.TimeZone.getTimeZone("UTC")))
+        val sent = mutableListOf<String>()
+        val http = object : Core.Http {
+            override fun request(method: String, url: String, headers: Map<String, String>, body: ByteArray?): Core.Response {
+                sent.add("$method $url ${headers["X-Admin-Key"]}")
+                return when {
+                    url.endsWith("/admin/mod") -> Core.Response(200, """[{"guild":"5","name":"Pup Town","cases":3,"log":"1","autoWarns":3,"autoMinutes":60,"staff":{"users":2,"roles":1}}]""")
+                    url.contains("/cases?") -> Core.Response(200, """{"cases":[{"n":3,"type":"warn"},{"n":2,"type":"warn"}],"next":2}""")
+                    else -> Core.Response(200, """{"ok":true}""")
+                }
+            }
+        }
+        val servers = Core.modServers(http, "https://relay.example", "admin-pass")
+        assertEquals(Core.ModServer("5", "Pup Town", 3, true, 3, 60, 2, 1), servers[0])
+        val (cases, next) = Core.modCases(http, "https://relay.example", "admin-pass", "5", "900", 10)
+        assertEquals(listOf(3, 2), cases.map { it.optInt("n") })
+        assertEquals(2, next)
+        assertTrue(sent.last().contains("/admin/mod/5/cases?limit=25&user=900&before=10"))
+        Core.modClear(http, "https://relay.example", "admin-pass", "5", 2)
+        assertEquals("POST https://relay.example/admin/mod/5/cases/2/clear admin-pass", sent.last())
+    }
 }

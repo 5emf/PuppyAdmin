@@ -15,6 +15,7 @@ import tempfile
 import time
 import unittest
 import urllib.error
+import urllib.parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -71,6 +72,7 @@ class FakeRelay:
     def __init__(self):
         self.users = {}   # key -> {name, canPing}
         self.posts = []
+        self.cleared = set()
 
     def __call__(self, req, timeout):
         path = req.full_url[len(RELAY):]
@@ -79,6 +81,24 @@ class FakeRelay:
         if path.startswith("/admin"):
             if admin != "admin-pass":
                 raise http_error(req, 401, {"error": "Wrong admin key"})
+            if path == "/admin/mod":
+                return Resp(json.dumps([{"guild": "500000000000000001", "name": "Pup Town", "cases": 3, "log": "1",
+                                         "autoWarns": 3, "autoMinutes": 60, "staff": {"users": 2, "roles": 1}}]).encode())
+            if path.startswith("/admin/mod/500000000000000001/cases?"):
+                q = urllib.parse.parse_qs(path.split("?", 1)[1])
+                every = [{"n": n, "type": "warn" if n < 3 else "timeout", "minutes": 60, "auto": n == 3, "user": "900",
+                          "userTag": "@pup", "mod": "7", "modTag": "@boss", "reason": "r%d" % n, "at": 1795676718000,
+                          "cleared": n in self.cleared} for n in (3, 2, 1)]
+                if "user" in q:
+                    every = [c for c in every if c["user"] == q["user"][0]]
+                if "before" in q:
+                    every = [c for c in every if c["n"] < int(q["before"][0])]
+                lim = int(q["limit"][0])
+                return Resp(json.dumps({"cases": every[:lim], "next": every[lim - 1]["n"] if len(every) > lim else None}).encode())
+            m = re.match(r"^/admin/mod/500000000000000001/cases/(\d+)/clear$", path)
+            if m:
+                self.cleared.add(int(m.group(1)))
+                return Resp(b'{"ok": true}')
             if path == "/admin/commands":
                 return Resp(json.dumps({"ok": True, "count": 18, "application": "1", "publicKeySet": True,
                                         "interactionsUrl": RELAY + "/interactions"}).encode())
@@ -393,6 +413,18 @@ class TagPreviewTest(unittest.TestCase):
         self.assertTrue(any("no image is set" in n for n in notes))
         self.assertTrue(any("backdrop is off" in n for n in notes))
         self.assertFalse(any("stand-in" in n for n in notes))
+
+
+class ModerationTest(unittest.TestCase):
+    def test_case_line_and_minutes(self):
+        self.assertEqual(core.minutes_text(1440), "1 day")
+        self.assertEqual(core.minutes_text(120), "2 hours")
+        self.assertEqual(core.minutes_text(5), "5 minutes")
+        line = core.case_line({"n": 4, "type": "timeout", "minutes": 60, "auto": True, "userTag": "@pup", "modTag": "@boss",
+                               "reason": "3 warnings", "at": 0})
+        self.assertTrue(line.startswith("#4  "))
+        self.assertIn("timeout 1 hour (automatic)  @pup  by @boss: 3 warnings", line)
+        self.assertIn("warn (cleared)", core.case_line({"n": 1, "type": "warn", "cleared": True, "at": 0}))
 
 
 class CoreTest(unittest.TestCase):
@@ -928,6 +960,24 @@ class WindowTest(unittest.TestCase):
         self.app.users_list.selection_set(0)
         self.assertTrue(self.app.remove_user())
         self.assertTrue(self.pump(lambda: self.app.users_list.size() == 0))
+
+        self.app.show("moderation")
+        self.assertTrue(self.pump(lambda: self.app.cases_box.size() == 3))
+        self.assertIn("Pup Town", self.app.mod_server_var.get())
+        self.assertIn("automatic timeout 1 hour at every 3 warnings", self.app.mod_info.cget("text"))
+        self.assertIn("timeout 1 hour (automatic)", self.app.cases_box.get(0))
+        self.app.cases_box.selection_set(0)
+        self.assertFalse(self.app.clear_case(), "a timeout is not a warning")
+        self.app.cases_box.selection_clear(0, "end")
+        self.app.cases_box.selection_set(1)
+        self.assertTrue(self.app.clear_case())
+        self.assertTrue(self.pump(lambda: "(cleared)" in self.app.cases_box.get(1)))
+        self.assertEqual(self.relay.cleared, {2})
+        self.app.mod_user_var.set("900")
+        self.assertTrue(self.app.load_cases())
+        self.assertTrue(self.pump(lambda: "for that member" in self.app.status.cget("text")))
+        self.app.mod_user_var.set("pup")
+        self.assertFalse(self.app.load_cases(), "ids only")
 
         self.assertTrue(self.app.install_mod_commands())
         self.assertTrue(self.pump(lambda: "Installed 18 commands" in self.app.mod_lbl.cget("text")))

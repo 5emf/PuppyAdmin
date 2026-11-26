@@ -223,3 +223,54 @@ test("install the commands", async () => {
   assert.equal(d.calls[0].path, `/applications/${APP}/commands`);
   assert.equal(d.calls[0].method, "PUT");
 });
+
+test("automatic timeout at every N active warnings", async () => {
+  const e = env(), d = fakeDiscord();
+  const owner = member(OWNER);
+  let r = await run(e, d, slash("modsettings", { auto_timeout_warns: 2, auto_timeout_minutes: 30 }, owner));
+  assert.match(r.text, /automatic timeout: 30 minutes at every 2 warnings/);
+  r = await run(e, d, slash("warn", { user: "900", reason: "one" }, owner, { resolved: target("900") }));
+  assert.ok(!/automatically/.test(r.text));
+  r = await run(e, d, slash("warn", { user: "900", reason: "two" }, owner, { resolved: target("900") }));
+  assert.match(r.text, /2 warnings: timed out automatically for 30 minutes \(case #3\)/);
+  const t = d.calls.filter((c) => c.method === "PATCH" && c.path === `/guilds/${GUILD}/members/900`);
+  assert.equal(t.length, 1);
+  assert.equal(decodeURIComponent(t[0].reason), "automatic: 2 warnings");
+  r = await run(e, d, slash("warnings", { user: "900" }, owner, { resolved: target("900") }));
+  assert.match(r.text, /timeout 30 minutes \(automatic\)/);
+  assert.match(r.text, new RegExp(`by <@${APP}>`));
+  // a warned user who left the server: no timeout, said so
+  r = await run(e, d, slash("warn", { user: "901", reason: "a" }, owner, { resolved: { users: { "901": { id: "901", username: "gone" } } } }));
+  r = await run(e, d, slash("warn", { user: "901", reason: "b" }, owner, { resolved: { users: { "901": { id: "901", username: "gone" } } } }));
+  assert.match(r.text, /Not in the server, so no automatic timeout/);
+  // turned off
+  await run(e, d, slash("modsettings", { auto_timeout_warns: 0 }, owner));
+  r = await run(e, d, slash("warn", { user: "900", reason: "three" }, owner, { resolved: target("900") }));
+  r = await run(e, d, slash("warn", { user: "900", reason: "four" }, owner, { resolved: target("900") }));
+  assert.ok(!/automatically/.test(r.text));
+});
+
+test("the apps' Moderation section: servers, cases, clear a warning", async () => {
+  const e = env({ ADMIN_KEY: "admin-pass", DISCORD_CHANNEL_ID: "1" }), d = fakeDiscord();
+  const owner = member(OWNER);
+  for (let k = 0; k < 3; k++) await run(e, d, slash("warn", { user: "900", reason: "w" + k }, owner, { resolved: target("900") }));
+  await run(e, d, slash("note", { user: "901", text: "n" }, owner, { resolved: target("901") }));
+  globalThis.fetch = d.fetcher;
+  const admin = (path, init = {}) => worker.fetch(new Request("https://relay.example" + path, { ...init, headers: { "x-admin-key": "admin-pass" } }), e, {});
+  assert.equal((await worker.fetch(new Request("https://relay.example/admin/mod"), e, {})).status, 401);
+  const servers = await (await admin("/admin/mod")).json();
+  assert.deepEqual(servers.map((s) => [s.guild, s.name, s.cases]), [[GUILD, "Pup Town", 4]]);
+  let page = await (await admin(`/admin/mod/${GUILD}/cases?limit=2`)).json();
+  assert.deepEqual(page.cases.map((c) => c.n), [4, 3]);
+  assert.equal(page.next, 3);
+  page = await (await admin(`/admin/mod/${GUILD}/cases?limit=2&before=3`)).json();
+  assert.deepEqual(page.cases.map((c) => c.n), [2, 1]);
+  assert.equal(page.next, null);
+  page = await (await admin(`/admin/mod/${GUILD}/cases?user=900`)).json();
+  assert.deepEqual(page.cases.map((c) => c.n), [3, 2, 1]);
+  const cleared = await (await admin(`/admin/mod/${GUILD}/cases/2/clear`, { method: "POST" })).json();
+  assert.equal(cleared.case.cleared, true);
+  assert.equal((await admin(`/admin/mod/${GUILD}/cases/2/clear`, { method: "POST" })).status, 400, "already cleared");
+  assert.equal((await admin(`/admin/mod/${GUILD}/cases/4/clear`, { method: "POST" })).status, 400, "a note is not a warning");
+  assert.equal((await admin(`/admin/mod/${GUILD}/cases/99/clear`, { method: "POST" })).status, 404);
+});

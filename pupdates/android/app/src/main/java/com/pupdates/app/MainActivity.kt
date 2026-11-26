@@ -49,8 +49,8 @@ class MainActivity : Activity() {
     private val pool = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
 
-    private val sections = listOf("compose", "bot", "status", "updates", "tags", "games", "pet", "whitelist", "settings")
-    private val titles = mapOf("compose" to "Compose", "bot" to "Bot", "status" to "Status", "updates" to "Updates", "tags" to "Tags", "games" to "Games", "pet" to "Pet", "whitelist" to "Whitelist", "settings" to "Settings")
+    private val sections = listOf("compose", "bot", "status", "updates", "tags", "games", "pet", "whitelist", "moderation", "settings")
+    private val titles = mapOf("compose" to "Compose", "bot" to "Bot", "status" to "Status", "updates" to "Updates", "tags" to "Tags", "games" to "Games", "pet" to "Pet", "whitelist" to "Whitelist", "moderation" to "Moderation", "settings" to "Settings")
     private val descriptions = mapOf(
         "compose" to "Write any message, add a picture, and post it to your Discord channel.",
         "updates" to "Fill in a Puppy Admin or Puppy Companion update from GitHub.",
@@ -59,6 +59,7 @@ class MainActivity : Activity() {
         "games" to "Puppy Admin's mini games, and Game Boy, Game Boy Advance and Doom with its emulators.",
         "pet" to "Your pet cat: feed it, play with it, put it to bed. It lives on while the app is closed.",
         "bot" to "Your Discord bot: sign in, pick where it posts, edit or delete its posts, change its name and picture.",
+        "moderation" to "Your bot's slash-command moderation: install the commands, browse every case, clear warnings.",
         "status" to "Keep your bot online with a status, like \"Listening to Jae but mainly Claude\".",
         "settings" to "Bot, webhook or relay, the bubble over other apps, and updates.")
     private val pages = HashMap<String, View>()
@@ -105,6 +106,14 @@ class MainActivity : Activity() {
     private lateinit var bubbleChk: CheckBox
     private lateinit var modLbl: TextView
     private var modEndpoint = ""
+    private lateinit var modServerSpin: Spinner
+    private lateinit var modInfo: TextView
+    private lateinit var modUserIn: EditText
+    private lateinit var casesBox: LinearLayout
+    private lateinit var moreBtn: TextView
+    private var modServers = listOf<Core.ModServer>()
+    private val caseRows = mutableListOf<org.json.JSONObject>()
+    private var caseNext: Int? = null
 
     // bot
     private lateinit var whereLbl: TextView
@@ -298,6 +307,7 @@ class MainActivity : Activity() {
             "updates_normal" -> R.drawable.ic_updates_normal; "updates_hover" -> R.drawable.ic_updates_hover; "updates_chosen" -> R.drawable.ic_updates_chosen
             "whitelist_normal" -> R.drawable.ic_whitelist_normal; "whitelist_hover" -> R.drawable.ic_whitelist_hover; "whitelist_chosen" -> R.drawable.ic_whitelist_chosen
             "settings_normal" -> R.drawable.ic_settings_normal; "settings_hover" -> R.drawable.ic_settings_hover; "settings_chosen" -> R.drawable.ic_settings_chosen
+            "moderation_normal" -> R.drawable.ic_moderation_normal; "moderation_hover" -> R.drawable.ic_moderation_hover; "moderation_chosen" -> R.drawable.ic_moderation_chosen
             "status_normal" -> R.drawable.ic_status_normal; "status_hover" -> R.drawable.ic_status_hover; "status_chosen" -> R.drawable.ic_status_chosen
             "bot_normal" -> R.drawable.ic_bot_normal; "bot_hover" -> R.drawable.ic_bot_hover; "bot_chosen" -> R.drawable.ic_bot_chosen
             "tags_normal" -> R.drawable.ic_tags_normal; "tags_hover" -> R.drawable.ic_tags_hover; "tags_chosen" -> R.drawable.ic_tags_chosen
@@ -364,6 +374,7 @@ class MainActivity : Activity() {
         pages["whitelist"] = buildWhitelist()
         pages["bot"] = buildBot()
         pages["status"] = buildStatus()
+        pages["moderation"] = buildModeration()
         pages["tags"] = buildTags()
         pages["games"] = buildGames()
         pages["pet"] = buildPet()
@@ -382,6 +393,7 @@ class MainActivity : Activity() {
         strip.text = descriptions[name]
         if (name == "compose") whereLabel()
         if (name == "bot") botShown()
+        if (name == "moderation" && modServers.isEmpty() && store.secret("admin_key").isNotEmpty() && store.get("relay_url").isNotEmpty()) loadModServers()
         if (name == "whitelist" && store.secret("admin_key").isNotEmpty() && store.get("relay_url").isNotEmpty() && usersBox.childCount == 0) refreshUsers()
     }
 
@@ -974,8 +986,6 @@ class MainActivity : Activity() {
         newNameIn = field("Name").apply { inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS }
         newPingChk = check("may ping", false)
         newKeyLbl = label("", size = 13f).apply { setTextIsSelectable(true); typeface = Typeface.MONOSPACE }
-        modLbl = label("Your bot answers /warn, /timeout, /kick, /ban, /purge, /staff and more in your server, through the relay " +
-            "(always on, no phone or PC needed). Needs the relay's DISCORD_BOT_TOKEN and DISCORD_PUBLIC_KEY; steps in pupdates/relay/README.md.", dim = true, size = 13f)
         adminLabel()
         return page(
             label("The relay keeps your webhook secret and lets only the people listed here post, each with their own access key. Set the relay up once (pupdates/relay/README.md)."),
@@ -986,10 +996,84 @@ class MainActivity : Activity() {
             usersBox,
             row(grow(newNameIn), gap(newPingChk), gap(button("Add", accent = true) { addUser() }), top = 12),
             row(grow(newKeyLbl), gap(button("Copy") { copyKey() })),
-            label("A new key is shown once: send it to that person. Adding the same name again gives them a new key.", dim = true, size = 13f),
-            label("Moderation and staff (slash commands)", bold = true, size = 16f).apply { setPadding(0, dp(12), 0, 0) },
+            label("A new key is shown once: send it to that person. Adding the same name again gives them a new key.", dim = true, size = 13f))
+    }
+
+    // ------------------------------------------------------------------ moderation (the relay's slash commands)
+    private fun buildModeration(): View {
+        modLbl = label("Your bot answers /warn, /timeout, /kick, /ban, /purge, /staff and more in your server, through the relay " +
+            "(always on, no phone or PC needed). Steps in pupdates/relay/README.md. Automatic timeout: /modsettings auto_timeout_warns:3 auto_timeout_minutes:60.", dim = true, size = 13f)
+        modServerSpin = spinner(listOf("(press Refresh)"), "")
+        modServerSpin.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { if (!filling && pos < modServers.size) loadCases(false) }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+        modInfo = label("", dim = true, size = 13f)
+        modUserIn = field("Member id (empty = everyone)").apply { inputType = InputType.TYPE_CLASS_NUMBER }
+        casesBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = plate(Color.WHITE, LINE); setPadding(dp(8), dp(4), dp(8), dp(4)) }
+        moreBtn = button("More") { loadCases(true) }.apply { isEnabled = false }
+        return page(
+            label("Uses the relay address and admin key from Whitelist.", dim = true, size = 13f),
+            label("Slash commands", bold = true, size = 16f).apply { setPadding(0, dp(6), 0, 0) },
             row(button("Install moderation commands") { installModCommands() }, gap(button("Copy endpoint") { copyEndpoint() })),
-            modLbl)
+            modLbl,
+            label("Cases", bold = true, size = 16f).apply { setPadding(0, dp(10), 0, 0) },
+            row(grow(modServerSpin), gap(button("Refresh") { loadModServers() })),
+            modInfo,
+            row(grow(modUserIn), gap(button("Show") { loadCases(false) }), gap(button("All") { modUserIn.setText(""); loadCases(false) }, 4)),
+            casesBox,
+            row(spacer(), moreBtn))
+    }
+
+    private fun loadModServers() {
+        val (base, key) = admin() ?: return
+        bg({ Core.modServers(http, base, key) }) { list, err ->
+            if (list == null) { say(err ?: "", BAD); return@bg }
+            modServers = list
+            filling = true
+            modServerSpin.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, list.map { it.name }.ifEmpty { listOf("(no server yet)") })
+                .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            main.post { filling = false }
+            if (list.isEmpty()) { modInfo.text = "No server has used the moderation commands yet."; say("No moderation data yet."); return@bg }
+            say("${list.size} server" + (if (list.size == 1) "." else "s."), GOOD)
+            loadCases(false)
+        }
+    }
+
+    private fun loadCases(more: Boolean) {
+        val (base, key) = admin() ?: return
+        val g = modServers.getOrNull(modServerSpin.selectedItemPosition) ?: run { say("Press Refresh first.", BAD); return }
+        val user = modUserIn.text.toString().trim()
+        if (user.isNotEmpty() && !user.all { it.isDigit() }) { say("A member id is digits only (Developer Mode on, long-press them > Copy User ID).", BAD); return }
+        val before = if (more) caseNext ?: run { say("No more cases."); return } else null
+        modInfo.text = "${g.cases} cases · log " + (if (g.log) "on" else "off") + " · " +
+            (if (g.autoWarns > 0) "automatic timeout ${Core.minutesText(g.autoMinutes)} at every ${g.autoWarns} warnings" else "automatic timeout off") +
+            " · staff: ${g.staffUsers} people, ${g.staffRoles} roles"
+        bg({ Core.modCases(http, base, key, g.guild, user, before) }) { page, err ->
+            if (page == null) { say(err ?: "", BAD); return@bg }
+            if (!more) { caseRows.clear(); casesBox.removeAllViews() }
+            for (c in page.first) addCaseRow(g, c)
+            caseNext = page.second
+            moreBtn.isEnabled = caseNext != null
+            if (caseRows.isEmpty()) casesBox.addView(label("No cases.", dim = true))
+            say("${caseRows.size} case" + (if (caseRows.size == 1) "" else "s") + " shown" + (if (user.isNotEmpty()) " for that member." else "."), GOOD)
+        }
+    }
+
+    private fun addCaseRow(g: Core.ModServer, c: org.json.JSONObject) {
+        caseRows.add(c)
+        val text = label(Core.caseLine(c), size = 13f)
+        val clear = button("Clear") {
+            val (base, key) = admin() ?: return@button
+            bg({ Core.modClear(http, base, key, g.guild, c.optInt("n")) }) { _, err ->
+                if (err != null) { say(err, BAD); return@bg }
+                c.put("cleared", true)
+                text.text = Core.caseLine(c)
+                say("Cleared warning #${c.optInt("n")}.", GOOD)
+            }
+        }
+        clear.visibility = if (c.optString("type") == "warn" && !c.optBoolean("cleared")) View.VISIBLE else View.GONE
+        casesBox.addView(row(grow(text), gap(clear), top = 4))
     }
 
     private fun installModCommands() {

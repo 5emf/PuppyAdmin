@@ -25,11 +25,13 @@
 //   DELETE /admin/users/<name>      X-Admin-Key               -> { ok: true }
 //   POST   /interactions            Discord's slash commands (moderation + staff, see mod.js); needs
 //                                     secret DISCORD_PUBLIC_KEY (your app's Public Key) and DISCORD_BOT_TOKEN
+//   GET    /admin/mod, /admin/mod/<guild>/cases?user=&before=&limit=, POST .../cases/<n>/clear
+//                                   X-Admin-Key -> the servers, cases and warnings (mod.js adminMod)
 //   POST   /admin/commands          X-Admin-Key -> installs / updates the slash commands in Discord
 //   POST   /admin/avatar            X-Admin-Key, JSON { avatar: "data:image/png;base64,..." | null, name? }
 //                                     -> changes the bot's (or the webhook's) own picture (and name) for good
 
-import { installCommands, interactionsRoute } from "./mod.js";
+import { adminMod, installCommands, interactionsRoute } from "./mod.js";
 
 export const LOADSTRING = 'local H=game:GetService("HttpService") local ok,sha=pcall(function() return H:JSONDecode(game:HttpGet("https://api.github.com/repos/5emf/PuppyAdmin/commits/ccr-3b4dfcff-nyfy0w")).sha end) loadstring(game:HttpGet("https://raw.githubusercontent.com/5emf/PuppyAdmin/"..(ok and sha or "ccr-3b4dfcff-nyfy0w").."/PuppyAdmin.lua"))()';
 export const MAX_IMAGE = 8 * 1024 * 1024;
@@ -176,6 +178,7 @@ async function handleAdmin(request, env, path) {
     await env.PUPDATES.put("index", JSON.stringify(index));
     return json({ name, key, canPing: rec.canPing });
   }
+  if (path === "/admin/mod" || path.startsWith("/admin/mod/")) return adminMod(request, env, path);
   if (path === "/admin/commands" && request.method === "POST") {
     try {
       return json(await installCommands(env, new URL(request.url).origin));

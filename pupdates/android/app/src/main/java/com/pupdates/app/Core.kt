@@ -317,6 +317,51 @@ object Core {
     fun adminCommands(http: Http, base: String, admin: String): JSONObject = JSONObject(send(http, "POST", relayUrl(base, "/admin/commands"),
         mapOf("X-Admin-Key" to admin, "Content-Type" to "application/json"), "{}".toByteArray(Charsets.UTF_8), listOf(admin)))
 
+    // ------------------------------------------------------------------ moderation (the relay's slash commands, owner only)
+    data class ModServer(val guild: String, val name: String, val cases: Int, val log: Boolean, val autoWarns: Int,
+                         val autoMinutes: Int, val staffUsers: Int, val staffRoles: Int)
+
+    fun modServers(http: Http, base: String, admin: String): List<ModServer> {
+        val arr = JSONArray(send(http, "GET", relayUrl(base, "/admin/mod"), mapOf("X-Admin-Key" to admin), null, listOf(admin)))
+        return (0 until arr.length()).map { arr.getJSONObject(it) }.map {
+            val st = it.optJSONObject("staff") ?: JSONObject()
+            ModServer(it.optString("guild"), it.optString("name").ifEmpty { it.optString("guild") }, it.optInt("cases"),
+                it.optString("log").isNotEmpty(), it.optInt("autoWarns"), it.optInt("autoMinutes", 60), st.optInt("users"), st.optInt("roles"))
+        }
+    }
+
+    /** one page of cases, newest first; next = pass as before for more (null = no more) */
+    fun modCases(http: Http, base: String, admin: String, guild: String, user: String = "", before: Int? = null, limit: Int = 25): Pair<List<JSONObject>, Int?> {
+        var q = "limit=$limit"
+        if (user.isNotEmpty()) q += "&user=" + URLEncoder.encode(user, "UTF-8")
+        if (before != null) q += "&before=$before"
+        val o = JSONObject(send(http, "GET", relayUrl(base, "/admin/mod/${URLEncoder.encode(guild, "UTF-8")}/cases?$q"), mapOf("X-Admin-Key" to admin), null, listOf(admin)))
+        val arr = o.optJSONArray("cases") ?: JSONArray()
+        return (0 until arr.length()).map { arr.getJSONObject(it) } to (if (o.isNull("next")) null else o.optInt("next"))
+    }
+
+    fun modClear(http: Http, base: String, admin: String, guild: String, number: Int) {
+        send(http, "POST", relayUrl(base, "/admin/mod/${URLEncoder.encode(guild, "UTF-8")}/cases/$number/clear"),
+            mapOf("X-Admin-Key" to admin, "Content-Type" to "application/json"), "{}".toByteArray(Charsets.UTF_8), listOf(admin))
+    }
+
+    fun minutesText(m: Int): String = when {
+        m > 0 && m % 1440 == 0 -> "${m / 1440} day" + (if (m == 1440) "" else "s")
+        m > 0 && m % 60 == 0 -> "${m / 60} hour" + (if (m == 60) "" else "s")
+        else -> "$m minute" + (if (m == 1) "" else "s")
+    }
+
+    /** one case as a list row, like the desktop's core.case_line */
+    fun caseLine(c: JSONObject, zone: java.util.TimeZone = java.util.TimeZone.getDefault()): String {
+        var what = if (c.optString("type") == "timeout") "timeout " + minutesText(c.optInt("minutes")) else c.optString("type", "?")
+        if (c.optBoolean("auto")) what += " (automatic)"
+        if (c.optBoolean("cleared")) what += " (cleared)"
+        val when_ = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply { timeZone = zone }.format(java.util.Date(c.optLong("at")))
+        val reason = c.optString("reason").replace("\n", " ")
+        return "#${c.optInt("n")}  $when_  $what  ${c.optString("userTag").ifEmpty { c.optString("user", "?") }}  by " +
+            c.optString("modTag").ifEmpty { c.optString("mod", "?") } + (if (reason.isNotEmpty()) ": " + reason.take(120) else "")
+    }
+
     fun adminRemove(http: Http, base: String, admin: String, name: String) {
         send(http, "DELETE", relayUrl(base, "/admin/users/" + URLEncoder.encode(name, "UTF-8").replace("+", "%20")),
             mapOf("X-Admin-Key" to admin), null, listOf(admin))

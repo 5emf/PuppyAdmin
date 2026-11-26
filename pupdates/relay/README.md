@@ -43,9 +43,9 @@ is off. It needs your bot (`DISCORD_BOT_TOKEN`) and one more secret.
 1. Developer Portal > your app > **General Information**: copy the **Public Key**. Worker > Settings >
    Variables and Secrets > Add `DISCORD_PUBLIC_KEY` (Secret) = that key. Optional: `OWNER_IDS` (plain
    text) = user ids that always count as owner, comma separated.
-2. Pupdates > **Whitelist** > **Install moderation commands** (uses your admin key).
+2. Pupdates > **Moderation** > **Install moderation commands** (uses the relay and admin key from Whitelist).
 3. Same page in the Developer Portal: **Interactions Endpoint URL** = `https://<your relay>/interactions`
-   (**Copy endpoint** in Pupdates), **Save Changes**. Discord checks the address at once: if it refuses,
+   (**Copy endpoint** in Pupdates > Moderation), **Save Changes**. Discord checks the address at once: if it refuses,
    the public key secret is missing or wrong.
 4. Pupdates > **Bot** > **Invite the bot to a server** again and accept: the invite now asks for Kick,
    Ban, Manage Channels, Manage Messages, Manage Roles and Timeout Members, and for slash commands.
@@ -68,6 +68,13 @@ is off. It needs your bot (`DISCORD_BOT_TOKEN`) and one more secret.
   and into Discord's audit log with the moderator and reason, and (turn off in `/modsettings`) posts a
   short public notice in the channel and DMs the member before a kick or ban. `/note` is staff-only.
 - Answers to the moderator are private (only they see them).
+- Automatic timeout: `/modsettings auto_timeout_warns:3 auto_timeout_minutes:60` times a member out
+  each time their active warnings reach 3, 6, 9... (0 = off). It is its own case, "by" the bot, marked
+  automatic; cleared warnings do not count.
+- The Pupdates apps' **Moderation** section (owner, admin key) lists every server that used the
+  commands, its cases newest first (filter by member id, **More** for older ones), and can clear a
+  warning. API: `GET /admin/mod`, `GET /admin/mod/<server id>/cases?user=&before=&limit=`,
+  `POST /admin/mod/<server id>/cases/<n>/clear`.
 - `/purge` can only delete messages younger than 14 days (Discord's rule).
 - Data lives in the relay's KV (`mod:<server id>:...`). Two actions at the very same moment could get
   the same case number (KV is not a database); the actions themselves still happen.

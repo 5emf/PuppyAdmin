@@ -19,6 +19,9 @@
 // Data per server: mod:<guild>:config  { log, announce, dm, nextCase, staff: { users, roles }, owner, name }
 //                  mod:<guild>:case:<n> { n, type, user, userTag, mod, modTag, reason, at, minutes, cleared }
 //                  mod:<guild>:user:<id> [ case numbers ]
+//                  mod:guilds            { <guild id>: name }  (for the Pupdates apps' Moderation section)
+// Automatic timeout: /modsettings auto_timeout_warns:3 auto_timeout_minutes:60 times a member out every
+// time their active warnings reach a multiple of 3 (0 = off).
 
 export const API = "https://discord.com/api/v10";
 export const LEVELS = ["member", "helper", "moderator", "admin", "owner"];
@@ -73,7 +76,9 @@ export const COMMANDS = [
     { type: 7, name: "log_channel", description: "Where every action is logged", required: false, channel_types: [0, 5] },
     { type: 5, name: "no_log", description: "Turn the log off", required: false },
     { type: 5, name: "announce", description: "Post a short public notice in the channel after an action", required: false },
-    { type: 5, name: "dm_members", description: "Tell members by DM when they are warned, timed out, kicked or banned", required: false }]),
+    { type: 5, name: "dm_members", description: "Tell members by DM when they are warned, timed out, kicked or banned", required: false },
+    { type: 4, name: "auto_timeout_warns", description: "Time out automatically at this many active warnings (0 = off)", required: false, min_value: 0, max_value: 20 },
+    { type: 4, name: "auto_timeout_minutes", description: "How long the automatic timeout lasts, in minutes", required: false, min_value: 1, max_value: MAX_TIMEOUT }]),
   cmd("modhelp", "The moderation commands you can use"),
 ];
 
@@ -171,7 +176,7 @@ async function getConfig(env, guild) {
   const c = JSON.parse((await env.PUPDATES.get(`mod:${guild}:config`)) || "{}");
   return { log: c.log || "", announce: c.announce !== false, dm: c.dm !== false, nextCase: c.nextCase || 1,
            staff: { users: (c.staff && c.staff.users) || {}, roles: (c.staff && c.staff.roles) || {} },
-           owner: c.owner || "", name: c.name || "" };
+           owner: c.owner || "", name: c.name || "", autoWarns: c.autoWarns || 0, autoMinutes: c.autoMinutes || 60 };
 }
 const putConfig = (env, guild, c) => env.PUPDATES.put(`mod:${guild}:config`, JSON.stringify(c));
 
@@ -182,6 +187,11 @@ async function guildInfo(env, api, guild, cfg) {
       cfg.owner = g.owner_id || ""; cfg.name = g.name || "";
       await putConfig(env, guild, cfg);
     } catch { /* the owner check falls back to Administrator */ }
+  }
+  const index = JSON.parse((await env.PUPDATES.get("mod:guilds")) || "{}");
+  if (index[guild] !== (cfg.name || guild)) {
+    index[guild] = cfg.name || guild;
+    await env.PUPDATES.put("mod:guilds", JSON.stringify(index));
   }
   return cfg;
 }
@@ -241,7 +251,7 @@ function embed(type, target, actor, reason, extra = {}) {
 
 function caseLine(c) {
   const when = `<t:${Math.floor(c.at / 1000)}:d>`;
-  const what = c.type === "timeout" ? `timeout ${minutesText(c.minutes)}` : c.type;
+  const what = (c.type === "timeout" ? `timeout ${minutesText(c.minutes)}` : c.type) + (c.auto ? " (automatic)" : "");
   return `**#${c.n}** ${what}${c.cleared ? " (cleared)" : ""} ${when} by <@${c.mod}>${c.reason ? ": " + c.reason.slice(0, 120) : ""}`;
 }
 
@@ -330,6 +340,30 @@ function record(ctx, type, reason, extra = {}) {
                                     reason: reason || "", at: Date.now(), ...extra });
 }
 
+/** after a warning: the automatic timeout when the active warnings reach a multiple of cfg.autoWarns */
+export function autoDue(cfg, warns) {
+  return cfg.autoWarns > 0 && warns > 0 && warns % cfg.autoWarns === 0;
+}
+
+async function autoTimeout(ctx, warns) {
+  const { cfg, api, guild, target, i } = ctx;
+  if (!autoDue(cfg, warns)) return "";
+  if (!ctx.targetMember) return " (Not in the server, so no automatic timeout.)";
+  const minutes = Math.min(MAX_TIMEOUT, cfg.autoMinutes || 60);
+  const why = `automatic: ${warns} warnings`;
+  try {
+    await api("PATCH", `/guilds/${guild}/members/${target.id}`,
+      { communication_disabled_until: new Date(Date.now() + minutes * 60000).toISOString() }, why);
+  } catch (e) {
+    return ` The automatic timeout failed: ${e.message}`;
+  }
+  const bot = { ...ctx, actor: { id: i.application_id, username: "automatic" } };
+  const c = await record(bot, "timeout", why, { minutes, auto: true });
+  await dm(bot, target, `⏳ You were timed out in **${cfg.name || "the server"}** for ${minutesText(minutes)}: ${warns} warnings.`);
+  await notify(bot, "timeout", target, why, { n: c.n, minutes });
+  return ` ${warns} warnings: timed out automatically for ${minutesText(minutes)} (case #${c.n}).`;
+}
+
 async function run(name, o, ctx) {
   const { env, api, cfg, guild, actor, target, i } = ctx;   // eslint-disable-line no-unused-vars
   const server = cfg.name || "the server";
@@ -345,7 +379,8 @@ async function run(name, o, ctx) {
       const told = await dm(ctx, target, `⚠️ You were warned in **${server}**: ${reason}`);
       const warns = (await userCases(env, guild, target.id)).filter((x) => x.type === "warn" && !x.cleared).length;
       await notify(ctx, "warn", target, reason, { n: c.n });
-      return `Warned <@${target.id}> (case #${c.n}, ${warns} warning${warns === 1 ? "" : "s"} now)${told ? "" : "; they could not be told by DM"}.`;
+      const auto = await autoTimeout(ctx, warns);
+      return `Warned <@${target.id}> (case #${c.n}, ${warns} warning${warns === 1 ? "" : "s"} now)${told ? "" : "; they could not be told by DM"}.${auto}`;
     }
     case "note": {
       const c = await record(ctx, "note", o.text);
@@ -464,11 +499,71 @@ async function run(name, o, ctx) {
       if (o.no_log) cfg.log = "";
       if (o.announce !== undefined) cfg.announce = o.announce;
       if (o.dm_members !== undefined) cfg.dm = o.dm_members;
+      if (o.auto_timeout_warns !== undefined) cfg.autoWarns = o.auto_timeout_warns;
+      if (o.auto_timeout_minutes !== undefined) cfg.autoMinutes = o.auto_timeout_minutes;
       await putConfig(env, guild, cfg);
-      return `Log: ${cfg.log ? `<#${cfg.log}>` : "off"} · public notices: ${cfg.announce ? "on" : "off"} · DMs to members: ${cfg.dm ? "on" : "off"}`;
+      return `Log: ${cfg.log ? `<#${cfg.log}>` : "off"} · public notices: ${cfg.announce ? "on" : "off"} · DMs to members: ${cfg.dm ? "on" : "off"}` +
+        ` · automatic timeout: ${cfg.autoWarns ? `${minutesText(cfg.autoMinutes)} at every ${cfg.autoWarns} warnings` : "off"}`;
     }
   }
   return "Unknown command.";
+}
+
+// ------------------------------------------------------------------ the Pupdates apps' Moderation section (admin key, via worker.js)
+const jsonResponse = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } });
+
+/**
+ * GET  /admin/mod                                   -> [{ guild, name, cases, log, announce, dm, autoWarns, autoMinutes, staff }]
+ * GET  /admin/mod/<guild>/cases?user=<id>&before=<n>&limit=<1..50>  -> { cases (newest first), next }
+ * POST /admin/mod/<guild>/cases/<n>/clear            -> clears one active warning
+ */
+export async function adminMod(request, env, path) {
+  if (path === "/admin/mod" && request.method === "GET") {
+    const index = JSON.parse((await env.PUPDATES.get("mod:guilds")) || "{}");
+    const out = [];
+    for (const [guild, name] of Object.entries(index)) {
+      const c = await getConfig(env, guild);
+      out.push({ guild, name: c.name || name, cases: c.nextCase - 1, log: c.log, announce: c.announce, dm: c.dm,
+                 autoWarns: c.autoWarns, autoMinutes: c.autoMinutes,
+                 staff: { users: Object.keys(c.staff.users).length, roles: Object.keys(c.staff.roles).length } });
+    }
+    return jsonResponse(out.sort((a, b) => a.name.localeCompare(b.name)));
+  }
+  let m = path.match(/^\/admin\/mod\/(\d{15,22})\/cases$/);
+  if (m && request.method === "GET") {
+    const guild = m[1];
+    const q = new URL(request.url).searchParams;
+    const limit = Math.max(1, Math.min(50, Number(q.get("limit")) || 25));
+    const user = (q.get("user") || "").trim();
+    const before = Number(q.get("before")) || Infinity;
+    let numbers;
+    if (user) {
+      if (!/^\d{1,22}$/.test(user)) return jsonResponse({ error: "A user id is digits only" }, 400);
+      numbers = JSON.parse((await env.PUPDATES.get(`mod:${guild}:user:${user}`)) || "[]").filter((n) => n < before).reverse();
+    } else {
+      const top = Math.min((await getConfig(env, guild)).nextCase - 1, before - 1);
+      numbers = [];
+      for (let n = top; n >= 1 && numbers.length < limit + 1; n--) numbers.push(n);
+    }
+    const cases = [];
+    for (const n of numbers.slice(0, limit)) {
+      const c = await env.PUPDATES.get(`mod:${guild}:case:${n}`);
+      if (c) cases.push(JSON.parse(c));
+    }
+    return jsonResponse({ cases, next: numbers.length > limit ? cases[cases.length - 1].n : null });
+  }
+  m = path.match(/^\/admin\/mod\/(\d{15,22})\/cases\/(\d+)\/clear$/);
+  if (m && request.method === "POST") {
+    const key = `mod:${m[1]}:case:${m[2]}`;
+    const c = JSON.parse((await env.PUPDATES.get(key)) || "null");
+    if (!c) return jsonResponse({ error: `There is no case #${m[2]}` }, 404);
+    if (c.type !== "warn" || c.cleared) return jsonResponse({ error: `Case #${m[2]} is not an active warning` }, 400);
+    c.cleared = true;
+    c.clearedBy = "Pupdates app";
+    await env.PUPDATES.put(key, JSON.stringify(c));
+    return jsonResponse({ ok: true, case: c });
+  }
+  return jsonResponse({ error: "Unknown moderation request" }, 404);
 }
 
 // ------------------------------------------------------------------ HTTP entry points (called from worker.js)
