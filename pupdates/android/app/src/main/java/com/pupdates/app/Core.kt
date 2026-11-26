@@ -313,6 +313,10 @@ object Core {
             mapOf("X-Admin-Key" to admin, "Content-Type" to "application/json"), body, listOf(admin)))
     }
 
+    /** owner: the relay installs / updates the moderation slash commands -> {count, interactionsUrl, publicKeySet} */
+    fun adminCommands(http: Http, base: String, admin: String): JSONObject = JSONObject(send(http, "POST", relayUrl(base, "/admin/commands"),
+        mapOf("X-Admin-Key" to admin, "Content-Type" to "application/json"), "{}".toByteArray(Charsets.UTF_8), listOf(admin)))
+
     fun adminRemove(http: Http, base: String, admin: String, name: String) {
         send(http, "DELETE", relayUrl(base, "/admin/users/" + URLEncoder.encode(name, "UTF-8").replace("+", "%20")),
             mapOf("X-Admin-Key" to admin), null, listOf(admin))

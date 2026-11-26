@@ -18,8 +18,11 @@ from . import core
 API = "https://discord.com/api/v10"
 USER_AGENT = "DiscordBot (https://github.com/5emf/PuppyAdmin, 2) Pupdates"
 TEXT, ANNOUNCEMENT, CATEGORY = 0, 5, 4
-# View Channel, Send Messages, Embed Links, Attach Files, Read Message History, Mention Everyone
-PERMISSIONS = 1024 | 2048 | 16384 | 32768 | 65536 | 131072
+# Posting: View Channel, Send Messages, Embed Links, Attach Files, Read Message History, Mention Everyone;
+# moderation (the relay's slash commands): Kick, Ban, Manage Channels (slowmode), Manage Messages (purge),
+# Manage Roles (lock / unlock), Moderate Members (timeout)
+PERMISSIONS = (1024 | 2048 | 16384 | 32768 | 65536 | 131072
+               | 2 | 4 | 16 | 8192 | 268435456 | (1 << 40))
 TOKEN_RE = re.compile(r"^[\w-]{18,}\.[\w-]{4,}\.[\w-]{20,}$")
 TOKEN_ANYWHERE = re.compile(r"[\w-]{18,}\.[\w-]{4,}\.[\w-]{20,}")
 ERRORS = {
@@ -53,7 +56,7 @@ def app_id_from_token(token):
 
 
 def invite_url(app_id):
-    return ("https://discord.com/oauth2/authorize?client_id=%s&scope=bot&permissions=%d" % (app_id, PERMISSIONS)) if app_id else None
+    return ("https://discord.com/oauth2/authorize?client_id=%s&scope=bot+applications.commands&permissions=%d" % (app_id, PERMISSIONS)) if app_id else None
 
 
 def jump_url(guild_id, channel_id, message_id):

@@ -103,6 +103,8 @@ class MainActivity : Activity() {
     private lateinit var keyIn: EditText
     private lateinit var relayLbl: TextView
     private lateinit var bubbleChk: CheckBox
+    private lateinit var modLbl: TextView
+    private var modEndpoint = ""
 
     // bot
     private lateinit var whereLbl: TextView
@@ -972,6 +974,8 @@ class MainActivity : Activity() {
         newNameIn = field("Name").apply { inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS }
         newPingChk = check("may ping", false)
         newKeyLbl = label("", size = 13f).apply { setTextIsSelectable(true); typeface = Typeface.MONOSPACE }
+        modLbl = label("Your bot answers /warn, /timeout, /kick, /ban, /purge, /staff and more in your server, through the relay " +
+            "(always on, no phone or PC needed). Needs the relay's DISCORD_BOT_TOKEN and DISCORD_PUBLIC_KEY; steps in pupdates/relay/README.md.", dim = true, size = 13f)
         adminLabel()
         return page(
             label("The relay keeps your webhook secret and lets only the people listed here post, each with their own access key. Set the relay up once (pupdates/relay/README.md)."),
@@ -982,7 +986,35 @@ class MainActivity : Activity() {
             usersBox,
             row(grow(newNameIn), gap(newPingChk), gap(button("Add", accent = true) { addUser() }), top = 12),
             row(grow(newKeyLbl), gap(button("Copy") { copyKey() })),
-            label("A new key is shown once: send it to that person. Adding the same name again gives them a new key.", dim = true, size = 13f))
+            label("A new key is shown once: send it to that person. Adding the same name again gives them a new key.", dim = true, size = 13f),
+            label("Moderation and staff (slash commands)", bold = true, size = 16f).apply { setPadding(0, dp(12), 0, 0) },
+            row(button("Install moderation commands") { installModCommands() }, gap(button("Copy endpoint") { copyEndpoint() })),
+            modLbl)
+    }
+
+    private fun installModCommands() {
+        val (base, key) = admin() ?: return
+        modLbl.text = "Installing..."
+        modLbl.setTextColor(DIM)
+        bg({ Core.adminCommands(http, base, key) }) { res, err ->
+            if (res == null) { modLbl.text = err ?: ""; modLbl.setTextColor(BAD); return@bg }
+            modEndpoint = res.optString("interactionsUrl")
+            var steps = "Installed ${res.optInt("count")} commands. Now: Developer Portal > your app > General Information > " +
+                "Interactions Endpoint URL = $modEndpoint (Copy endpoint), Save. Invite the bot again from Bot (it now asks for the " +
+                "moderation permissions), then drag its role above the members it should moderate. In Discord: /staff add to build " +
+                "your team, /modsettings to pick a log channel."
+            if (!res.optBoolean("publicKeySet")) steps += " The relay has no DISCORD_PUBLIC_KEY yet: add your app's Public Key as that secret first."
+            modLbl.text = steps
+            modLbl.setTextColor(if (res.optBoolean("publicKeySet")) GOOD else DIM)
+        }
+    }
+
+    private fun copyEndpoint() {
+        val base = wlRelayIn.text.toString().trim().trimEnd('/')
+        val url = modEndpoint.ifEmpty { if (base.isEmpty()) "" else "$base/interactions" }
+        if (url.isEmpty()) { say("Enter your relay first.", BAD); return }
+        (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("endpoint", url))
+        say("Copied $url", GOOD)
     }
 
     private fun adminLabel() {

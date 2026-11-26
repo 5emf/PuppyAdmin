@@ -79,6 +79,9 @@ class FakeRelay:
         if path.startswith("/admin"):
             if admin != "admin-pass":
                 raise http_error(req, 401, {"error": "Wrong admin key"})
+            if path == "/admin/commands":
+                return Resp(json.dumps({"ok": True, "count": 18, "application": "1", "publicKeySet": True,
+                                        "interactionsUrl": RELAY + "/interactions"}).encode())
             if req.get_method() == "GET":
                 return Resp(json.dumps([{"name": u["name"], "canPing": u["canPing"]} for u in self.users.values()]).encode())
             if req.get_method() == "POST":
@@ -587,7 +590,8 @@ class CoreTest(unittest.TestCase):
         self.assertTrue(bot.valid_token(BOT_TOKEN))
         self.assertFalse(bot.valid_token("https://discord.com/api/webhooks/1/x"))
         self.assertEqual(bot.app_id_from_token(BOT_TOKEN), "123456789012345678")
-        self.assertIn("client_id=123456789012345678&scope=bot", bot.invite_url("123456789012345678"))
+        self.assertIn("client_id=123456789012345678&scope=bot+applications.commands", bot.invite_url("123456789012345678"))
+        self.assertEqual(bot.PERMISSIONS, 1099780320278)
         self.assertNotIn(BOT_TOKEN, core.redact("failed: " + BOT_TOKEN))
         d = FakeBotDiscord()
         b = bot.Bot(BOT_TOKEN, d)
@@ -924,6 +928,10 @@ class WindowTest(unittest.TestCase):
         self.app.users_list.selection_set(0)
         self.assertTrue(self.app.remove_user())
         self.assertTrue(self.pump(lambda: self.app.users_list.size() == 0))
+
+        self.assertTrue(self.app.install_mod_commands())
+        self.assertTrue(self.pump(lambda: "Installed 18 commands" in self.app.mod_lbl.cget("text")))
+        self.assertIn(RELAY + "/interactions", self.app.mod_lbl.cget("text"))
 
 
 class SelfTest(unittest.TestCase):

@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: "22"
       - name: Relay tests
-        run: node --test pupdates/relay/test/worker.test.mjs
+        run: node --test pupdates/relay/test/worker.test.mjs pupdates/relay/test/mod.test.mjs
 
   windows:
     runs-on: windows-latest

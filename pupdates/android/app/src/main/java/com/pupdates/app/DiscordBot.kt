@@ -14,8 +14,10 @@ object DiscordBot {
     const val TEXT = 0
     const val ANNOUNCEMENT = 5
     const val CATEGORY = 4
-    // View Channel, Send Messages, Embed Links, Attach Files, Read Message History, Mention Everyone
-    const val PERMISSIONS = 1024 or 2048 or 16384 or 32768 or 65536 or 131072
+    // posting: View Channel, Send Messages, Embed Links, Attach Files, Read Message History, Mention Everyone;
+    // moderation (the relay's slash commands): Kick, Ban, Manage Channels, Manage Messages, Manage Roles, Moderate Members
+    const val PERMISSIONS: Long = 1024L or 2048L or 16384L or 32768L or 65536L or 131072L or
+        2L or 4L or 16L or 8192L or 268435456L or (1L shl 40)
     private val TOKEN_RE = Regex("^[\\w-]{18,}\\.[\\w-]{4,}\\.[\\w-]{20,}$")
     private val ERRORS = mapOf(
         10003 to "That channel no longer exists (or the bot cannot see it)",
@@ -35,7 +37,7 @@ object DiscordBot {
         } catch (e: IllegalArgumentException) { null }
     }
 
-    fun inviteUrl(appId: String?) = appId?.let { "https://discord.com/oauth2/authorize?client_id=$it&scope=bot&permissions=$PERMISSIONS" }
+    fun inviteUrl(appId: String?) = appId?.let { "https://discord.com/oauth2/authorize?client_id=$it&scope=bot+applications.commands&permissions=$PERMISSIONS" }
 
     fun jumpUrl(guild: String?, channel: String, message: String) = "https://discord.com/channels/${guild?.ifEmpty { null } ?: "@me"}/$channel/$message"
 

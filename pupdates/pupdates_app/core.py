@@ -312,6 +312,13 @@ def admin_avatar(base, admin, image, name=None, opener=None):
                             ctype="application/json"), opener, tries=1, secrets=(admin,))
 
 
+def admin_commands(base, admin, opener=None):
+    """Owner: the relay installs / updates the moderation slash commands in Discord ->
+    {count, application, interactionsUrl, publicKeySet}."""
+    return _send(_relay_req(base, "/admin/commands", "POST", admin=admin, data=b"{}", ctype="application/json"),
+                 opener, tries=1, secrets=(admin,))
+
+
 def admin_remove(base, admin, name, opener=None):
     return _send(_relay_req(base, "/admin/users/" + urllib.parse.quote(name, safe=""), "DELETE", admin=admin),
                  opener, tries=1, secrets=(admin,))

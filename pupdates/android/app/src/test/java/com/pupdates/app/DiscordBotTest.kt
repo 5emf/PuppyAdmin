@@ -59,7 +59,7 @@ class DiscordBotTest {
         assertTrue(DiscordBot.validToken(token))
         assertFalse(DiscordBot.validToken("https://discord.com/api/webhooks/1/x"))
         assertEquals("123456789012345678", DiscordBot.appId(token))
-        assertTrue(DiscordBot.inviteUrl("123456789012345678")!!.contains("client_id=123456789012345678&scope=bot"))
+        assertTrue(DiscordBot.inviteUrl("123456789012345678")!!.contains("client_id=123456789012345678&scope=bot+applications.commands&permissions=1099780320278"))
         assertFalse(Core.redact("failed: $token").contains(token))
     }
 

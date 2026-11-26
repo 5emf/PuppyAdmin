@@ -62,6 +62,13 @@ Posting does not need the bot to be online.
   If Discord refuses the Listening type (older Discord apps), Pupdates retries as Playing and says so.
   The phone's Discord app cannot be set by other apps, so Android has the bot status only.
 
+## Moderation and staff
+Your bot can moderate your server with slash commands (`/warn`, `/timeout`, `/kick`, `/ban`, `/purge`,
+`/lock`, `/slowmode`, `/warnings`, `/case`, `/note`, `/staff`, `/modsettings`, `/modhelp`) with staff
+levels (helper, moderator, admin, owner), case numbers, a log channel and DMs. It runs on the relay, so
+it works while your PC and phone are off. Setup: `relay/README.md` > "Moderation and staff", then
+Whitelist > **Install moderation commands**.
+
 ## Owner: your webhook (still works)
 In Discord: your channel > Edit Channel > Integrations > Webhooks > New Webhook > **Copy Webhook URL**.
 Paste it in **Settings > Webhook** and press **Save**. It is stored encrypted (Windows DPAPI in

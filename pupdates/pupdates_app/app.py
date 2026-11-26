@@ -1136,6 +1136,17 @@ class PupdatesApp:
                   style="Dim.TLabel", wraplength=460).pack(anchor="w", pady=(4, 0))
         self.user_rows = []
 
+        ttk.Label(p, text="Moderation and staff (slash commands)", style="Head.TLabel").pack(anchor="w", pady=(12, 2))
+        r = self._row(p)
+        ttk.Button(r, text="Install moderation commands", command=self.install_mod_commands).pack(side="left")
+        ttk.Button(r, text="Copy endpoint", command=self.copy_endpoint).pack(side="left", padx=6)
+        self.mod_lbl = ttk.Label(p, style="Dim.TLabel", wraplength=460, justify="left",
+                                 text="Your bot answers /warn, /timeout, /kick, /ban, /purge, /staff and more in your server, through "
+                                      "the relay (always on, your PC can be off). Needs the relay's DISCORD_BOT_TOKEN and "
+                                      "DISCORD_PUBLIC_KEY; steps in pupdates/relay/README.md.")
+        self.mod_lbl.pack(anchor="w")
+        self.mod_endpoint = ""
+
     def _admin_label(self):
         self.admin_lbl.configure(text="An admin key is saved (encrypted)." if self.settings.secret("admin_key")
                                  else "Enter the ADMIN_KEY you gave the relay, then Save.")
@@ -1223,6 +1234,36 @@ class PupdatesApp:
             self.refresh_users()
         self.run_bg(lambda: core.admin_remove(a[0], a[1], name, self.opener), done)
         return True
+
+    def install_mod_commands(self):
+        a = self._admin()
+        if not a:
+            return False
+
+        def done(res, err):
+            if err:
+                self.mod_lbl.configure(text=err, style="Bad.TLabel")
+                return
+            self.mod_endpoint = res.get("interactionsUrl", "")
+            steps = ("Installed %d commands. Now: Developer Portal > your app > General Information > Interactions Endpoint URL = %s "
+                     "(Copy endpoint), Save. Invite the bot again from Bot (it now asks for the moderation permissions), "
+                     "then drag its role above the members it should moderate. In Discord: /staff add to build your team, "
+                     "/modsettings to pick a log channel." % (res.get("count", 0), self.mod_endpoint))
+            if not res.get("publicKeySet"):
+                steps += " The relay has no DISCORD_PUBLIC_KEY yet: add your app's Public Key as that secret first."
+            self.mod_lbl.configure(text=steps, style="Good.TLabel" if res.get("publicKeySet") else "Dim.TLabel")
+        self.mod_lbl.configure(text="Installing...", style="Dim.TLabel")
+        self.run_bg(lambda: core.admin_commands(a[0], a[1], self.opener), done)
+        return True
+
+    def copy_endpoint(self):
+        url = self.mod_endpoint or (self.wl_relay_var.get().strip().rstrip("/") + "/interactions" if self.wl_relay_var.get().strip() else "")
+        if not url:
+            self.say("Enter your relay first.", "Bad")
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(url)
+        self.say("Copied " + url, "Good")
 
     def copy_key(self):
         key = self.new_key_var.get()

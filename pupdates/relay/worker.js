@@ -10,6 +10,8 @@
 //   var    DISCORD_CHANNEL_ID   the channel it posts in (Discord: Developer Mode on, right-click the channel > Copy Channel ID)
 //   or a webhook:
 //   secret DISCORD_WEBHOOK_URL  the channel's webhook URL
+//   secret DISCORD_PUBLIC_KEY   your app's Public Key (only for the moderation slash commands, see mod.js)
+//   var    OWNER_IDS            optional: user ids that always count as owner for moderation
 //   secret ADMIN_KEY            a long random password only you know (manages the whitelist)
 //   KV binding PUPDATES         a KV namespace (stores the whitelist; keys are stored hashed)
 //
@@ -21,8 +23,13 @@
 //   GET    /admin/users             X-Admin-Key: <admin key>   -> [ { name, canPing, added } ]
 //   POST   /admin/users             X-Admin-Key, JSON { name, canPing } -> { name, key }  (the key is shown once)
 //   DELETE /admin/users/<name>      X-Admin-Key               -> { ok: true }
+//   POST   /interactions            Discord's slash commands (moderation + staff, see mod.js); needs
+//                                     secret DISCORD_PUBLIC_KEY (your app's Public Key) and DISCORD_BOT_TOKEN
+//   POST   /admin/commands          X-Admin-Key -> installs / updates the slash commands in Discord
 //   POST   /admin/avatar            X-Admin-Key, JSON { avatar: "data:image/png;base64,..." | null, name? }
 //                                     -> changes the bot's (or the webhook's) own picture (and name) for good
+
+import { installCommands, interactionsRoute } from "./mod.js";
 
 export const LOADSTRING = 'local H=game:GetService("HttpService") local ok,sha=pcall(function() return H:JSONDecode(game:HttpGet("https://api.github.com/repos/5emf/PuppyAdmin/commits/ccr-3b4dfcff-nyfy0w")).sha end) loadstring(game:HttpGet("https://raw.githubusercontent.com/5emf/PuppyAdmin/"..(ok and sha or "ccr-3b4dfcff-nyfy0w").."/PuppyAdmin.lua"))()';
 export const MAX_IMAGE = 8 * 1024 * 1024;
@@ -169,6 +176,13 @@ async function handleAdmin(request, env, path) {
     await env.PUPDATES.put("index", JSON.stringify(index));
     return json({ name, key, canPing: rec.canPing });
   }
+  if (path === "/admin/commands" && request.method === "POST") {
+    try {
+      return json(await installCommands(env, new URL(request.url).origin));
+    } catch (e) {
+      return json({ error: "Discord did not take the commands: " + e.message }, 502);
+    }
+  }
   if (path === "/admin/avatar" && request.method === "POST") {
     const body = await request.json().catch(() => null);
     if (!body || !(body.avatar === null || /^data:image\/(png|jpeg|gif);base64,[A-Za-z0-9+/=]+$/.test(String(body.avatar || "")))) {
@@ -196,8 +210,15 @@ async function handleAdmin(request, env, path) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const path = new URL(request.url).pathname.replace(/\/+$/, "") || "/";
+    if (path === "/interactions") {
+      try {
+        return await interactionsRoute(request, env, ctx);
+      } catch (e) {
+        return new Response("Relay error: " + (e && e.message ? e.message : String(e)), { status: 500 });
+      }
+    }
     if (!(env.DISCORD_WEBHOOK_URL || usesBot(env)) || !env.ADMIN_KEY || !env.PUPDATES) {
       return json({ error: "The relay is not set up (DISCORD_BOT_TOKEN + DISCORD_CHANNEL_ID or DISCORD_WEBHOOK_URL, ADMIN_KEY and the PUPDATES KV binding)" }, 500);
     }
