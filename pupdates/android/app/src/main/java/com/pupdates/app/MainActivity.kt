@@ -226,6 +226,10 @@ class MainActivity : Activity() {
         for (v in views) addView(v)
     }
 
+    // an empty View with a wrap-content height takes all the height it is offered (that made the card's
+    // header fill the whole card), so a spacer is 1 px tall and only stretches sideways
+    private fun spacer(): View = View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) }
+
     private fun grow(v: View, left: Int = 0, weight: Float = 1f): View {
         v.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, weight).also { it.leftMargin = dp(left) }
         return v
@@ -299,7 +303,7 @@ class MainActivity : Activity() {
         val title = label("PUPDATES", size = 18f, bold = true)
         sectionLbl = label("", dim = true)
         val close = label("×", dim = true, size = 24f).apply { setPadding(dp(10), 0, dp(4), 0); setOnClickListener { finish() } }
-        val head = row(logo, gap(title, 8), gap(sectionLbl, 6), grow(View(this)), close, top = 0).apply { setPadding(dp(12), dp(10), dp(12), 0) }
+        val head = row(logo, gap(title, 8), gap(sectionLbl, 6), spacer(), close, top = 0).apply { setPadding(dp(12), dp(10), dp(12), 0) }
         card.addView(head)
         card.addView(View(this).apply { setBackgroundColor(ORANGE) },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(2)).also { it.setMargins(dp(12), dp(8), dp(12), 0) })
@@ -387,7 +391,7 @@ class MainActivity : Activity() {
             row(label("Ping"), gap(pingSpin), grow(roleIn, 6)),
             loadstringChk,
             row(picIcon, grow(picBox, 10), gap(thumb), top = 10),
-            row(button("Preview") { preview() }, gap(button("Clear") { clear() }), grow(View(this)), postBtn,
+            row(button("Preview") { preview() }, gap(button("Clear") { clear() }), spacer(), postBtn,
                 gap(roundIcon("send", 44) { post() }), top = 14))
     }
 
@@ -559,7 +563,7 @@ class MainActivity : Activity() {
             wlRelayIn,
             row(grow(adminIn), gap(button("Save") { saveAdmin() })),
             adminLbl,
-            row(label("On the whitelist", bold = true), grow(View(this)), button("Refresh") { refreshUsers() }, top = 12),
+            row(label("On the whitelist", bold = true), spacer(), button("Refresh") { refreshUsers() }, top = 12),
             usersBox,
             row(grow(newNameIn), gap(newPingChk), gap(button("Add", accent = true) { addUser() }), top = 12),
             row(grow(newKeyLbl), gap(button("Copy") { copyKey() })),
@@ -819,11 +823,11 @@ class MainActivity : Activity() {
 
     private fun refreshGames() {
         gamesBox.removeAllViews()
-        gamesBox.addView(row(label("Mini games", bold = true, size = 16f), grow(View(this)),
+        gamesBox.addView(row(label("Mini games", bold = true, size = 16f), spacer(),
             button("Play", accent = true) { startActivity(Intent(this, MiniGamesActivity::class.java)) }, top = 10))
         gamesBox.addView(label("Snake, Stack Drop, Treat Chase, Star Pup and Puppy Fighter: the same games as Puppy Admin's Games window.", dim = true, size = 13f))
         fun section(title: String, kind: String, req: Int, extra: View? = null) {
-            gamesBox.addView(row(label(title, bold = true, size = 16f), grow(View(this)), button(if (kind == "doom") "Add WAD" else "Add ROM") { pick(req) }, top = 14))
+            gamesBox.addView(row(label(title, bold = true, size = 16f), spacer(), button(if (kind == "doom") "Add WAD" else "Add ROM") { pick(req) }, top = 14))
             if (extra != null) gamesBox.addView(extra)
             val files = gameDir(kind).listFiles()?.filter { it.isFile }?.sortedBy { it.name.lowercase() } ?: emptyList()
             if (files.isEmpty() && extra == null) gamesBox.addView(label(if (kind == "gba") "No games yet (.gba or .zip)." else "No games yet (.gb or .zip).", dim = true, size = 13f))
@@ -919,7 +923,7 @@ class MainActivity : Activity() {
         }
         main.postDelayed(petTick, 30_000)
         val box = page(
-            row(petName, gap(petMood, 8), grow(View(this)), button("Rename") { renamePet() }, top = 0),
+            row(petName, gap(petMood, 8), spacer(), button("Rename") { renamePet() }, top = 0),
             petView.also { it.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(200)).also { lp -> lp.topMargin = dp(6) } },
             bars,
             row(button("Feed", accent = true) { petDo("feed") }, gap(button("Play", accent = true) { petDo("play") }), gap(sleepBtn), top = 12),
@@ -996,13 +1000,13 @@ class MainActivity : Activity() {
             label("Who wears it", bold = true).apply { setPadding(0, dp(8), 0, 0) },
             membersBox,
             row(grow(memberIn), gap(button("Add") { addMember() })),
-            row(button("Delete tag") { deleteTag() }, grow(View(this)), button("Save to GitHub", accent = true) { saveTags() }, top = 12)
+            row(button("Delete tag") { deleteTag() }, spacer(), button("Save to GitHub", accent = true) { saveTags() }, top = 12)
         ).apply { setPadding(0, 0, 0, 0); visibility = View.GONE }
         tagTokenLabel()
         return page(
             row(grow(tagTokenIn), gap(button("Save") { saveTagToken() }), gap(button("Load") { loadTags() }, 4)),
             tagTokenLbl,
-            row(label("Tags", bold = true), grow(View(this)), button("New tag") { newTag() }, top = 10),
+            row(label("Tags", bold = true), spacer(), button("New tag") { newTag() }, top = 10),
             tagsBox,
             tagEditor)
     }
