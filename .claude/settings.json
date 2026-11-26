@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo build:*)",
+      "Bash(cmake:*)",
+      "Bash(/tmp/claude-0/-home-user-PuppyAdmin/2ff2f79b-3994-59c9-9557-42eddc87b972/scratchpad/doom/wasynth/target/release/wasm2luau:*)",
+      "Bash(/tmp/claude-0/-home-user-PuppyAdmin/2ff2f79b-3994-59c9-9557-42eddc87b972/scratchpad/doom/luau/build/luau:*)"
+    ]
+  }
+}

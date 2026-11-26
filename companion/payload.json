@@ -1,0 +1,220 @@
+{
+  "version": "1.7.1",
+  "files": [
+    {
+      "path": "puppy_companion/__init__.py",
+      "sha256": "72ea4b6263bf57090fb08ee275138a6dc91bac06448b8456fbda43d59be66223",
+      "size": 357
+    },
+    {
+      "path": "puppy_companion/_payload.py",
+      "sha256": "467c946f9a5eb5e1dd111c2cdc8562b1a5161315f9157bd978ec8624b0a4c9d4",
+      "size": 1652
+    },
+    {
+      "path": "puppy_companion/app.py",
+      "sha256": "252cf593f9c386c8bc8569b4207198f12a04d96060b9c7b002efcee0a24a91d0",
+      "size": 90079
+    },
+    {
+      "path": "puppy_companion/cursors/glove.cur",
+      "sha256": "b8b1d8f7c62f7b43f05b3bf8a0323b25bfbbb80f3bc54759ce5cd4e1bc1887d2",
+      "size": 30894
+    },
+    {
+      "path": "puppy_companion/cursors/keyblade.cur",
+      "sha256": "0c5304d1d4ff8541283ae71d729a510192d935d1c16ad31faae5063e790b4232",
+      "size": 30894
+    },
+    {
+      "path": "puppy_companion/cursors/light.cur",
+      "sha256": "9532cbb1c8b290f599c0f6d21b73dce004186952bfacff95f5b0c1641c1bf637",
+      "size": 30894
+    },
+    {
+      "path": "puppy_companion/fonts.py",
+      "sha256": "6fe39e4c8e9fef7f170623132712ca6310e04091e8e92b4296646803e7daabc7",
+      "size": 2550
+    },
+    {
+      "path": "puppy_companion/fonts/KHData.ttf",
+      "sha256": "41f83dbf5a8e02908b5034e1cd53d51d2f02673d478ad9ae2c3dee7864dfc7ac",
+      "size": 79608
+    },
+    {
+      "path": "puppy_companion/fonts/KHGummi.ttf",
+      "sha256": "4f7283048377b8562c1c11ca1009e3649d421f0c97c1b8ad1ea97b2298d59077",
+      "size": 58336
+    },
+    {
+      "path": "puppy_companion/fonts/KHMenu.ttf",
+      "sha256": "2caca52d0e006ca279d8ea5a4bfb00dcf7ec9c6ef11ccf63382f2e267e82ae26",
+      "size": 40132
+    },
+    {
+      "path": "puppy_companion/fonts/KHMenuBold.ttf",
+      "sha256": "4a29e0e3b34d5847865752c3b56ff94d6bb0b28958a0ce10189d81e7f92ba766",
+      "size": 41400
+    },
+    {
+      "path": "puppy_companion/fonts/KHMenuBoldItalic.ttf",
+      "sha256": "5b1d4e4cb1ca490d2771b597f6177c807ba0eadc77c53bf5b04e46c505681169",
+      "size": 44436
+    },
+    {
+      "path": "puppy_companion/fonts/KHMenuItalic.ttf",
+      "sha256": "20faed8628d73c84a97d6248724e2c0f3bef80d8879ecca8c2716ab663721876",
+      "size": 42972
+    },
+    {
+      "path": "puppy_companion/fonts/KHScala.ttf",
+      "sha256": "e71514f4c01cd7ecc95ddee3a9f5483f223bbf62a31645fd1dc03cae4d5b6122",
+      "size": 26940
+    },
+    {
+      "path": "puppy_companion/fonts/KHScalaScript.ttf",
+      "sha256": "3b0dd55bd05280e123f270da7dfccf84bc3a8e7911580ed4a837b13083af5701",
+      "size": 30400
+    },
+    {
+      "path": "puppy_companion/fonts/KHTitle.ttf",
+      "sha256": "2933459dcfbbab5d0ed68889eca1a9df83d6329b515853c62e373d2cf0b1d0a9",
+      "size": 108804
+    },
+    {
+      "path": "puppy_companion/fonts/KingdomHearts.ttf",
+      "sha256": "b25690c1d1dcffafd7b873f9d6213ff6325e4121818505f0065ae77d38f09876",
+      "size": 28632
+    },
+    {
+      "path": "puppy_companion/fonts/SAOUI.ttf",
+      "sha256": "d6c6319ead092fa606fe8942544d666c547d1469b6e23aa7abc26666a563859c",
+      "size": 165736
+    },
+    {
+      "path": "puppy_companion/fonts/SAOUIBold.ttf",
+      "sha256": "5ce1d81646d96b085f91a7e6f277eb76e9154c6afb46ba669faa6b62dc2c2bc0",
+      "size": 164116
+    },
+    {
+      "path": "puppy_companion/fonts/SAOWelcome.ttf",
+      "sha256": "32bc1a0afdf6f5b524a849b4e0227abaf05c73b9c6a87e03229d6bde72604f9f",
+      "size": 165936
+    },
+    {
+      "path": "puppy_companion/fonts/SAOWelcomeBold.ttf",
+      "sha256": "6903dfe6bcfef27174ade8c262030dc50d27e61ed729e0482ef4bc5467a9eb57",
+      "size": 164132
+    },
+    {
+      "path": "puppy_companion/icon_data.py",
+      "sha256": "a4a0dc2461f05b7b60617f38f6fa0d35aa392019cefac096db09e9961e1793d4",
+      "size": 10083
+    },
+    {
+      "path": "puppy_companion/kh_data.py",
+      "sha256": "b88ea71e3e41c7dc286056f3267d9c4526536c21ded04b0655db6b0d509ca643",
+      "size": 14861
+    },
+    {
+      "path": "puppy_companion/khart.py",
+      "sha256": "2fcf7fec491a316938aa373353410c768752821fb8083e4d13dc02a0b5f74870",
+      "size": 8015
+    },
+    {
+      "path": "puppy_companion/khmenu.py",
+      "sha256": "6c78caf634775fa154b515e9dc3cf7bc52c54084d2ee9cd4e1c49387efbb3cbc",
+      "size": 19594
+    },
+    {
+      "path": "puppy_companion/launch.py",
+      "sha256": "8170f37365d1ef9169b21f8e792a995b8423879b34ed3fc2be3f6b46c9823e6d",
+      "size": 6967
+    },
+    {
+      "path": "puppy_companion/launch_queue.py",
+      "sha256": "8cd6ad936c5d03cba2c699051360f72537e50addef704d4f6a29f3d79c1d9b9a",
+      "size": 2990
+    },
+    {
+      "path": "puppy_companion/look.py",
+      "sha256": "6d869bc8d9f97fe0105dbe3955a2b043b10384c06b669c7b507a2363037bb525",
+      "size": 6957
+    },
+    {
+      "path": "puppy_companion/manage.py",
+      "sha256": "02573f817d6a5c22c900c6e661d2d0c6543cd7685cf53e1b6d023d025162cf62",
+      "size": 25200
+    },
+    {
+      "path": "puppy_companion/paths.py",
+      "sha256": "09beacfd56452457d44a088de89cfceef09161ad77b96fb5ad55ca895a979e90",
+      "size": 538
+    },
+    {
+      "path": "puppy_companion/redact.py",
+      "sha256": "b0af2c2df89417b7b5936f4cfd621d24a95106792f1a3c3badce492411396376",
+      "size": 319
+    },
+    {
+      "path": "puppy_companion/roblox.py",
+      "sha256": "362233c2a2b51eef11712844e7610ca1eb41497643d64c96e174a7fb9178ebe0",
+      "size": 13341
+    },
+    {
+      "path": "puppy_companion/sao/icons_grey.png",
+      "sha256": "dee3e8a380e928c3bed73d9e5db9c15be87adcfc8ba20c84a0a635c80305a647",
+      "size": 5096
+    },
+    {
+      "path": "puppy_companion/sao/icons_white.png",
+      "sha256": "3ad4ad57ab3f4ecbf74561e58394779cef9a78227c1cd738c68a925fcd5e5904",
+      "size": 4253
+    },
+    {
+      "path": "puppy_companion/saostyle.py",
+      "sha256": "1eb5b1e91a790d9cf201976a5e71cf63dbddd4c0da6701fc8bf8bc4ac2923b12",
+      "size": 14407
+    },
+    {
+      "path": "puppy_companion/secure.py",
+      "sha256": "68fa20aa0f8a1f71eb3cd2b8e588844e9db35dd35026fb0f99262d928848a67c",
+      "size": 3208
+    },
+    {
+      "path": "puppy_companion/selftest.py",
+      "sha256": "b59b1a8b1e12d43ea822c9c51d0e076e95cbdbe94ae2bc946c166bcf89565b83",
+      "size": 9043
+    },
+    {
+      "path": "puppy_companion/sounds/menu_denied.wav",
+      "sha256": "37f5159ed6e0c4b1a2b778f2d6ae73dee6077ee2332528a3d8be8c66958c05ee",
+      "size": 30032
+    },
+    {
+      "path": "puppy_companion/sounds/menu_move.wav",
+      "sha256": "3df6f100ef3b8f7fe34f89dbff08d5c0e122de44c7002a004177e11ef271fd3a",
+      "size": 10628
+    },
+    {
+      "path": "puppy_companion/sounds/menu_select.wav",
+      "sha256": "ab4445bf29b430f826028be7e865ed30d3771a59f31451942acd7c1efcd16a5d",
+      "size": 37088
+    },
+    {
+      "path": "puppy_companion/store.py",
+      "sha256": "9d72ad3f3e5a852113b7132e566aba8c1abfc93ddadea191a76ec1e8ded62217",
+      "size": 10074
+    },
+    {
+      "path": "puppy_companion/update.py",
+      "sha256": "99fc8bc19711e2535574a9979cc345662c0475b8f59438861fdb1070a7fc331e",
+      "size": 10072
+    },
+    {
+      "path": "puppy_companion/workspace.py",
+      "sha256": "50ed58467399f6c57ff7397ea6b6004f53c150d10fa5578dc95c9d156b44a16f",
+      "size": 6224
+    }
+  ]
+}

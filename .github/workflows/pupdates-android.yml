@@ -1,0 +1,106 @@
+# Builds the Pupdates Android app (APK, with the emulator library) and runs its unit tests.
+# Every run attaches the APKs as the artifact "Pupdates-android". When the signing secrets exist,
+# a push also publishes the signed APK to the GitHub release "pupdates-android-latest", which the
+# app's Update button reads.
+#
+# Signing secrets (Settings > Secrets and variables > Actions), needed for updates that install
+# over the previous version:
+#   PUPDATES_KEYSTORE_B64, PUPDATES_KEYSTORE_PASSWORD, PUPDATES_KEY_ALIAS, PUPDATES_KEY_PASSWORD
+# Without them only a debug APK is built (a new debug key every run: uninstall before installing).
+name: Pupdates (Android)
+
+on:
+  push:
+    paths:
+      - "pupdates/android/**"
+      - "pupdates/tagfonts/**"
+      - "emu/gameboy-*.lua"
+      - "emu/gba-*.lua"
+      - "emu/doom-src/**"
+      - "assets/gba/**"
+      - "assets/games/**"
+      - "assets/sfx/fighter/**"
+      - "PuppyAdmin.lua"
+      - ".github/workflows/pupdates-android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Release keystore (when the secrets exist)
+        env:
+          KEYSTORE_B64: ${{ secrets.PUPDATES_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/pupdates.jks"
+            echo "PUPDATES_KEYSTORE_FILE=$RUNNER_TEMP/pupdates.jks" >> "$GITHUB_ENV"
+            echo "Release signing on"
+          else
+            echo "No PUPDATES_KEYSTORE_B64 secret: debug APK only, nothing published"
+          fi
+
+      - name: Native core on Linux (the same emulator code, host test build)
+        run: |
+          cmake -S pupdates/android/native-test -B build-native -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-native -j 4
+
+      - name: Unit tests and debug APK
+        working-directory: pupdates/android
+        run: gradle --no-daemon testDebugUnitTest assembleDebug
+
+      - name: Signed release APK
+        if: env.PUPDATES_KEYSTORE_FILE != ''
+        working-directory: pupdates/android
+        env:
+          PUPDATES_KEYSTORE_PASSWORD: ${{ secrets.PUPDATES_KEYSTORE_PASSWORD }}
+          PUPDATES_KEY_ALIAS: ${{ secrets.PUPDATES_KEY_ALIAS }}
+          PUPDATES_KEY_PASSWORD: ${{ secrets.PUPDATES_KEY_PASSWORD }}
+        run: gradle --no-daemon assembleRelease
+
+      - name: Collect
+        run: |
+          mkdir -p out
+          cp pupdates/android/app/build/outputs/apk/debug/app-debug.apk out/Pupdates-debug.apk
+          if [ -f pupdates/android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp pupdates/android/app/build/outputs/apk/release/app-release.apk out/Pupdates.apk
+            python3 - <<'PY'
+          import hashlib, json, os
+          data = open("out/Pupdates.apk", "rb").read()
+          n = int(os.environ["GITHUB_RUN_NUMBER"])
+          json.dump({"versionCode": n, "versionName": "2.0.%d" % n, "sha256": hashlib.sha256(data).hexdigest(),
+                     "size": len(data), "commit": os.environ["GITHUB_SHA"]}, open("out/pupdates-android.json", "w"))
+          PY
+          fi
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pupdates-android
+          path: out/*.apk
+          if-no-files-found: error
+
+      - name: Publish for the Update button
+        if: github.event_name == 'push' && env.PUPDATES_KEYSTORE_FILE != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=pupdates-android-latest
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --prerelease \
+            --title "Pupdates for Android" --notes "The newest Pupdates APK (the app's Update button reads this release)."
+          gh release upload "$TAG" out/Pupdates.apk out/pupdates-android.json --clobber

@@ -1,0 +1,280 @@
+-- Extra commands test: lua5.4 tools/test_extras.lua PuppyAdmin.lua
+-- Runs the UIAPI.Extra block with fake services: pure helpers, command registration,
+-- and the time / ambient / hip height round trips.
+local src = io.open(arg[1]):read("a")
+local a = assert(src:find("-- Extra commands (`UIAPI.Extra`)", 1, true))
+local b = assert(src:find("-- Emotes window (`UIAPI.Emotes`", a, true))
+local block = src:sub(a, b - 1)
+
+local fails = 0
+local function check(c, m) print((c and "ok   " or "FAIL ") .. m) if not c then fails = fails + 1 end end
+
+-- anything Enum.X.Y works and compares by name
+local function enumTable(path)
+    return setmetatable({}, { __index = function(t, k)
+        local v = enumTable(path .. "." .. k)
+        rawset(t, k, v)
+        return v
+    end, __tostring = function() return path end })
+end
+local Enum = enumTable("Enum")
+
+local function signal()
+    local s = { fns = {} }
+    function s:Connect(fn)
+        local c = { fn = fn }
+        table.insert(s.fns, c)
+        function c:Disconnect() for i, x in ipairs(s.fns) do if x == c then table.remove(s.fns, i) break end end end
+        return c
+    end
+    function s:Fire(...) for _, c in ipairs({ table.unpack(s.fns) }) do c.fn(...) end end
+    return s
+end
+
+-- a Lighting whose property writes fire changed signals
+local function fakeLighting()
+    local props = { ClockTime = 9, Ambient = "amb0", OutdoorAmbient = "out0" }
+    local sigs = {}
+    local L = {}
+    function L:GetPropertyChangedSignal(k) sigs[k] = sigs[k] or signal(); return sigs[k] end
+    return setmetatable(L, {
+        __index = function(_, k) return props[k] end,
+        __newindex = function(_, k, v)
+            if props[k] == v then return end
+            props[k] = v
+            if sigs[k] then sigs[k]:Fire() end
+        end,
+    }), props
+end
+local Lighting, LP = fakeLighting()
+
+local notes = {}
+local H, cmds, cmdDocs, ALIASES, PLAYER_ARG, cleanups, conns = {}, {}, {}, {}, {}, {}, {}
+local hum = { HipHeight = 2, Health = 100, Parent = true }
+local char = { FindFirstChildOfClass = function(_, c) if c == "Humanoid" then return hum end end,
+    FindFirstChild = function() return nil end }
+local plr = { Character = char, CharacterAdded = signal(), UserId = 1, Name = "me", DisplayName = "Me" }
+local Players = { GetPlayers = function() return { plr } end, PlayerAdded = signal(),
+    GetPlayerByUserId = function() return plr end, GetPlayerFromCharacter = function() return nil end }
+plr.Chatted = signal()
+local env = setmetatable({
+    UIAPI = { panels = {}, finder = { start = function(m) notes.finder = m end } },
+    H = H, cmds = cmds, cmdDocs = cmdDocs, ALIASES = ALIASES, PLAYER_ARG = PLAYER_ARG, cleanups = cleanups, conns = conns,
+    plr = plr, Players = Players, Enum = Enum,
+    game = { GetService = function(_, n) if n == "Lighting" then return Lighting end return {} end },
+    TextChatService = { ChatVersion = "legacy" },
+    RunService = { Heartbeat = signal(), RenderStepped = signal(), Stepped = signal() },
+    UserInputService = {}, ContextActionService = {}, CoreGui = {}, notifGui = {},
+    note = function(t, text) notes[#notes + 1] = t .. ": " .. tostring(text) end,
+    LIGHT = "light", RED = "red",
+    parseToggle = function(v, cur)
+        if v == nil then return not cur end
+        v = v:lower()
+        if v == "on" then return true elseif v == "off" then return false end
+        return not cur
+    end,
+    parseColorArgs = function(args, i)
+        local r, g, bb = tonumber(args[i]), tonumber(args[i + 1]), tonumber(args[i + 2])
+        if r and g and bb then return r, g, bb, 3 end
+        if args[i] == "red" then return 255, 0, 0, 1 end
+    end,
+    Color3 = { fromRGB = function(r, g, bb) return string.format("rgb(%d,%d,%d)", r, g, bb) end },
+    resolveTargets = function() return { plr } end,
+}, { __index = _G })
+env.table = setmetatable({ clear = function(t) for k in pairs(t) do t[k] = nil end end }, { __index = table })
+local fn = assert(load(block, "extras", "t", env))
+fn()
+local X = env.UIAPI.Extra
+check(type(X) == "table", "UIAPI.Extra exists")
+
+-- pure helpers
+local cases = { { "14", 14 }, { "14.5", 14.5 }, { "2:30", 2.5 }, { "2:30pm", 14.5 }, { "12am", 0 }, { "12pm", 12 }, { "7am", 7 },
+    { "day", 14 }, { "night", 0 }, { "dusk", 18 }, { "24", 24 }, { "25", nil }, { "13pm", nil }, { "2:75", nil }, { "abc", nil }, { "", nil } }
+for _, c in ipairs(cases) do
+    check(X.parseClock(c[1]) == c[2], string.format("parseClock(%q) = %s", c[1], tostring(c[2])))
+end
+check(X.formatClock(14.5) == "14:30" and X.formatClock(23.999) == "00:00" and X.formatClock(0) == "00:00", "formatClock")
+check(X.clampFov("200") == 120 and X.clampFov("0") == 1 and X.clampFov("90") == 90 and X.clampFov("x") == nil, "clampFov")
+check(X.clampCps("100") == 30 and X.clampCps("5.7") == 5 and X.clampCps("0") == 1 and X.clampCps(nil) == nil, "clampCps")
+local x, y, z = X.moveVector({ W = true, D = true, E = true })
+check(x == 1 and y == 1 and z == -1, "moveVector: W forward (-z), D right, E up")
+x, y, z = X.moveVector({ W = true, S = true })
+check(x == 0 and y == 0 and z == 0, "moveVector: opposite keys cancel")
+local list = {}
+for i = 1, 7 do X.push(list, i, 5) end
+check(#list == 5 and list[1] == 3 and list[5] == 7, "push keeps the newest entries")
+check(X.animNumber("rbxassetid://507771019") == "507771019" and X.animNumber("http://www.roblox.com/asset/?id=180435571") == "180435571"
+    and X.animNumber("") == nil, "animNumber")
+
+-- registration: every command has a handler and a help line
+local missing = {}
+for _, n in ipairs(cmds) do
+    if type(H[n]) ~= "function" then missing[#missing + 1] = "handler " .. n end
+    if type(cmdDocs[n]) ~= "string" or not cmdDocs[n]:find("^" .. n) then missing[#missing + 1] = "doc " .. n end
+end
+check(#cmds >= 30 and #missing == 0, "all " .. #cmds .. " commands have a handler and a help line " .. table.concat(missing, ", "))
+for alias, target in pairs(ALIASES) do
+    if not H[target] then missing[#missing + 1] = alias end
+end
+check(#missing == 0, "aliases point at real commands")
+for _, bad in ipairs({ "facebang", "jerk", "kidnap", "crash", "bang" }) do
+    check(H[bad] == nil, "not implemented: " .. bad)
+end
+
+-- time: held against the game's clock, untime restores
+H.time({ "night" })
+check(LP.ClockTime == 0, "time night sets 0")
+Lighting.ClockTime = 5 -- the game's day cycle
+check(LP.ClockTime == 0, "the game's change is undone while held")
+H.untime({})
+check(LP.ClockTime == 9, "untime puts the original time back")
+H.time({ "18", "once" })
+Lighting.ClockTime = 19
+check(LP.ClockTime == 19, "time ... once does not hold")
+H.untime({})
+H.time({ "nonsense" })
+check(notes[#notes]:find("time <0%-24") ~= nil, "a bad time gives the usage")
+
+-- ambient
+H.ambient({ "red" })
+check(LP.Ambient == "rgb(255,0,0)" and LP.OutdoorAmbient == "rgb(255,0,0)", "ambient sets both colours")
+Lighting.Ambient = "game"
+check(LP.Ambient == "rgb(255,0,0)", "ambient is kept")
+H.unambient({})
+check(LP.Ambient == "amb0" and LP.OutdoorAmbient == "out0", "unambient restores")
+
+-- hip height
+H.hipheight({ "6" })
+check(hum.HipHeight == 6, "hipheight 6")
+H.hipheight({ "500" })
+check(hum.HipHeight == 6 and notes[#notes]:find("0%-100") ~= nil, "out of range is refused")
+H.unhipheight({})
+check(hum.HipHeight == 2, "unhipheight restores")
+
+-- ping hop goes through Puppy Finder's ping mode
+H.pinghop({})
+check(notes.finder == "ping", "pinghop asks Puppy Finder for the lowest ping")
+
+-- chat log (legacy chat): messages are kept, capped
+for i = 1, X.LOG_CAP + 20 do plr.Chatted:Fire("hello " .. i) end
+check(#X.chat == X.LOG_CAP and X.chat[#X.chat].text == "hello " .. (X.LOG_CAP + 20), "chat log keeps the newest " .. X.LOG_CAP)
+
+-- emotes block: pure helpers, favourites file, registration, the command only opens the window
+do
+    local ea = assert(src:find("-- Emotes window (`UIAPI.Emotes`", 1, true))
+    local eb = assert(src:find("-- Menu sounds (`UIAPI.MenuSound`", ea, true))
+    local FS = {}
+    local panel = { Visible = false }
+    local eH, ecmds, edocs, ealias = {}, {}, {}, {}
+    local played = 0
+    local eenv = setmetatable({
+        UIAPI = { panels = { emotes = panel }, sync = function() end }, H = eH, cmds = ecmds, cmdDocs = edocs, ALIASES = ealias,
+        cleanups = {}, conns = {}, plr = plr, Enum = Enum, RunService = env.RunService,
+        UserInputService = { InputBegan = signal() },
+        HttpService = { JSONDecode = function(_, t) return load("return " .. t)() end,
+            JSONEncode = function(_, v)
+                local parts = {}
+                for _, f in ipairs(v) do parts[#parts + 1] = string.format("{id=%q,name=%q,key=%q}", f.id, f.name, f.key) end
+                return "{" .. table.concat(parts, ",") .. "}"
+            end },
+        isfile = function(n) return FS[n] ~= nil end, readfile = function(n) return FS[n] end,
+        writefile = function(n, d) FS[n] = d end, isfolder = function() return true end,
+    }, { __index = _G })
+    FS["PuppyAdmin/emotes.json"] = '{{id="123456",name="Wave",key="F"},{id="123456",name="dup",key=""},{id="x"},{id="rbxassetid://987654",name="Spin",key="bad key"}}'
+    assert(load(src:sub(ea, eb - 1), "emotes", "t", eenv))()
+    local E = eenv.UIAPI.Emotes
+    check(E.parseId("123456") == "123456" and E.parseId("rbxassetid://5915693") == "5915693"
+        and E.parseId("https://www.roblox.com/catalog/10214311282/Sidekicks-George-Ezra") == "10214311282"
+        and E.parseId("abc") == nil and E.parseId("12") == nil, "emote id from an id, asset link or catalog link")
+    check(#E.favs == 2 and E.favs[1].key == "F" and E.favs[2].id == "987654" and E.favs[2].key == "",
+        "favourites file: duplicates and bad ids dropped, bad keys cleared")
+    local r = E.parseSearch({ data = { { id = 111, name = "A", itemType = "Asset", creatorName = "c" }, { id = 222, itemType = "Bundle" }, { name = "no id" } } })
+    check(#r == 1 and r[1].id == "111" and r[1].name == "A", "catalog response parsed, bundles skipped")
+    check(E.toggleFav("555", "New") == true and E.isFav("555") and FS["PuppyAdmin/emotes.json"]:find("555") ~= nil, "star adds and saves")
+    check(E.toggleFav("555") == false and not E.isFav("555"), "star again removes")
+    check(ecmds[1] == "emotes" and #ecmds == 1 and ealias.ugcemotes == "emotes" and ealias.emote == "emotes", "one command, emotes (aliases emote, ugcemotes)")
+    eH.emotes({ "123456" })
+    check(panel.Visible == true and E.track == nil, "emotes <anything> only opens the window, plays nothing")
+    eH.emotes({})
+    check(panel.Visible == false, "emotes again closes it")
+end
+
+-- menu sounds: KH style only, toggleable, first of ogg / mp3 / wav that exists
+do
+    local ma = assert(src:find("-- Menu sounds (`UIAPI.MenuSound`", 1, true))
+    local mb = assert(src:find('-- Optional "Kingdom Hearts" UI style', ma, true))
+    local FS = { ["PuppyAdmin/sounds/Menu_Move.wav"] = true, ["PuppyAdmin/sounds/Menu_Move.mp3"] = true,
+        ["PuppyAdmin/sounds/Menu_Select.wav"] = true }
+    local played, made = {}, {}
+    local clock = 10
+    local Cfg = { uiStyle = "Standard", menuSounds = true }
+    local mH, mcmds, mdocs, malias, mnotes = {}, {}, {}, {}, {}
+    local menv = setmetatable({
+        UIAPI = {}, H = mH, cmds = mcmds, cmdDocs = mdocs, ALIASES = malias, cleanups = {}, Cfg = Cfg, cfgSave = function() end,
+        isfile = function(pth) return FS[pth] == true end, getcustomasset = function(pth) return "asset://" .. pth end,
+        Instance = { new = function(c)
+            local o = { ClassName = c, TimePosition = 5, TimeLength = 0.7 }
+            function o:Play() played[#played + 1] = self.SoundId end
+            function o:Destroy() self.gone = true end
+            made[#made + 1] = o
+            return o
+        end },
+        game = { GetService = function() return {} end },
+        SETTINGS = { Auras = { assetBase = "https://repo/" } },
+        urlImageAsset = function(url) return "cached://" .. url end,
+        os = setmetatable({ clock = function() return clock end }, { __index = os }),
+        note = function(_, m) mnotes[#mnotes + 1] = m end, LIGHT = "l", RED = "r",
+        parseToggle = function(v, cur) if v == "on" then return true elseif v == "off" then return false end return not cur end,
+    }, { __index = _G })
+    assert(load(src:sub(ma, mb - 1), "menusounds", "t", menv))()
+    local MS = menv.UIAPI.MenuSound
+    check(MS.play("move") == false and #played == 0, "standard style: no menu sounds")
+    Cfg.uiStyle = "Kingdom Hearts"
+    check(MS.play("move") == true and played[1] == "asset://PuppyAdmin/sounds/Menu_Move.mp3", "KH style: plays, mp3 chosen before wav")
+    check(MS.play("move") == false, "the same sound right away is skipped")
+    clock = clock + 0.2
+    check(MS.play("move") == true and #played == 2 and made[1].TimePosition == 0, "plays again from the start")
+    check(MS.play("select") == true and played[3] == "asset://PuppyAdmin/sounds/Menu_Select.wav", "select from its .wav")
+    check(MS.USE_BUILTIN == false and MS.play("denied") == false, "no Menu_Denied of your own: silent (built-in sounds are off)")
+    MS.USE_BUILTIN = true
+    MS.reload()
+    clock = clock + 1
+    check(MS.play("denied") == true and played[#played] == "cached://https://repo/assets/sounds/menu_denied_v1.mp3",
+        "with the switch on, the built-in sound from the repository")
+    MS.USE_BUILTIN = false
+    MS.reload()
+    clock = clock + 1
+    check(MS.play("nonsense") == false, "unknown kinds ignored")
+    local st = MS.status()
+    check(st[1]:find("Menu_Move.mp3", 1, true) and st[3]:find("no file", 1, true), "status names your files and what is missing")
+    mH.menusounds({ "off" })
+    clock = clock + 1
+    check(Cfg.menuSounds == false and MS.play("select") == false, "menusounds off: silent")
+    mH.menusounds({ "on" })
+    check(Cfg.menuSounds == true and MS.play("select") == true, "menusounds on again")
+    FS["PuppyAdmin/sounds/Menu_Denied.ogg"] = true
+    mH.menusounds({ "reload" })
+    check(made[1].gone and MS.play("denied") == true and played[#played] == "asset://PuppyAdmin/sounds/Menu_Denied.ogg", "reload picks up new files (yours over the built-in)")
+    check(mcmds[1] == "menusounds" and malias.khsounds == "menusounds" and mdocs.menusounds, "menusounds command registered")
+    menv.UIAPI.plainUI = true
+    clock = clock + 1
+    check(MS.play("select") == false, "alt account (plain look): no menu sounds")
+    menv.UIAPI.plainUI = nil
+    Cfg.uiStyle = "Sword Art Online"
+    FS["PuppyAdmin/sounds/SAO_Select.ogg"] = true
+    MS.reload()
+    clock = clock + 1
+    check(MS.fileName("move") == "SAO_Move" and MS.play("select") == true and played[#played] == "asset://PuppyAdmin/sounds/SAO_Select.ogg",
+        "SAO style: your own SAO_* files first")
+    clock = clock + 1
+    check(MS.play("move") == true and played[#played] == "cached://https://repo/assets/sounds/menu_move_v1.mp3",
+        "no SAO_Move: the built-in sound (not the KH files)")
+end
+
+-- shutdown restores without errors
+H.time({ "noon" })
+for _, c in ipairs(cleanups) do c() end
+check(LP.ClockTime == 9, "shutdown puts the time back")
+
+print(fails == 0 and "ALL OK" or (fails .. " FAILED"))
+os.exit(fails == 0 and 0 or 1)

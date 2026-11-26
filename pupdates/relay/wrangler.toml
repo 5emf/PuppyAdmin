@@ -1,0 +1,8 @@
+# Pupdates relay (Cloudflare Worker). Deploy: npx wrangler deploy   (see README.md)
+name = "pupdates-relay"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+
+[[kv_namespaces]]
+binding = "PUPDATES"
+id = "b2193daa989342cd874a18446bfc4fd4"   # from: npx wrangler kv namespace create PUPDATES

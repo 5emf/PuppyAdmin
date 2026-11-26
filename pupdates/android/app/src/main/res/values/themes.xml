@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- see-through window: only the icons, the card and the strip are drawn (no backdrop, no dimming) -->
+    <style name="Pupdates.Floating" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:colorAccent">#F59B28</item>
+        <item name="android:colorPrimary">#F59B28</item>
+    </style>
+</resources>
