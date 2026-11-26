@@ -1,0 +1,60 @@
+# Builds Puppy Announcer (Windows) and self-tests the built program.
+# The zip is attached to each run as the artifact "PuppyAnnouncer-win64".
+name: Puppy Announcer
+
+on:
+  push:
+    paths:
+      - "announcer/**"
+      - ".github/workflows/announcer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: announcer
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Install PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pyinstaller>=6.10,<7"
+
+      - name: Build
+        run: pyinstaller --noconfirm --clean --onefile --windowed --name PuppyAnnouncer --icon PuppyAnnouncer.ico --paths . run_announcer.py
+
+      - name: Self-test the built program
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          $p = Start-Process -FilePath "dist\PuppyAnnouncer.exe" -ArgumentList "--selftest","selftest.txt" -Wait -PassThru
+          if (Test-Path selftest.txt) { Get-Content selftest.txt } else { Write-Host "no report written" }
+          if ($p.ExitCode -ne 0) { throw "self-test failed (exit code $($p.ExitCode))" }
+
+      - name: Zip
+        shell: pwsh
+        run: |
+          Copy-Item README.md dist\README.md
+          Compress-Archive -Path dist\PuppyAnnouncer.exe, dist\README.md -DestinationPath PuppyAnnouncer-win64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PuppyAnnouncer-win64
+          path: |
+            announcer/PuppyAnnouncer-win64.zip
+            announcer/selftest.txt
+          if-no-files-found: error
