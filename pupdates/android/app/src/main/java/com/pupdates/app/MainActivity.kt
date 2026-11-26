@@ -600,6 +600,7 @@ class MainActivity : Activity() {
             row(button("Invite to a server") { inviteBot() }, gap(button("Developer Portal") {
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://discord.com/developers/applications")))
             }), top = 4),
+            label("If the invite says \"Integration requires code grant\": Developer Portal > your app > Bot > turn off \"Requires OAuth2 Code Grant\" > Save Changes, then invite again.", dim = true, size = 13f),
             label("Where it posts", bold = true, size = 16f).apply { setPadding(0, dp(10), 0, 0) },
             row(label("Server", size = 13f), gap(grow(guildSpin), 6), gap(button("Refresh") { loadGuilds() })),
             row(label("Channel", size = 13f), grow(channelSpin, 6)),

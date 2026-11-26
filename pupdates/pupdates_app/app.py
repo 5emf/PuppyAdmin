@@ -467,6 +467,8 @@ class PupdatesApp:
         self.invite_btn = ttk.Button(r, text="Invite the bot to a server", command=self.invite_bot)
         self.invite_btn.pack(side="left")
         ttk.Button(r, text="Developer Portal", command=lambda: webbrowser.open("https://discord.com/developers/applications")).pack(side="left", padx=6)
+        ttk.Label(p, text="If the invite says \"Integration requires code grant\": Developer Portal > your app > Bot > turn off "
+                          "\"Requires OAuth2 Code Grant\" > Save Changes, then invite again.", style="Dim.TLabel", wraplength=470).pack(anchor="w")
 
         ttk.Label(p, text="Where it posts", style="Head.TLabel").pack(anchor="w", pady=(10, 2))
         r = self._row(p)
